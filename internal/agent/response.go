@@ -103,18 +103,21 @@ type response struct {
 // reserve is compacted before it is sent, and a request the endpoint refuses
 // as too large is compacted and sent again, once each. pendingMark is the
 // turn's index of its first undelivered message, or -1; a compaction moves it.
-func (a *Agent) call(ctx context.Context, s *Session, runID string, prompt []Section, gen *generation, pendingMark *int) (response, Context, counted, error) {
+// The system prompt and tools are the agent's as the call is built, which a
+// compaction's snapshot may have replaced.
+func (a *Agent) call(ctx context.Context, s *Session, runID string, gen *generation, pendingMark *int) (response, Context, counted, error) {
 	compacted, recovered := false, false
 	for {
 		msgs := s.Conversation.Messages()
-		sent := a.base(prompt).WithMessages(msgs)
+		prompt := a.prompt()
+		sent := a.sessionBase(s, prompt).WithMessages(msgs)
 		predicted := sent.Request()
 		pred := a.predict(ctx, sent)
 		if !compacted && a.shouldCompact(pred) {
 			compacted = true
 			// A compaction that fails leaves the conversation as it was,
 			// which may still fit: the window bound decides.
-			if err := a.autoCompact(ctx, s, runID, prompt, pendingMark, event.CompactThreshold); err != nil && ctx.Err() != nil {
+			if err := a.autoCompact(ctx, s, runID, pendingMark, event.CompactThreshold); err != nil && ctx.Err() != nil {
 				return response{}, Context{}, counted{}, fmt.Errorf("call model: %w", ctx.Err())
 			}
 			continue
@@ -125,7 +128,28 @@ func (a *Agent) call(ctx context.Context, s *Session, runID string, prompt []Sec
 		}
 		q := a.newQueued(pred.Tokens, sent)
 		resp, err := a.retrying(ctx, s, runID, true, func() (response, error) {
-			return a.stream(ctx, s, runID, sent.Request(), gen, q)
+			return a.stream(ctx, s, runID, sent.Request(), gen, q, func(req provider.Request) provider.Request {
+				if a.opts.RefreshMessage == nil || *pendingMark < 0 {
+					return req
+				}
+				messages := s.Conversation.Messages()
+				changed := false
+				for i := *pendingMark; i < len(messages); i++ {
+					refreshed := a.opts.RefreshMessage(messages[i])
+					if refreshed.Context != messages[i].Context {
+						changed = true
+						messages[i] = refreshed
+					}
+				}
+				if !changed {
+					return req
+				}
+				s.Conversation.Replace(messages)
+				sent = sent.WithMessages(messages)
+				predicted = sent.Request()
+				pred = a.predict(ctx, sent)
+				return sent.Request()
+			})
 		})
 		resp.queue = q.record
 		auto := a.opts.Compaction.Auto && !recovered
@@ -143,7 +167,7 @@ func (a *Agent) call(ctx context.Context, s *Session, runID string, prompt []Sec
 		}
 		recovered, compacted = true, true
 		a.emit(ctx, s, event.TypeMessageReset, event.MessageReset{RunID: runID})
-		if cerr := a.autoCompact(ctx, s, runID, prompt, pendingMark, event.CompactOverflow); cerr != nil {
+		if cerr := a.autoCompact(ctx, s, runID, pendingMark, event.CompactOverflow); cerr != nil {
 			return response{}, Context{}, counted{}, errors.Join(err, cerr)
 		}
 	}
@@ -152,12 +176,12 @@ func (a *Agent) call(ctx context.Context, s *Session, runID string, prompt []Sec
 // autoCompact compacts the conversation in the middle of a turn, whose
 // undelivered messages begin at *pendingMark, or -1 for none. They stay
 // after the kept messages, and *pendingMark moves with them.
-func (a *Agent) autoCompact(ctx context.Context, s *Session, runID string, prompt []Section, pendingMark *int, reason string) error {
+func (a *Agent) autoCompact(ctx context.Context, s *Session, runID string, pendingMark *int, reason string) error {
 	stored := s.Conversation.Len()
 	if *pendingMark >= 0 {
 		stored = *pendingMark
 	}
-	n, err := a.compact(ctx, s, runID, prompt, stored, reason, "")
+	n, err := a.compact(ctx, s, runID, a.prompt(), stored, reason, "")
 	if err != nil {
 		return err
 	}
@@ -222,12 +246,15 @@ func (a *Agent) retrying(ctx context.Context, s *Session, runID string, reset bo
 // and backoff are outside it. An attempt that an interactive call preempted
 // fails with inference.ErrPreempted, which retrying does not count as a
 // failure.
-func (a *Agent) stream(ctx context.Context, s *Session, runID string, req provider.Request, gen *generation, q *queued) (response, error) {
+func (a *Agent) stream(ctx context.Context, s *Session, runID string, req provider.Request, gen *generation, q *queued, prepare func(provider.Request) provider.Request) (response, error) {
 	lease, err := a.acquire(ctx, s, q)
 	if err != nil {
 		return response{}, fmt.Errorf("call model: %w", err)
 	}
 	defer lease.Release()
+	if prepare != nil {
+		req = prepare(req)
+	}
 	// The lease says which slot of the server the call should run on, when the
 	// endpoint has slots to name. It is set on this copy of the request, after
 	// the request was sized, and not on what the counter keeps.

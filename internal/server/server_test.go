@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"mime"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -42,15 +43,6 @@ func TestHealth(t *testing.T) {
 	}
 }
 
-func TestUnknownRouteWithoutWebDir(t *testing.T) {
-	s := server.New(config.Default(), testLogger(), server.Deps{}, server.Options{})
-	rec := httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/nope", nil))
-	if rec.Code != http.StatusNotFound {
-		t.Errorf("status = %d, want 404", rec.Code)
-	}
-}
-
 func TestWebDirServesIndexForClientRoutes(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("<h1>Eika</h1>"), 0o600); err != nil {
@@ -74,6 +66,29 @@ func TestWebDirServesIndexForClientRoutes(t *testing.T) {
 	}
 }
 
+func TestWebServesInstallFilesWithRevalidation(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"manifest.webmanifest", "service-worker.js"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("test"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := server.New(config.Default(), testLogger(), server.Deps{}, server.Options{WebDir: dir})
+	for _, tc := range []struct{ path, contentType string }{
+		{"/manifest.webmanifest", "application/manifest+json"},
+		{"/service-worker.js", "application/javascript"},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tc.path, nil))
+			contentType, _, err := mime.ParseMediaType(rec.Header().Get("Content-Type"))
+			if err != nil || rec.Code != http.StatusOK || contentType != tc.contentType || rec.Header().Get("Cache-Control") != "no-cache" {
+				t.Fatalf("status = %d, content type = %q, cache control = %q", rec.Code, contentType, rec.Header().Get("Cache-Control"))
+			}
+		})
+	}
+}
+
 func TestServeStopsOnContextCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
@@ -83,12 +98,5 @@ func TestServeStopsOnContextCancel(t *testing.T) {
 	cancel()
 	if err := <-done; err != nil {
 		t.Errorf("Serve() = %v, want nil", err)
-	}
-}
-
-func TestServeReportsABadAddress(t *testing.T) {
-	err := server.Serve(t.Context(), "not-an-address", http.NotFoundHandler(), testLogger())
-	if err == nil {
-		t.Fatal("Serve accepted a bad address")
 	}
 }

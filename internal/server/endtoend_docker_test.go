@@ -53,7 +53,7 @@ func TestEndToEnd(t *testing.T) {
 	a.waitSubscribed(t)
 
 	a.script(
-		providertest.Calls("running it", providertest.Call("c1", "bash", map[string]any{"command": "echo hi"})),
+		providertest.Calls("running it", providertest.Call("c1", "web_search", map[string]any{"query": "tokio"})),
 		providertest.Text("it printed hi"),
 	)
 	run := a.postMessage(t, sess.ID, "run echo hi", "", 202)
@@ -76,7 +76,7 @@ func TestEndToEnd(t *testing.T) {
 			}
 		}
 	}
-	if result.Name != "bash" || result.IsError || !strings.Contains(result.Content, "hi") {
+	if result.Name != "web_search" || result.IsError || !strings.Contains(result.Content, "Tokio") {
 		t.Errorf("tool result = %+v, want the command's output", result)
 	}
 	for _, e := range events {
@@ -91,7 +91,7 @@ func TestEndToEnd(t *testing.T) {
 	}
 
 	path := decodeBody[pathWire](t, request(t, a.Server, "GET", "/api/sessions/"+sess.ID+"/path", nil), 200)
-	if len(path.Entries) != 4 {
+	if len(path.Entries) != 5 {
 		t.Fatalf("entries = %d, want user, assistant, tool result, assistant: %+v", len(path.Entries), path.Entries)
 	}
 	last := path.Entries[len(path.Entries)-1]
@@ -109,12 +109,12 @@ func TestEventStreamReplaysASessionFromAnEntry(t *testing.T) {
 	a.waitIdle(t, sess.ID)
 
 	path := decodeBody[pathWire](t, request(t, a.Server, "GET", "/api/sessions/"+sess.ID+"/path", nil), 200)
-	if len(path.Entries) != 2 {
-		t.Fatalf("entries = %d, want 2", len(path.Entries))
+	if len(path.Entries) != 3 {
+		t.Fatalf("entries = %d, want 3", len(path.Entries))
 	}
 
 	t.Run("from the query", func(t *testing.T) {
-		conn := stream(t, a.Server, "since="+path.Entries[0].ID)
+		conn := stream(t, a.Server, "since="+path.Entries[1].ID)
 		e := next(t, conn)
 		if e.Type != event.TypeSessionMessage {
 			t.Fatalf("type = %q, want session.message", e.Type)
@@ -123,7 +123,7 @@ func TestEventStreamReplaysASessionFromAnEntry(t *testing.T) {
 		if err := e.DecodePayload(&payload); err != nil {
 			t.Fatalf("decode: %v", err)
 		}
-		if payload.EntryID != path.Entries[1].ID || payload.Kind != "assistant" {
+		if payload.EntryID != path.Entries[2].ID || payload.Kind != "assistant" {
 			t.Errorf("payload = %+v, want the entry after the one asked for", payload)
 		}
 		if payload.SessionID != sess.ID {
@@ -154,25 +154,4 @@ func TestEventStreamReplaysASessionFromAnEntry(t *testing.T) {
 			t.Errorf("close status = %v, want policy violation", websocket.CloseStatus(err))
 		}
 	})
-}
-
-func TestEventStreamReportsComputerState(t *testing.T) {
-	a := newAPI(t)
-	cx := a.home(t)
-
-	conn := stream(t, a.Server, "topics="+event.ComputerTopic(cx.ID))
-	a.waitSubscribed(t)
-
-	a.stopIdle(t)
-	e := next(t, conn)
-	if e.Type != event.TypeComputerState {
-		t.Fatalf("type = %q, want computer.state", e.Type)
-	}
-	var payload event.ComputerState
-	if err := e.DecodePayload(&payload); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if payload.ComputerID != cx.ID || payload.State != "stopped" {
-		t.Errorf("payload = %+v, want the computer stopped", payload)
-	}
 }

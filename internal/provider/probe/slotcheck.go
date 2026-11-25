@@ -2,7 +2,6 @@ package probe
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -42,7 +41,7 @@ type SlotAffinity struct {
 // Current reports whether the check was made against the same build and the
 // same model, so that running it again would learn nothing.
 func (c SlotAffinity) Current(build, model string) bool {
-	return c.Verdict != "" && c.Build == build && c.Model == model
+	return current(c.Verdict, c.Build, c.Model, build, model)
 }
 
 // The bounds and the bar of the check. Its requests are real model calls with a
@@ -116,18 +115,13 @@ func CheckSlotAffinity(ctx context.Context, c SlotCheck) SlotAffinity {
 		}
 	}
 	busy := func(err error) (SlotAffinity, bool) {
-		var wait *waitError
-		if !errors.As(err, &wait) {
-			return SlotAffinity{}, false
-		}
-		return SlotAffinity{
-			Verdict: Skipped, CheckedAt: out.CheckedAt, Busy: true,
-			Reason: fmt.Sprintf("the inference pool stayed busy, so the check did not run and will be tried again: %v", wait.err),
-		}, true
+		reason, ok := busyReason(err)
+		return SlotAffinity{Verdict: Skipped, Reason: reason, CheckedAt: out.CheckedAt, Busy: true}, ok
 	}
+	model := asker{provider: c.Provider, queue: c.Queue, need: c.Need, promptTokens: slotCheckPromptTokens}
 
 	ask := provider.UserMessage("Reply with the word ok.")
-	first, err := c.collect(ctx, request(0, system, ask))
+	first, err := model.ask(ctx, request(0, system, ask))
 	if skipped, ok := busy(err); ok {
 		return skipped
 	}
@@ -140,14 +134,14 @@ func CheckSlotAffinity(ctx context.Context, c SlotCheck) SlotAffinity {
 	}
 	out.Prompt = prompt
 
-	if _, err := c.collect(ctx, request(1, "A different prompt.", provider.UserMessage("Reply with the word no."))); err != nil {
+	if _, err := model.ask(ctx, request(1, "A different prompt.", provider.UserMessage("Reply with the word no."))); err != nil {
 		if skipped, ok := busy(err); ok {
 			return skipped
 		}
 		return fail("the request on the other slot failed: %v", err)
 	}
 
-	last, err := c.collect(ctx, request(0, system, ask, provider.AssistantMessage("ok", nil), provider.UserMessage("Reply with the word yes.")))
+	last, err := model.ask(ctx, request(0, system, ask, provider.AssistantMessage("ok", nil), provider.UserMessage("Reply with the word yes.")))
 	if skipped, ok := busy(err); ok {
 		return skipped
 	}
@@ -166,24 +160,4 @@ func CheckSlotAffinity(ctx context.Context, c SlotCheck) SlotAffinity {
 	}
 	out.Verdict = Passed
 	return out
-}
-
-// collect reads one request to the end under a lease on the check's pool.
-func (c SlotCheck) collect(ctx context.Context, req provider.Request) (answer, error) {
-	need := c.Need
-	need.Tokens = slotCheckPromptTokens + slotCheckMaxOutput
-	var (
-		a        answer
-		admitted bool
-	)
-	err := c.Queue.Do(ctx, need, func(ctx context.Context, _ *inference.Lease) error {
-		admitted = true
-		var err error
-		a, err = collect(ctx, c.Provider, req)
-		return err
-	})
-	if err != nil && !admitted && c.Queue != nil {
-		return answer{}, &waitError{err: err}
-	}
-	return a, err
 }

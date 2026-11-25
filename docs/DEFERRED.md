@@ -430,6 +430,10 @@ All of phase 1's code stays. These were cut before more time went into them:
 
 ### Phase 2
 
+- The `activity` topic, `subagent.*` events and API (P2-17). Activity uses
+  `session.updated` on `global` and the open session stream. Return if these
+  prove too coarse, for example if session list refetches become costly or the
+  board needs the last tool call.
 - User-defined agents, tool-list overrides, and per-agent `limits`, `access`, `skills`
   and `plugins` fields. Return when a built-in does not fit.
 - Per-agent allowed classes and `subagent_start {class}`. Return when one worker
@@ -441,12 +445,12 @@ All of phase 1's code stays. These were cut before more time went into them:
 - `inbox_ask` and the `questions` table. Return if questions get lost in chat.
 - Automatic resumption of runs after a restart, and the `dispatched` marker. Return
   when restarts are common enough for the manual step to hurt.
-- From compaction: `[Ledger]`, `[Recent turns]`, `(#id)` references, and the retry
-  that folds in a span whose summary failed. Return with `evals/compaction`, if it
-  shows the summary losing commitments.
+- From compaction: `[Ledger]`, `[Recent turns]`, and the retry that folds in a
+  span whose summary failed. Return if `evals/compaction` (phase 13) shows the
+  summary losing commitments. `(#id)` references are in phase 13.
 - From history: `pg_trgm` and regular expressions, tool-result indexing and
   `history_read {compaction}`.
-- `evals/compaction`, and chapters behind it.
+- Chapters, behind `evals/compaction` (phase 13).
 - Project fields: a computer of its own, `agent`, `skills`, `plugins` and
   `created_by`.
 
@@ -458,6 +462,9 @@ All of phase 1's code stays. These were cut before more time went into them:
 - The pool and queue strip, the project file listing, the markdown field on touch,
   and phone baselines beyond Chat, Activity and Inbox.
 - Virtualising the transcript, unless a measurement asks for it.
+- The stored notification list with its API (P3-12). A report is a notice in Chat
+  and a push through ntfy. Return if reports get missed in daily use.
+- Channel marks on messages in Chat. Return with channels (phase 14).
 
 ### Phase 4
 

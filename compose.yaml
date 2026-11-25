@@ -23,6 +23,9 @@ services:
       # Optional fixed API token for scripts. The UI signs in with the
       # password chosen during setup and does not need one.
       EIKA_AUTH_TOKEN: "${EIKA_AUTH_TOKEN:-}"
+      # The injection screen. Point it at another instance that serves /screen,
+      # such as one on a GPU, to replace the guard service below.
+      EIKA_GUARD_URL: "${EIKA_GUARD_URL:-http://guard:9940}"
     ports:
       - "127.0.0.1:${EIKA_PORT:-8080}:8080"
     # host.docker.internal is how the harness reaches a model server on the
@@ -40,6 +43,7 @@ services:
       - default
       - sandbox
       - sandbox-internal
+      - guard
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       # The key that seals stored credentials.
@@ -87,6 +91,18 @@ services:
       timeout: 5s
       retries: 10
 
+  # The injection screen: CPU torch and the model baked into the image, so it
+  # needs no network. It is on the guard network, which holds only the harness
+  # and has no route out. The harness does not wait for it: with the guard down,
+  # content passes marked unscanned.
+  guard:
+    build:
+      context: guard
+    image: eika-guard:latest
+    restart: unless-stopped
+    networks:
+      - guard
+
   searxng:
     image: searxng/searxng:latest
     restart: unless-stopped
@@ -104,8 +120,9 @@ volumes:
 
 # The names are pinned because sandbox containers are started by the harness
 # rather than by compose, and they join eika_sandbox or eika_sandbox_internal
-# by name. Only the harness is on all three: a sandbox reaches the harness and,
-# unless its egress is restricted, the internet, never postgres or searxng.
+# by name. Only the harness is on all of them: a sandbox reaches the harness
+# and, unless its egress is restricted, the internet, never postgres, searxng
+# or the guard, whose network holds the harness and the guard alone.
 networks:
   default:
     name: eika_default
@@ -113,4 +130,7 @@ networks:
     name: eika_sandbox
   sandbox-internal:
     name: eika_sandbox_internal
+    internal: true
+  guard:
+    name: eika_guard
     internal: true

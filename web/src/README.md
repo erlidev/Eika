@@ -4,8 +4,8 @@ The folders below are the only places code goes. Style rules for the frontend
 are in `docs/STYLE_GUIDE.md` section 3.
 
 ```
-app/          routes, the layout shell, the panel registry
-features/     one folder per domain feature (sessions, session, sandbox, providers, profiles, context, search, mcp, settings, setup, connect)
+app/          routes, the layout shell, navigation, theme
+features/     one folder per domain feature (activity, agents, chat, connect, mcp, memory, providers, sandbox, search, session, sessions, settings, setup, skills)
 components/   shared presentational components; components/ui is shadcn-managed
 api/          wire types mirroring docs/api/, the HTTP client, the WebSocket stream
 lib/          pure utilities with tests
@@ -25,15 +25,16 @@ Rules:
 
 ## The shell
 
-`app/Workbench.tsx` is a three-pane workbench: the chat list on the left,
-the open session in the middle, and the registered panels on the right. The
-side panes are resized by `components/ResizableSplit` and their widths are
-remembered by `lib/persisted`. Below 1024px the side panes become drawers, so
-the session keeps a usable width on a phone.
+`app/Shell.tsx` is the frame of every page: a rail from 640px and a bottom
+bar under it (`app/Navigation.tsx`, from the list in `app/pages.ts`), a header,
+and the page in an `Outlet`. It fills `100dvh`, leaves room for the safe
+areas, and keeps the page above the on-screen keyboard
+(`lib/useViewportAnchor`). `app/HaltSlot.tsx` places the halt button (`features/halt`).
+`app/App.tsx` routes `/` to Chat (`features/chat`), the home session, and
+`/activity/:sessionId?` to Activity (`features/activity`).
 
-`app/panels.tsx` is the panel registry the right pane's tab strip is built
-from. `app/theme.ts` is the colour scheme: it follows `prefers-color-scheme`
-until the user picks a side. `app/CommandPalette.tsx` is Cmd/Ctrl+K.
+`app/theme.ts` is the colour scheme: it follows
+`prefers-color-scheme` until the user picks a side.
 
 ## Server state and the stream
 
@@ -47,24 +48,25 @@ session store answers it with a replay from the last entry it holds.
 
 Nothing polls. An event invalidates the queries it makes stale:
 `features/session/useSessionStream` for a turn that ended (which also
-refreshes the Context panel's next request and recorded calls), and
+refreshes the next request's prediction), and
 `features/mcp`'s `useMCPEvents` for an MCP server's state on the global
-topic.
+topic, and `features/sessions`'s `useSessionUpdates` for the session lists
+(a subagent's state change reaches Activity there) and, after a reconnect, every
+session query.
 
 ## Keyboard
 
-| Key            | What it does                         |
-| -------------- | ------------------------------------ |
-| `Enter`        | Sends the composer's message         |
-| `Shift+Enter`  | Newline                              |
-| `Esc`          | Aborts the run in progress           |
-| `Cmd/Ctrl+K`   | Opens the command palette            |
-| `Left`/`Right` | Moves between the right pane's tabs  |
-| `Home`/`End`   | First and last tab of the right pane |
+| Key            | What it does                      |
+| -------------- | --------------------------------- |
+| `Enter`        | Sends the composer's message      |
+| `Shift+Enter`  | Newline                           |
+| `Esc`          | Aborts the run in progress        |
+| `Left`/`Right` | Moves between a tab strip's tabs  |
+| `Home`/`End`   | First and last tab of a tab strip |
 
 `Esc` belongs to whatever is on top of the session: a dialog, an open select,
-the command palette, or a focused text field keeps it, and only an `Esc` none
-of those wanted aborts the run (`features/session/escape.ts`). The tab strip
+or a focused text field keeps it, and only an `Esc` none
+of those wanted aborts the run (`features/session/escape.ts`). A tab strip
 is one tab stop, as the WAI-ARIA tabs pattern asks (`lib/tablist.ts`).
 
 ## Commands (run from `web/`)

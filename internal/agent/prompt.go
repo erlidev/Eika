@@ -1,6 +1,10 @@
 package agent
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/erlidev/eika/internal/sentry"
+)
 
 // ChatPrompt is the built-in base prompt of every agent. It makes no claim
 // about files or commands: a model told it works in a sandbox would offer to
@@ -18,13 +22,27 @@ Rules:
 // prompt assembles the system prompt sections of one run: the base prompt
 // and the extra instructions, each present only when it has text.
 func (a *Agent) prompt() []Section {
+	a.snapshotMu.RLock()
+	base := a.opts.BasePrompt
+	a.snapshotMu.RUnlock()
+	return a.promptWith(base)
+}
+
+// promptWith assembles the system prompt sections with base as the base
+// prompt, or the built-in ChatPrompt when it is nil.
+func (a *Agent) promptWith(basePrompt *string) []Section {
 	base := ChatPrompt
-	if a.opts.BasePrompt != nil {
-		base = *a.opts.BasePrompt
+	if basePrompt != nil {
+		base = *basePrompt
+	}
+	base = strings.TrimSpace(base)
+	if a.opts.Gate != nil {
+		// Added here, after any override, so a replaced prompt keeps it.
+		base = strings.TrimSpace(base + "\n\n" + sentry.UntrustedNotice)
 	}
 	var sections []Section
-	if text := strings.TrimSpace(base); text != "" {
-		sections = append(sections, newSection(SectionBase, text))
+	if base != "" {
+		sections = append(sections, newSection(SectionBase, base))
 	}
 	if text := strings.TrimSpace(a.opts.Instructions); text != "" {
 		sections = append(sections, newSection(SectionInstructions, text))

@@ -33,12 +33,12 @@ Every failure has one shape:
 
 | Code | Status | Meaning |
 |---|---|---|
-| `invalid_request` | 400 | The request was malformed, missing a field, or named something the API will not accept. An unknown JSON field is malformed. |
+| `invalid_request` | 400 | The request was malformed, missing a field, or named something the API will not accept. An unknown JSON field, or a JSON body that is not valid UTF-8, is malformed. |
 | `unauthorized` | 401 | The bearer token was missing, wrong, or expired, or a sign-in password was wrong. |
 | `not_found` | 404 | The addressed computer, session, entry, run, question, provider, model, MCP server, elicitation, or pending authorization does not exist. |
 | `conflict` | 409 | The request collides with the current state: a duplicate name, a second run on a session, a computer that is not running or could not be started, a harness already set up, no model to run on, or a stored credential the harness can no longer open. |
 | `too_large` | 413 | A JSON request body is over its 1 MiB bound. |
-| `internal` | 500 | The harness failed. The message is always `internal error`; the detail is in the harness log. |
+| `internal` | 500, 503 | The harness failed (500). The message is always `internal error`; the detail is in the harness log. A memory route answers 503 with a plain message when memory cannot be judged right now (see Memory), and a skills route when skills cannot be (see Skills). |
 
 ## Health
 
@@ -101,7 +101,7 @@ image are there. Until then it is listed with the state `creating`, and `GET
 it. A run in it starts it when the idle stopper has stopped it. Its limits and
 egress are the `sandbox_limits` and `sandbox_egress` settings (see
 `PUT /api/settings`), and the only route here is the list. A session opens in a
-computer by naming it in `POST /api/sessions`.
+computer through the home session.
 
 ### `GET /api/computers`
 
@@ -117,7 +117,7 @@ among them.
 | `image` | string | The image the container runs. |
 | `state` | string | `creating`, `running`, `stopped`, or `gone`. |
 | `container_id` | string, optional | The Docker container id. |
-| `sandbox` | Sandbox | What the container may consume and reach. A computer from before sandboxes has no limits and open egress. |
+| `sandbox` | Sandbox | What the container may consume and reach. A computer from before sandboxes has no limits and public egress. |
 | `home` | boolean | The computer that holds the user's durable files. Exactly one computer has it, once the harness has recorded it. |
 | `created_at`, `updated_at` | time | When it was made and last changed. |
 
@@ -126,7 +126,7 @@ among them.
 | Field | Type | Meaning |
 |---|---|---|
 | `limits` | `{"cpus": number, "memory_mb": number, "pids": number}` | Zero is no limit. `cpus` is a fraction of cores from 0.01 to the host's; `memory_mb` is MiB from 64 to the host's memory, with no swap beyond it; `pids` counts processes and threads, from 32 to 4194304. |
-| `egress` | `{"mode": string, "allow": [string]}` | `open` reaches the internet directly. `allowlist` puts the container on the internal sandbox network, with no route out, and its processes reach the hosts `allow` names through the harness's egress proxy. `none` is the internal network with nothing allowed. `allow` holds at most 200 patterns, each a host name (`github.com`), a wildcard for every name below one (`*.github.com`), or an IP address; they are stored lowercase without repeats, and kept whatever the mode. |
+| `egress` | `{"mode": string, "allow": [string]}` | `public` reaches public hosts through the egress proxy. `allowlist` reaches only the hosts `allow` names through the proxy. Computers use the internal sandbox network when egress control is available. `none` is the internal network with nothing allowed. `allow` holds at most 200 patterns, each a host name (`github.com`), a wildcard for every name below one (`*.github.com`), or an IP address; they are stored lowercase without repeats, and kept whatever the mode. |
 
 ## Sessions
 
@@ -134,24 +134,16 @@ A session is a tree of entries in one computer, with a head the next run
 continues from. A chat is a session with no computer: its runs have no files
 or commands, and offer the model only the tools that need no computer.
 
+### `GET /api/home`
+
+Returns the local home session and its head in the same shape as
+`GET /api/sessions/{id}`. Returns `404` if the session does not exist.
+
 ### `GET /api/sessions`
 
-`?computer_id=<id>` narrows the list; without it every session is returned,
-chats included. `?chats=true` returns the chats alone; with `computer_id` it is
-`400`.
+`?computer_id=<id>` narrows the list; without it every session is returned.
 
 `200` with `{"sessions": [Session]}`, oldest first.
-
-### `POST /api/sessions`
-
-| Field | Type | Meaning |
-|---|---|---|
-| `computer_id` | string | The computer the session's runs act in. Required unless `chat` is set. |
-| `chat` | boolean | Open a chat, which has no computer. |
-| `title` | string | What to call it, at most 200 characters. Empty or absent leaves it untitled: it is called `New session` (`New chat` for a chat) until its first run names it after the first message, when a model serves the `fast` class (`model_classes` in `PUT /api/settings`). |
-
-`201` with the `Session`. `400` for `chat` with a `computer_id`; `404` when the computer does not exist, which is also what
-leaving both out gives: a chat is asked for, never a fallback.
 
 ### `GET /api/sessions/{id}`
 
@@ -173,7 +165,8 @@ none. It publishes `session.updated` on `global`.
 
 ### `DELETE /api/sessions/{id}`
 
-Aborts the session's run, then deletes it and its entries. `204`.
+Aborts the session's run, then deletes it and its entries. `204`. The home
+session cannot be deleted: the route returns `409` without stopping its run.
 
 ### `GET /api/sessions/{id}/outline`
 
@@ -184,8 +177,9 @@ where a `Node` is
 `{id, parent_id?, kind, preview, resumable, created_at}`.
 
 `resumable` is whether a run can continue from that entry: the path down to it
-leaves no tool call unanswered. It is false for an assistant entry whose tool
-calls are still out and for a tool result that is not the last of its set. The
+leaves no tool call unanswered and the entry is not a preamble. It is false
+for every preamble, for an assistant entry whose tool calls are still out,
+and for a tool result that is not the last of its set. The
 head route refuses those entries, so a client offers no branch from a node
 that is not resumable.
 
@@ -199,6 +193,98 @@ sees.
 `compaction` entry replaces the messages before it with a user message that
 carries its summary and has `"summary": true`, followed by the ones it kept.
 
+### `GET /api/halt`
+
+Whether Eika is halted. Returns `200` with `halted` (boolean) and, while halted,
+`at` (RFC 3339) and `reason` (string, may be absent). The state is stored, so it
+survives a restart.
+
+### `POST /api/halt`
+
+Halts Eika. Body `{"reason": string}`, the reason optional and at most 200 bytes
+(`400` otherwise). Every tool call is denied from then on, with a reason the
+agent can act on, and no run starts (a message to a session returns `409`). Every
+running run, home and subagent, is aborted before the response returns. One push
+goes out through the ntfy topic, if there is one, and a `halt.state` event is
+published. Halting a halted Eika changes nothing. Returns `200`, as `GET
+/api/halt`. The audit log gets a `halt` row.
+
+### `POST /api/halt/resume`
+
+Clears the halt. Runs start again; the ones that were aborted stay aborted.
+Returns `200`, as `GET /api/halt`, and writes a `resume` audit row. Resuming
+a running Eika changes nothing.
+
+### `GET /api/guard`
+
+`200` with `{"status": "unknown" | "up" | "down"}`. The state is the last
+screening outcome since the server started. The first outcome sends no push.
+A cancelled call does not change the state.
+
+### `GET /api/blocked-hosts`
+
+Returns `{ "hosts": ["example.com"] }`, sorted by host. These exact hosts are
+blocked from sandbox egress.
+
+### `POST /api/blocked-hosts`
+
+Adds an exact host from `{ "host": "example.com" }`. Host names are normalized.
+Returns 204, or 400 for an invalid host.
+
+### `DELETE /api/blocked-hosts/{host}`
+
+Removes an exact host. Returns 204, including when the host was not listed.
+
+### `GET /api/trusted-sources`
+
+Returns `200` with `hosts`, an array of exact normalized hosts.
+
+### `POST /api/trusted-sources`
+
+Takes `{"host": "example.com"}` and returns `204`. Hosts exclude schemes,
+ports and paths. IDNs use ASCII and IP addresses use their canonical form.
+Subdomains are separate. Adding a host again has no effect.
+
+### `DELETE /api/trusted-sources/{host}`
+
+Removes a host and returns `204`. Removing a host again has no effect.
+
+### `POST /api/withheld/{id}/trust`
+
+Trusts the web host of that entry and returns `204`. A non-web entry returns
+`400`, and a missing entry returns `404`. Trusted suspect text remains in the
+result and is recorded in the withheld list.
+
+### `GET /api/withheld`
+
+Text that ingest removed from a tool result or a subagent's report, newest first
+(`at`, then `id`). Returns `200` with `withheld` (array) and optional
+`next_before` (string). `limit` (1 to 100, default 50) and `before` (a cursor, as
+for the entries of a session) work as they do there; a cursor must name a row.
+An empty page has an empty array and no cursor. Each row is `{id, at, source,
+source_name, session_id, run_id, call_key, text, score}`. `source` is `web_fetch`,
+`web_search`, `report` (a subagent's report or question; `session_id` is the
+child) or `plugin`. `source_name` is the URL, query or tool. `score` is the highest
+score among the removed windows. `call_key` is `<session id>:<tool call id>` and
+is empty when there is no tool call, so a tool card in that session finds its
+rows by it. Rows outlive their session.
+
+### `GET /api/withheld/{id}`
+
+Returns `200` with one row, as above, or `404`.
+
+### `GET /api/sessions/{id}/entries`
+
+Returns `200` with `session_id` (string), `entries` (Entry array), and optional
+`next_before` (string). Entries are in write order across all branches. The first
+page has the newest entries. `limit` defaults to 50 and must be an integer from
+1 to 100. Pass `next_before` as `before` to get the preceding page. A cursor
+must name an entry in this session. It must be nonempty UTF-8, contain no NUL,
+and be at most 1024 bytes.
+Malformed query encoding, invalid or repeated parameters and unknown
+parameters return `400`; a missing session returns `404`. An empty page has an
+empty array and no cursor. New appends do not change earlier pages.
+
 ### `POST /api/sessions/{id}/head`
 
 `{"entry_id": string}`. Moves the head to one of the session's own entries, so
@@ -206,55 +292,8 @@ the next run continues from there and the tree branches in place. An empty
 `entry_id` clears the head, so the session starts again from its root.
 
 `200` with the `Session`. `409` while a run is going; `404` when the entry is
-not the session's; `400` when the entry is not `resumable`, because a path
-that stops with tool calls unanswered is a conversation no endpoint accepts.
-
-### `PUT /api/sessions/{id}/tools`
-
-`{"tools": [string] | null}`, required; an empty list turns every tool off,
-and `null` clears the session's own choice, so that its profile's applies.
-Chooses the tools the session's next run offers the model; a run already
-going keeps the ones it started with. An entry is a tool name or
-`mcp__<server>__*`, every tool that MCP server offers, including one it adds
-later. The entries are stored sorted, once each.
-
-`200` with the `Session`. `400` when `tools` is missing or not a list, names
-a tool or an MCP server that does not exist, or, for a chat, names a tool or
-a stdio server that needs a computer.
-
-### `GET /api/sessions/{id}/configuration`
-
-What the session sets for itself over its profile, and what its next run
-resolves to. `200` with:
-
-| Field | Type | Meaning |
-|---|---|---|
-| `session_id` | string | The session. |
-| `profile_id` | string, optional | The profile the session chose. Absent, it runs with whichever profile is the default. |
-| `overrides` | ProfileSettings | What the session sets over its profile. |
-| `tools` | string array or null | The session's own tool choice, null when it has made none. |
-| `resolved` | Configuration | What the next run uses when the message names no model. |
-| `inherited` | Configuration | What the session's overrides fall through to: the configuration as it would be if the session set nothing itself, except that a model the session chose still supplies the model row below its unset values. |
-
-An editor asks with what it has chosen and not saved: `?profile_id=` and
-`?model_id=` stand in for the session's profile (empty: the default one)
-and its own model (empty: none) in `inherited`, so the editor shows the
-values they bring as they are chosen. Everything else in the answer is
-what is saved. `400` for a profile or a model that does not exist.
-
-### `PUT /api/sessions/{id}/profile`
-
-`{"profile_id": string}`; empty goes back to the default profile. The
-session's overrides stay. `200` with the body of
-`GET /api/sessions/{id}/configuration`; `400` for a profile that does not
-exist.
-
-### `PUT /api/sessions/{id}/overrides`
-
-A ProfileSettings object, which replaces everything the session sets over
-its profile; one that sets nothing clears them. `200` with the body of
-`GET /api/sessions/{id}/configuration`; `400` for a model that does not
-exist, a sampling parameter out of range, or a prompt over 64 KiB.
+not the session's; `400` when the entry is not `resumable`: preambles are not branch points,
+and a path with unanswered tool calls is a conversation no endpoint accepts.
 
 ### `GET /api/sessions/{id}/context`
 
@@ -282,7 +321,7 @@ ModelContext that has `call`; `404` for a record of another session.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `sections` | array | The system prompt by section, in order: `{kind, text, tokens}`. `kind` is `base` or `instructions`. The system prompt is the sections' texts joined by a blank line. |
+| `sections` | array | The system prompt by section, in order: `{kind, text, tokens}`. `kind` is `base`, `instructions`, `preamble` or `memory`; `memory` is the home session's memory section, which ends the stored preamble and is listed apart (the texts still join to the same bytes). The system prompt is the sections' texts joined by a blank line. |
 | `tools` | array | The tool schemas sent: `{name, description, schema, source, tokens}`, where `source` is `builtin` or `mcp`. |
 | `messages` | array | The conversation as the provider receives it: no `metrics`, and `reasoning` and `reasoning_items` only when the model preserves thinking. |
 | `message_tokens` | number | The estimated size of the messages. |
@@ -355,42 +394,65 @@ model is configured; `400` for a model that does not exist.
 | `context_window` | number or null | The window the call was judged against; `null` when the model had none configured. |
 | `endpoint` | string, optional | The provider's name when the call was made. |
 | `queue_ms`, `slot` | number or null | Milliseconds the call waited for a lease on its pool (summed over its attempts, so a call that was preempted and queued again counts both waits), and the server's own slot number that the request named (`id_slot`). `slot` is `null` for a call that named none: one to an endpoint that takes no slot hints (anything but a llama.cpp server with several slots on which the slot affinity check passed), and one recorded before the queue existed. |
-| `class`, `priority`, `agent` | string, optional | Attribution. `priority` is what the call asked for: `interactive`, `foreground`, `background` or `maintenance`. `class` is the model class the run was resolved from and is absent for a run that named its model. `agent` is absent until the agents record it. |
+| `class`, `priority`, `agent` | string, optional | Attribution. `priority` is what the call asked for: `interactive`, `foreground`, `background` or `maintenance`. `class` is the model class the run was resolved from and is absent for a run that named its model. `agent` is the session's agent name and can be absent on old records. |
 | `prefill_ms`, `decode_ms` | number or null | Milliseconds the endpoint took to read the prompt (as it stated it) and to generate (its own measure, else the harness's from the first token). `null` when nothing measured them. |
 | `created_at` | time | When the call returned. |
 
 ### Session
+
+Identity and lifecycle fields are read-only on the existing session routes.
+Old user sessions remain available as routines.
 
 | Field | Type | Meaning |
 |---|---|---|
 | `id` | string | The session id. |
 | `computer_id` | string, optional | Where its runs act. Absent for a chat. |
 | `title` | string | What the user calls it, or the placeholder of an untitled session until its first run names it. |
-| `kind` | string | Who opened it: `user`. |
+| `owner` | string | Storage owner key; `local` for the local user. |
+| `agent` | string, optional | Agent definition name. |
+| `name` | string, optional | Handle; unique per owner for home, per parent for subagents. |
+| `project_id` | string, optional | Associated project. |
+| `parent_session_id` | string, optional | Delegating session. |
+| `state` | string | `idle`, `running`, `waiting`, `failed` or `cancelled`. |
+| `brief` | string, optional | Initial brief. |
+| `result` | string, optional | Latest report. |
+| `waiting_reason` | string? | Code-owned reason while a subagent waits; absent when empty. |
+| `last_active_at` | timestamp | Last lifecycle activity in UTC. |
+| `kind` | string | Session kind: `home`, `subagent` or `routine`. |
 | `head_entry_id` | string, optional | The entry the next run continues from. |
-| `tools` | string array | The tools the next run offers the model, sorted: what the session's tool choice, or its profile's, takes, every tool the session can run when neither chose, and never one that needs a computer in a chat. |
-| `profile_id` | string, optional | The profile the session chose; absent, it runs with the default profile. |
-| `overridden` | boolean | The session sets something of its own over its profile: overrides or a tool choice. |
+| `tools` | string array | The tools the next run offers the model, sorted: the agent definition's fixed built-in list; until its next compaction, its snapshot may pin a shorter one, which the context preview shows. |
 | `pinned` | boolean | Listed before its siblings. |
 | `archived` | boolean | Set aside under an Archived heading; it runs like any other. |
 | `created_at`, `updated_at` | time | When it was made and last changed. |
 
 ### Entry
 
+Preamble and notice entries carry `text` and an empty `message`. Their text is
+stored without changes. Channel is independent of the message payload.
+
 | Field | Type | Meaning |
 |---|---|---|
 | `id` | string | The entry id. |
 | `parent_id` | string, optional | The entry it follows. |
+| `run_id` | string, optional | The agent turn that wrote the entry. Older entries and entries outside a turn can omit it. |
+| `channel` | string, optional | Source or destination channel, absent when unset. |
+| `text` | string, optional | Preamble or notice text, including empty text. |
+| `question` | object, optional | On a notice a subagent's question made: `{name, agent, question_id, question, options?, allow_free_text}`. `text` stays the model-facing text. |
 | `seq` | number | Write order within the session. |
-| `kind` | string | `user`, `assistant`, `tool_call`, `tool_result`, `system`, `event`, or `compaction`. |
+| `kind` | string | `user`, `assistant`, `tool_call`, `tool_result`, `system`, `event`, `compaction`, `preamble` or `notice`. |
 | `created_at` | time | When it was written. |
 | `message` | object | The provider message the entry holds. Empty for kinds that hold no message. |
-| `compaction` | object, optional | On a `compaction` entry: `summary`, `kept`, `tokens_before`, `tokens_after`, `reason` (`manual`, `threshold`, or `overflow`), and `usage`. The model reads the summary and the last `kept` messages before the entry in place of the conversation before it. |
+| `compaction` | object, optional | On a `compaction` entry: `summary`, `kept`, `tokens_before`, `tokens_after`, `reason` (`manual`, `idle`, `threshold`, or `overflow`), `usage`, and, on a home session's compaction, `board_as_of` (RFC 3339 time its subagent board was read). The model reads the summary and the last `kept` messages before the entry in place of the conversation before it. |
 
 A user message can include `context`: the block the model reads after the
-message's text, which states the time it was sent. It is not what the user
-wrote, so a client shows `content` and not `context`; the Context inspector
-shows both. Messages stored before the field existed lack it.
+message's text, which states the time it was sent and, in the home session, its
+channel and any notices it delivers (one `notice:` line each, later lines of a
+notice indented by two spaces). It is not what the user wrote, so a client
+shows `content` and not `context`. Messages
+stored before the field existed lack it. A home user message that delivers
+notices also has `notices`, the ids of those notice entries; a background turn
+that delivers notices sends a user message with empty `content` and only its
+`context`, which a client does not show.
 
 A provider message can include `reasoning` on an assistant entry whenever the
 endpoint streamed it. The session view shows it apart from the answer; Eika
@@ -434,13 +496,18 @@ on the event stream.
 | `text` | string | The message. Required unless `images` holds at least one image. |
 | `images` | array | Pictures attached to the message, each `{"data": string}`: a PNG, JPEG, GIF, or WebP file, base64 encoded, of at most 20 MiB and 50 megapixels. At most 10. |
 | `mode` | `run`, `steer`, or `follow_up` | What to do with it. Empty means `run`. |
-| `model` | string | The name of the model this run uses. Empty uses the model the session's configuration resolves to: its overrides', its profile's, or the `default_model` setting's, or the first chat model. A decision model is `400`. |
+| `model` | string | Must be empty. The agent class selects the model. A nonempty value is `400`. |
 
-- `run` starts a run from the session's head. `409` when one is already going.
+- `run` starts a run from the session's head. `409` when one is already going,
+  except a background turn of the home session that delivers notices, which
+  nobody started from a client: the message steers it instead, and the
+  response is that run.
 - `steer` joins the run in progress as soon as the running tool call
   finishes, before the next model call.
 - `follow_up` waits until the current turn ends and then starts the next one.
 - `steer` and `follow_up` are `409` when the session has no run in progress.
+  Either raises the run's next model calls to the `interactive` priority, so a
+  background home turn the user joins answers as quickly as one they started.
 
 Each image is turned upright by its EXIF orientation, fitted within 1920 by
 1080 pixels (1080 by 1920 upright) with a Catmull-Rom filter, stripped of its
@@ -452,7 +519,8 @@ against the running model.
 `202` with the `Run`. `400` for no text and no images, an unknown mode, a
 model that does not exist, an image the harness cannot read (the message names
 which, counting from 1), more than 10 images, or images for a model without
-`image_input`; `413` for a body over 64 MiB; `409` when no model is
+`image_input`; `413` for a body over 64 MiB; `409` for a subagent's session
+(Eika messages its subagents through its tools), when no model is
 configured, or when the session's computer could not be started: a run starts a
 computer the idle stopper stopped, and in the `home` computer, when its
 container is gone, makes the container again over the same volume. A chat has no computer, so it runs
@@ -485,20 +553,46 @@ string, "images": number}`: its text and how many images it carries.
 
 Summarizes the older part of the conversation now, as Pi's `/compact` does,
 whatever its size: about `keep_recent_tokens` of the newest messages stay and
-the rest is replaced by a summary (the `compaction` setting). It is a run of
+the rest is replaced by a summary (the `compaction` setting). The home session
+keeps whole turns from a user message on, up to 15% of its model's window and
+at least the newest turn, and splits a newest turn larger than that. An agent
+session's compaction also rebuilds its snapshot: the preamble, and the base
+prompt and tools of its definition as they are now, and for the home session
+the memory section read at that moment (kept from the previous snapshot when the
+model's counter cannot count it exactly). It is a run of
 its own, which the event stream reports with `compaction.start` and
 `compaction.end` and no turn events; queued messages wait for the next run.
 
-`202` with the `Run`. `409` when a run is going, when the computer could not
-be started, or when the conversation has nothing older than what a compaction
-keeps. A compaction that fails ends the run in `error`, with the conversation
-as it was.
+`202` with the `Run`. `409` for a subagent's session, when a run is going,
+when the computer could not be started, or when the conversation has nothing
+older than what a compaction keeps. A compaction that fails ends the run in
+`error`, with the conversation as it was.
+
+### `POST /api/sessions/{id}/cancel`
+
+Stops a subagent's current assignment through the lifecycle service, which holds
+it from before its run exists until its report is kept, so it works whenever the
+state is `running` or `waiting`. No body. The subagent ends `cancelled` and stays
+resumable; a subagent with nothing to stop is returned unchanged. It publishes
+`session.updated` on `global`.
+
+`200` with the `Session`. `404` when there is none. `409` when the session is
+not a subagent.
 
 ### `POST /api/runs/{id}/abort`
 
 Cancels the run and waits for its goroutine to stop. `200` with the final
-`Run`. A run row left `running` by a harness restart is recorded as aborted;
+`Run`. Aborting a subagent's run records the subagent `cancelled`; it stays
+resumable. A run row left `running` by a harness restart is recorded as aborted;
 a run that already finished is `409`; an unknown run is `404`.
+
+Before serving requests after a restart, sessions get an error result for each unanswered tool call: "Eika restarted while this ran;
+its outcome is unknown. Check before retrying." Interrupted children become
+`idle`, with no waiting reason, and home gets a notice naming each child.
+An interrupted home reply also gets a notice. Startup recovers missing report
+notices. Recovered notices wait for the next home turn, from a user message or
+a later new report. Children resume only through `subagent_message`. Converted routine sessions get missing results but no agent notice or state
+change. No response or event shape changes.
 
 ### `POST /api/questions/{id}/answer`
 
@@ -720,9 +814,8 @@ has run:
 A model is one model of a provider. A `chat` model holds a conversation, which
 is what runs use. A `decision` model answers typed questions at `/v1/systemone`
 and cannot hold a conversation, so no route that picks a model for a
-conversation accepts one: the `default_model` setting, a profile's or a
-session's `model_id`, the `model` of a message, and the `deep`, `main` and
-`fast` classes of `model_classes` all answer `400` for it.
+conversation accepts one: the `default_model` setting and the `deep`, `main`
+and `fast` classes of `model_classes` answer `400` for it.
 
 ### `GET /api/models`
 
@@ -792,118 +885,12 @@ the model is there. `400` with what the endpoint answered when it failed.
 | `image_input` | boolean | As on `POST`. |
 | `created_at`, `updated_at` | time | When it was made and last changed. |
 
-## Profiles
-
-A profile is a named configuration of what a run sends: the model, the base
-prompt, extra instructions, the tools, and
-the sampling parameters. Every setting is optional, and one that is not set
-falls through. A run's configuration is resolved one value at a time, from
-the first layer that sets it:
-
-```
-the message's model -> the session's overrides -> the profile -> the model row -> the default
-```
-
-The model row supplies `max_output` and `reasoning_effort`; the default is
-the `default_model` setting, the built-in prompt, every
-tool, and for any other sampling parameter the endpoint's own default. A
-reasoning effort chosen above the model row that the model does not offer is
-not sent: the model row's own is, and the configuration names the dropped
-one. The harness creates one profile, `Default`, that sets nothing.
-
-### `GET /api/profiles`
-
-`200` with `{"profiles": [Profile], "default": string, "prompts":
-{"chat": string}}`: every profile, oldest first, the id of the default one,
-and the built-in base prompt.
-
-### `GET /api/profiles/inherited`
-
-`?model_id=` optional. `200` with the Configuration a profile that chooses
-that model (absent or empty: none) falls through to: the model's own values
-and the defaults. Nothing else a profile sets changes it, so a profile
-editor asks with the model it has chosen before the profile is saved, and a
-new profile asks before it exists. `400` for a model that does not exist.
-
-### `POST /api/profiles`
-
-| Field | Type | Meaning |
-|---|---|---|
-| `name` | string, required | Unique, 1 to 64 characters. |
-| `description` | string | At most 500 characters. |
-| ProfileSettings fields | | What the profile sets. |
-| `tools` | string array or null | The tool choice, in the shape `PUT /api/sessions/{id}/tools` takes; null is every tool, an empty list none. A profile may choose a tool that needs a computer: a chat's runs leave it out. |
-
-`201` with the `Profile`. `400` for a bad field; `409` when the name is taken.
-
-### `PUT /api/profiles/{id}`
-
-The same body as `POST`, which replaces the whole profile. `200` with the
-`Profile`; `404` for an unknown profile. Runs already going keep the
-configuration they started with.
-
-### `DELETE /api/profiles/{id}`
-
-`204`. The sessions that chose it run with the default profile, and when it
-was the default, the first profile is. `409` for the last profile: a run
-always needs one.
-
-### ProfileSettings
-
-What a profile sets, and what a session overrides of it. A field that is
-null, an absent `model_id`, and a sampling parameter left out are not set.
-
-| Field | Type | Meaning |
-|---|---|---|
-| `model_id` | string, optional | The model, by id. |
-| `chat_prompt` | string or null | Replaces the built-in base prompt, the empty string included. At most 64 KiB. |
-| `instructions` | string or null | Follows the base prompt. At most 64 KiB. |
-| `preserve_thinking` | boolean or null | Whether the model's earlier reasoning is replayed to it, over the model's own `preserve_thinking`. |
-| `sampling` | Sampling | The sampling parameters set here. |
-
-### Sampling
-
-Every field is optional; one left out is not set.
-
-| Field | Type | Meaning |
-|---|---|---|
-| `temperature` | number, 0 to 2 | |
-| `top_p` | number, 0 to 1 | |
-| `top_k` | number, at least 1 | Not a Chat Completions field; vLLM, llama.cpp, SGLang, LM Studio, and OpenRouter read it. Sent only when set. |
-| `min_p` | number, 0 to 1 | Like `top_k`. |
-| `frequency_penalty`, `presence_penalty` | number, -2 to 2 | |
-| `seed` | number | |
-| `stop` | string array | At most 16 sequences of 1 to 256 bytes. An empty list sends none, which clears a lower layer's. |
-| `max_output` | number, at least 1 | The most tokens one response may generate. |
-| `reasoning_effort` | string | A word the model offers; the empty string leaves it to the endpoint. |
-
-### Profile
-
-| Field | Type | Meaning |
-|---|---|---|
-| `id`, `name`, `description` | string | The profile. |
-| ProfileSettings fields | | What it sets. |
-| `tools` | string array or null | Its tool choice. |
-| `inherited` | Configuration | What its unset values fall through to: the model row of the model it resolves to, and the defaults. |
-| `created_at`, `updated_at` | time | When it was made and last changed. |
-
-### Configuration
-
-A resolved configuration, with the layer each value came from.
-
-| Field | Type | Meaning |
-|---|---|---|
-| `profile_id`, `profile_name` | string | The profile it starts from. |
-| `model_id`, `model` | string | The model's id and name, empty when no model is configured. |
-| `chat_prompt` | string | The base prompt. |
-| `instructions` | string | The extra instructions, empty for none. |
-| `preserve_thinking` | boolean | Whether earlier reasoning is replayed: a layer's choice, else the model's, else off. |
-| `tools` | string array or null | The tool choice; null is every tool the session can run. |
-| `sampling` | Sampling | The sampling parameters sent. |
-| `dropped_effort` | string, optional | An effort chosen above the model that the model does not offer. |
-| `sources` | object | The layer of each value: `request`, `session`, `profile`, `model`, or `default`, keyed `profile`, `model`, `chat_prompt`, `instructions`, `preserve_thinking`, `tools`, and `sampling.<parameter>` for each parameter sent. `profile` is `session` when the session chose it. |
-
 ## Settings
+
+### `POST /api/notifications/test`
+
+`204` queues a test notification to the configured topic. Check the ntfy
+client for its arrival. `400` means no topic is configured.
 
 ### `GET /api/settings`
 
@@ -914,7 +901,14 @@ the table does not name them, every model class with the model that serves it
 now, and the name of the model that makes session titles, empty when none does
 (see `model_classes`).
 
+The `ntfy_topic` setting is a boolean in responses: true when a topic is set.
+The URL and its secret are never returned.
+
 ### `PUT /api/settings`
+
+Set `ntfy_topic` to a full HTTP or HTTPS topic URL, or null to remove it.
+The URL is sealed before storage. Configure `public_url` before setting it.
+
 
 A JSON object of the keys to write. Keys the body does not name are left
 alone; JSON `null` stores null, which means "use the default". `200` with the
@@ -930,12 +924,19 @@ stores them.
 
 | Key | Value | Meaning |
 |---|---|---|
+| `screen_required` | boolean | Block untrusted content when the guard is unavailable; default false. |
+| `screen_threshold` | number | Remove windows at or above this score, above 0 and at most 1; default is the deployment config. |
+| `memory_screen_threshold` | number | A memory write (description or body) at or above this score is saved pending, above 0 and at most 1; default is the deployment config (0.99). Ingest never reads it. |
+| `time_zone` | string | IANA time zone for new agent preamble snapshots; defaults to UTC. |
+| `locale` | string | Locale for new agent preamble snapshots, 1 to 64 ASCII letters, digits or hyphens; unspecified by default. |
 | `default_model` | string | The name of the model a run uses when neither the request nor the session's configuration names one. It must name a chat model. |
-| `default_profile` | string | The id of the profile a session that chose none runs with. It must name a profile; when that profile is deleted, the first profile is the default. |
 | `sandbox_image` | string | The image the home computer's container is created from. A container that exists keeps its image, so a change reaches the home computer only when its container is made again. |
+| `compact_idle_fill` | integer, 1 to 100 | Context fill percentage above which idle compaction may run. |
+| `compact_idle_minutes` | integer, 0 to 10080 | Minutes without important Core work before idle compaction may run. |
 | `computer_idle_minutes` | number, 0 to 10080 | How long a running computer may go without a run in it before the harness aborts its runs and stops it. A later run starts it again. 0 never stops one. Checked once a minute. |
+| `subagent_max_running` | number, 1 to 32 | How many subagents may run at once. A start or resume past it is refused to Eika as a tool error. Read at each start, so a change applies at once. |
 | `sandbox_limits` | `{"cpus", "memory_mb", "pids"}` | The home computer's limits, checked as a Sandbox's are. A field the object leaves out is 0, no limit. A write applies them to its container, running or stopped, without a restart; a stopped container also takes them at its next start. |
-| `sandbox_egress` | `{"mode", "allow"}` | The home computer's egress, applied as the limits are: a change between open and restricted moves the container between the sandbox networks, dropping the connections it has open, and the processes it starts from then on get the proxy settings that go with its network. A restricted mode is `400` on a harness without the internal sandbox network. |
+| `sandbox_egress` | `{"mode", "allow"}` | The home computer's egress, applied as the limits are: the proxy applies the mode to each new connection. A host without egress control gives computers direct routes. |
 | `setup_complete` | boolean | The user finished or skipped the guided setup. |
 | `maintenance_idle_seconds` | number, 0 to 86400 | How long a pool must have run nothing but maintenance calls before it admits a maintenance call (session titles, and later dreaming). 0 admits them at once, in order. Applied to the queue as soon as it is saved. |
 | `aging_seconds` | number, 1 to 604800 | How long a waiting model call waits for each priority level it gains, so none starves. A maintenance call that has aged one level no longer waits for an idle pool. Applied at once. |
@@ -943,7 +944,7 @@ stores them.
 | `model_classes` | object | The model each class is served by, `{"main": "qwen", "fast": "gpt-5-mini"}`. The classes are `deep`, `main`, `fast` (chat models) and `decision` (a decision model); each key must be one, and each value the name of a model of that kind or `""` for none. Harness tasks name a class, never a model. A class with none falls back, `deep` and `fast` to `main`, and a chat class that still has none to the default model (`default_model`, else the first chat model); `decision` has no fallback. Renaming a model renames it here, and deleting one leaves its classes to fall back. Session titles run on `fast` (see `session.title` in `events.md`), and are skipped when `fast` falls back onto the model assigned to `deep` and that model is on a hosted API (backend `openai`). |
 | `search_order` | array of strings | The web search providers, most preferred first, each a registered provider at most once. A provider left out is never queried; an empty list turns web search off. |
 | `search_limits` | object | Quotas by bucket, `{"exa": {"month": 500}, "marginalia": {"day": 50}}`. Each bucket must exist; `day` and `month` are whole numbers from 1 to 10 000 000, and 0 or an absent field is unlimited. Anything else is `400` naming the bucket and the range. A bucket not named keeps its default. |
-| `compaction` | object | How a conversation that outgrows its model's context window is summarized: `{"auto", "reserve_tokens", "keep_recent_tokens", "prompts": {"summary", "update", "turn_prefix"}}`. `auto` compacts before a request that would leave less than `reserve_tokens` of the window free, and once after an endpoint refuses a request as too large. `reserve_tokens` and `keep_recent_tokens` are whole numbers from 1024 to 1048576, each capped at run time to a quarter of the model's window. A prompt is at most 64 KiB, and an empty one is the built-in prompt. A field left out keeps its default; an unknown field is `400`. |
+| `compaction` | object | How a conversation that outgrows its model's context window is summarized: `{"auto", "reserve_tokens", "keep_recent_tokens", "prompts": {"summary", "update", "turn_prefix"}}`. `auto` compacts before a request that would leave less than `reserve_tokens` of the window free, and once after an endpoint refuses a request as too large. `reserve_tokens` and `keep_recent_tokens` are whole numbers from 1024 to 1048576, each capped at run time to a quarter of the model's window. The home session keeps a share of its window instead of `keep_recent_tokens` (see `POST /api/sessions/{id}/compact`), unless the window is unknown. A prompt is at most 64 KiB, and an empty one is the built-in prompt. A field left out keeps its default; an unknown field is `400`. |
 
 ### ModelClass
 
@@ -960,11 +961,14 @@ stores them.
 | Field | Type | Meaning |
 |---|---|---|
 | `sandbox_image` | string | The deployment's sandbox image, `eika-sandbox:latest` in the compose stack. |
+| `compact_idle_fill` | number | 60. |
+| `compact_idle_minutes` | number | 30. |
 | `computer_idle_minutes` | number | 15. |
+| `subagent_max_running` | number | 4. |
 | `maintenance_idle_seconds`, `aging_seconds` | number | 120 and 300. |
 | `preempt_running` | boolean | `false`. |
 | `sandbox_limits` | object | No CPU or memory limit, and 4096 processes. |
-| `sandbox_egress` | object | `open`, with the suggested allowlist: `github.com`, `*.github.com`, `*.githubusercontent.com`, `gitlab.com`, `registry.npmjs.org`, `pypi.org`, `files.pythonhosted.org`, `proxy.golang.org`, `sum.golang.org`, `crates.io`, `*.crates.io`. |
+| `sandbox_egress` | object | `public`, with the suggested allowlist: `github.com`, `*.github.com`, `*.githubusercontent.com`, `gitlab.com`, `registry.npmjs.org`, `pypi.org`, `files.pythonhosted.org`, `proxy.golang.org`, `sum.golang.org`, `crates.io`, `*.crates.io`. |
 | `search_order` | array of strings | Every web provider in its default order: `searxng`, `exa`, `tavily`, `brave`, `marginalia`. |
 | `search_limits` | object | Every quota bucket's default, as `search_limits` takes it: Exa 900 a month, Tavily 1000, Brave 2000, Marginalia 100 a day, SearXNG and GitHub unlimited. |
 | `compaction` | object | `auto` on, `reserve_tokens` 16384, `keep_recent_tokens` 20000, and the built-in prompts spelled out. |
@@ -1077,10 +1081,7 @@ form can change one entry without the others' values. An empty
 `oauth_client_secret` removes it, and so does clearing `oauth_client_id`.
 A `url` that differs from the stored one drops the stored headers, unless
 the request gives `headers`, and the OAuth tokens, which were issued for the
-old URL; the registered client is kept. A new `name` is carried into the
-tool choices of profiles and sessions, so `mcp__<old>__*` and
-`mcp__<old>__<tool>` entries become `mcp__<name>__…`. The server's
-connections end and an enabled `http` server connects again. `200` with the `MCPServer`; `400` for
+old URL; the registered client is kept. The server's connections end and an enabled `http` server connects again. `200` with the `MCPServer`; `400` for
 a bad field, a field of the other kind, or a `null` for a name with no
 stored value; `409` when the name is taken.
 
@@ -1304,8 +1305,7 @@ is accepted from the harness's own origin and from `allowed_origins`.
 
 ## Egress proxy
 
-The harness listens on `egress_listen` (`:3128`) for the sandboxes whose
-egress is restricted: an HTTP proxy that takes `CONNECT` tunnels and plain
+The harness listens on `egress_listen` (`:3128`) for sandboxes on hosts with egress control: an HTTP proxy that takes `CONNECT` tunnels and plain
 `http://` requests in absolute form. A sandbox signs in with
 `Proxy-Authorization: Basic`, its computer id and proxy token, which the
 harness puts in the proxy URL it gives the sandbox's processes. A request
@@ -1313,3 +1313,352 @@ without credentials is `407`; one for a host the computer's mode or
 allowlist does not admit is `403`; the
 proxy connects to public addresses only, so a private one is `403` whatever
 the mode. The body of every refusal is one line saying why.
+
+## Agent definitions
+
+### `GET /api/agents`
+
+Returns `{agents: Agent[]}` in name order. Only `eika`, `researcher` and `worker`
+exist. No model assignment is needed to read or edit definitions. A session's
+agent selects the runtime definition. Each new run resolves the effective
+class and prompt; a running loop keeps its configuration. Agent tools are fixed
+built-ins; MCP is excluded.
+Workers and researchers have `ask_user`. Questions wait in memory and reach
+home as notices; Eika answers with `subagent_message`. The question-answer HTTP
+route does not answer subagent questions.
+Context and prediction routes use the same resolution and tool schemas as runs;
+a nonempty `?model=` is refused with 400. The compact route also refuses an
+explicit model and uses the agent's compaction prompts.
+
+`Agent` contains these effective fields:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `name` | string | Built-in identity |
+| `description` | string | Role description |
+| `class` | string | Chat class: `main`, `fast` or `deep` |
+| `prompt` | string | System prompt, including an explicit empty override |
+| `tools` | string[] | Fixed, sorted names of shipped tools |
+| `max_turns` | integer | Model-call limit: 40 for Eika, 200 for subagents |
+| `compaction` | object | Built-in `summary`, `update`, `turn_prefix` strings |
+| `builtin` | object | The same definition fields with built-in values |
+| `overrides` | object | Nullable `class` and `prompt` strings |
+
+### `GET /api/agents/{name}`
+
+Returns one `Agent`. An unknown name returns 404.
+
+### `PUT /api/agents/{name}`
+
+Replaces the override with `{class?: string | null, prompt?: string | null}`.
+Null or an omitted field uses the built-in value. An empty prompt is an explicit
+value. Class must be `main`, `fast` or `deep`; `decision` is refused. Prompt is
+limited to 65,536 UTF-8 bytes and cannot contain NUL. The raw request body
+must be valid UTF-8. Other fields are refused.
+Returns the effective `Agent` with defaults and overrides. Unknown names return 404; invalid input
+returns 400. This route cannot add agents or change tools or compaction prompts.
+
+### `DELETE /api/agents/{name}`
+
+Removes both overrides and returns 204, including when no override exists.
+The built-in definition stays. An unknown name returns 404.
+All agent routes require bearer authentication.
+
+## Projects
+
+Project metadata excludes instructions. All routes require a bearer token.
+Archive a project with `status`; there is no delete route. IDs identify records
+in detail and update routes. Slugs are fixed after creation.
+
+### `GET /api/projects`
+
+Returns `{projects: Project[]}` in slug order, including all statuses. An empty
+list is `[]`.
+
+| Project field | Type | Meaning |
+|---|---|---|
+| `id` | string | Record ID |
+| `slug` | string | Unique, 1–80 ASCII bytes; lowercase letters and digits, with single hyphens between groups |
+| `name` | string | Display name, nonblank, at most 200 UTF-8 bytes |
+| `description` | string | Summary, at most 4096 UTF-8 bytes; empty is allowed |
+| `status` | string | `active`, `paused`, `done` or `archived` |
+| `directory` | string | Clean absolute POSIX path on the home computer, at most 4096 UTF-8 bytes |
+| `created_at`, `updated_at` | string | UTC RFC 3339 timestamps |
+
+Text cannot contain NUL. A directory cannot be `/`, have a trailing slash,
+contain backslashes, control characters, repeated slashes, or `.` or `..`
+components. The API stores paths only; it does not create or access files.
+
+### `POST /api/projects`
+
+Accepts `{slug, name, description?, status?, directory?}`. Omitted or empty
+`status` defaults to `active`; omitted or empty `directory` defaults to
+`/home/eika/projects/<slug>`. Omitted description is empty. Returns the Project
+with 201. A duplicate slug returns 409. Invalid fields return 400.
+
+### `GET /api/projects/{id}`
+
+Returns the Project, or 404 for an unknown ID.
+
+### `PATCH /api/projects/{id}`
+
+Accepts optional `name`, `description`, `status` and `directory`. Omitted or null
+fields keep their stored values. An empty description clears it; empty name,
+status or directory is invalid. Returns the Project, or 404 for an unknown ID.
+Invalid fields return 400. Updates apply together under a row lock. A null body,
+unknown field, `slug` or `instructions` returns 400. Creation also rejects a null
+body and unknown fields, including `instructions`.
+
+## Skills
+
+The user's skills: install by `.zip` upload, list, read, enable, disable and
+delete. All routes require authentication and no agent can reach them. Every
+change goes through the skill installer (stage, hash check, directory swap, then
+the row, in one critical section). Until Core has reconciled the skill rows with
+the skills volume, and on a host that cannot run the installer, every skills
+route returns 503 with `skills are not available right now: the skills installer
+is not up`.
+
+A skill is identified by its `name` (1 to 64 lowercase letters, digits and single
+hyphens); any other name is a 404. An install never enables: the row is created
+`enabled: false`, and enabling is the user's explicit call after reading the
+skill. Every change publishes `skills.changed` on topic `skills` after it is
+durable (see `events.md`). User changes (`install`, `enable`, `disable`,
+`delete`) are written to the audit log as `setting` events of kind `skill`,
+with no content.
+
+### `POST /api/skills`
+
+Installs a skill from a zip. The body is `multipart/form-data` with exactly one
+part, named `file`; any other part, a missing or empty file, or another content
+type is 400. The body is bounded: a zip over 5 MiB (or a `Content-Length` over
+that plus 64 KiB of framing) is 413 `too_large`. Archive limits (20 MiB
+expanded, 200 files, 5 levels deep, `SKILL.md` 64 KiB, regular files only, no
+symlinks or escaping paths) and a `SKILL.md` that cannot be used are 400 with the
+reason. A credential in any text file is 400 and names the file and the pattern,
+never the value. The screen otherwise never blocks: its hits and `unscanned` are
+in `screen`.
+
+Returns 201 `{skill: Skill, unchanged: boolean}`. A new skill is disabled. An
+install of an installed name with identical contents changes nothing
+(`unchanged: true`, no event); with different contents it replaces the skill and
+returns it to disabled, with its new `warnings` and `screen`. A broken skill with
+identical contents is repaired by installing it again.
+
+### `GET /api/skills`
+
+Returns `{skills: [...]}` ordered by name. Each item has `name`, `description`,
+`enabled`, `broken`, `installed_at`, `sha`, `file_count`, `warning_count`,
+`span_count` (screen hits) and `unscanned`.
+
+### `GET /api/skills/{name}`
+
+Returns the Skill in full, or 404.
+
+### `POST /api/skills/{name}/enable`
+
+Enables the skill and returns the Skill (200); enabling an enabled skill changes
+nothing. Enabling is refused with 409 when the skill is `broken`, and when the
+catalog of every enabled skill, one `- name: description` line each under its
+heading, would exceed 2,000 tokens counted exactly with the model's own counter
+(the same counter as a memory pin). With no exact count the answer is 503 and
+nothing changes. Nothing is pushed.
+
+### `POST /api/skills/{name}/disable`
+
+Disables the skill and returns the Skill. Never refused for the budget.
+
+### `DELETE /api/skills/{name}`
+
+Removes the skill's directory and then its row. 204, or 404.
+
+### Skill
+
+| Field | Type | Meaning |
+|---|---|---|
+| `name`, `description`, `license`, `compatibility`, `allowed_tools` | string | The frontmatter as parsed. `allowed_tools` is shown only; it grants nothing. |
+| `metadata` | object of strings | The frontmatter `metadata` map. |
+| `body` | string | The stored `SKILL.md` text after the frontmatter. Screen span offsets into it are bytes. |
+| `enabled` | boolean | The user's choice. |
+| `broken` | string | Empty, or why the skill cannot be loaded or enabled: `directory missing` or `directory changed since install`. |
+| `sha` | string | Hash of the installed tree. |
+| `installed_at` | RFC 3339 timestamp | |
+| `files` | array of `{path, size}` | Every file, `SKILL.md` included. |
+| `warnings` | array of strings | Faults the parser tolerated. |
+| `screen` | object or null | `{spans, max_score, unscanned}`; a span is `{field, start, end, score, text}` with `field` `description` or `body`. `unscanned` is true when the guard did not answer. |
+
+## Memory
+
+The user's view of Eika's memory: list, search, read, and the changes only the
+user makes. All routes require authentication. Every change goes through the
+same writer the agent's memory tools use (file write, git commit, index row, in
+one critical section), so there is no second write path. Agents cannot reach
+these routes. Until startup recovery of the memory index has finished, every
+memory route returns 503 with `memory is not available yet`.
+
+A memory is identified by its `name`, a lowercase slug of at most 64
+characters; any other name is a 404. `content_sha` is the digest of the memory
+file's bytes and changes with every change. It is the stale-edit
+precondition: send the one you read, and a change made against older content
+returns 409 and writes nothing. `PATCH` requires it; pin, unpin, archive and
+purge accept it and check it when given.
+
+Screening applies to the user's edits as it does to the agent's writes
+(P5-00 default 3). The edited description and body go through Sentry's memory
+check: a credential is refused with 400 and the reason (never the secret), even
+though the user typed it; a flagged text, or a guard that did not answer, makes
+an active memory `pending` (and unpinned) and keeps its text intact for the
+Inbox, where only the user's explicit accept makes it active; screening that is
+required but unavailable, or a check that cannot run, returns 503 and writes
+nothing. Editing a pending memory keeps it pending, whatever the check says;
+editing an archived one keeps it archived. Archive and purge need no screen.
+User changes (`edit`, `pin`, `unpin`, `archive`, `purge`) are written to the
+audit log as `setting` events of kind `memory`, with no text.
+
+### `GET /api/memories`
+
+Lists memories, newest `updated` first with name breaking ties, or searches
+them. Query parameters (unknown ones return 400):
+
+| Parameter | Meaning |
+|---|---|
+| `limit` | Page size, 1 to 50; default 20. |
+| `after` | The `next_cursor` of the previous page (list only). |
+| `state` | `active`, `pending` or `archived` (list only). |
+| `type` | `user`, `preference`, `person`, `fact` or `procedure`. |
+| `pinned` | `true` or `false` (list only). |
+| `q` | Full-text search, 1 to 200 characters. With `q` the route returns the best matches, at most `limit`, with no cursor; archived ones only with `include_archived=true`. A search takes only `q`, `type`, `include_archived` and `limit`. |
+
+Returns `{memories: [...], next_cursor?: string}` (200). Each item has `name`,
+`description`, `type`, `state`, `pinned`, and for a list `expires`, `updated`
+and `content_sha` (bodies are left out); for a search, `snippet`, the start of
+the body. `next_cursor` is absent on the last page. An invalid `after` returns 400.
+
+### `GET /api/memories/{name}`
+
+Returns the memory (200): `name`, `description`, `type`, `source`, `created`,
+`updated`, `expires` (empty for none), `pinned`, `state`, `body`, `content_sha`,
+and when present `screen` (`{spans, max_score, unscanned}`, the verdict behind
+a pending memory; span text is the flagged text) and `archive_reason`. An unknown
+name returns 404.
+
+### `PATCH /api/memories/{name}`
+
+Requires `{content_sha: string}` and at least one of `description` (20 to 200
+characters, one line), `type`, `body` (at most 2048 bytes) and `expires`
+(`YYYY-MM-DD`, or `""` to clear). A field left out is kept. Returns the stored
+memory (200); check `state`, since a flagged edit returns `pending`. Errors:
+400 for an invalid field or a credential, 404, 409 for a stale `content_sha`
+or an edit that would put the pinned section over 12 memories or 3,000 tokens,
+and 503 when screening or the exact token count is unavailable.
+
+### `POST /api/memories/{name}/pin`
+### `POST /api/memories/{name}/unpin`
+
+Body `{content_sha?: string}` (an empty body is also accepted). Pin sets `pinned`; only an active memory
+can be pinned (409 otherwise), and the pinned set must stay within 12 memories
+and 3,000 tokens, counted exactly with the home model's counter with labels
+included (409 over the limit; 503 when the count is not exact, since an
+estimate is never accepted). Unpin needs no count. Both return the memory (200),
+and pinning an already pinned memory changes nothing.
+
+### `POST /api/memories/{name}/archive`
+
+Body `{reason?: string, content_sha?: string}`; a reason is 1 to 200
+characters and defaults to `archived by the user`. Moves the memory to
+`archived`, records the reason, and returns it (200). The file stays in git.
+
+### `DELETE /api/memories/{name}`
+
+Purges a memory: the file is removed and its index row deleted in one git
+commit. Optional query `content_sha`. Returns 204. **Purge does not rewrite
+history:** the earlier commits of the memory repository, old sessions that
+quoted the text, and backups can still hold it. Archive is the reversible way
+to forget; purge is for the row and file only.
+
+## Inbox
+
+The Inbox's memory half: the pending list and count, and the user's answers
+to them. All routes require authentication, answer 503 until memory recovery
+has finished, and are the user's alone: accepting is an explicit state change
+(`pending` to `active`) with no agent tool behind it. Both answers go through
+the memory writer and require the `content_sha` the client read, checked again
+inside its lock. A stale answer returns 409 and writes nothing; so does an
+answer to a memory that is no longer pending (already accepted, rejected or
+archived), which is how a repeated answer from a second client is refused.
+Answers are audited as `setting` events of kind `memory` (`accept`, `reject`),
+with no text. Each durable change publishes events on topic `inbox` (see
+`docs/api/events.md`); nothing is pushed to a phone and no run waits on an
+answer.
+
+### `GET /api/inbox/count`
+
+Returns `{pending: integer}` (200): the memories in state `pending`.
+
+### `GET /api/inbox/memories`
+
+Lists pending memories in full, newest `updated` first with name breaking ties.
+Query: `limit` (1 to 50, default 20) and `after` (the opaque `next_cursor` of the
+previous page). Returns `{pending, memories, next_cursor?}` (200): `pending` is
+the total waiting, and each memory is as `GET /api/memories/{name}` returns it,
+with `screen` (the flagged spans) and `content_sha`.
+
+### `POST /api/inbox/memories/{name}/accept`
+
+Body as `PATCH /api/memories/{name}`: `content_sha` is required, and
+`description`, `type`, `body` and `expires` are optional edits applied in the
+same step (edit and accept). Makes the memory `active` and drops its screen
+verdict; it returns the memory (200). The final text always goes through the
+credential check, even unchanged: a credential is 400 with the reason, and the
+memory stays pending. A text the screen still flags is accepted, because this
+is the user's explicit promotion; a required screen that is unavailable is 503.
+Format errors are 400, a stale `content_sha` and a memory that is not pending
+are 409. To change a pending memory without accepting it, use `PATCH`.
+
+### `POST /api/inbox/memories/{name}/reject`
+
+Body `{content_sha: string, reason?: string}`; a reason is 1 to 200 characters
+and defaults to `rejected by the user`. Archives the pending memory, keeping its
+screen verdict, and returns it (200). The file stays in git. Errors as accept.
+
+## User instructions
+
+All instruction routes require authentication. Agents have no tool that writes
+instructions. Project metadata routes do not accept instruction fields.
+Text is preserved as entered, including whitespace and Markdown. Each field
+must be valid UTF-8 without NUL, at most 65536 bytes. Invalid text, missing or
+null PUT fields, and unknown fields return 400. PUT replaces all fields in its
+scope. Empty strings clear text. These routes do not change current runs.
+
+### `GET /api/instructions`
+
+Returns global instructions, with empty strings on a new database:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `about_me` | string | User's description of themselves |
+| `rules` | string | User's standing rules |
+
+### `PUT /api/instructions`
+
+Requires `{about_me: string, rules: string}`. Returns the saved global
+instructions (200). Both fields must be present.
+
+### `DELETE /api/instructions`
+
+Clears both global fields. Returns 204, including when already empty.
+
+### `GET /api/projects/{id}/instructions`
+
+Returns `{instructions: string, version: integer}` (200), with empty text and version 0 before a first write.
+The project ID is required; an unknown project returns 404.
+
+### `PUT /api/projects/{id}/instructions`
+
+Requires `{instructions: string, version: integer}`. Returns the saved text and its new version (200). A stale version returns 409; no text is changed. Each write or clear advances the version. To overwrite after a conflict, read the current version and submit it with the desired text.
+An unknown project returns 404. Other projects and global text stay unchanged.
+
+### `DELETE /api/projects/{id}/instructions`
+
+Clears project text. Returns 204, including when already empty. An unknown
+project returns 404. Project metadata stays unchanged.

@@ -9,6 +9,7 @@ import (
 	"github.com/erlidev/eika/internal/config"
 	"github.com/erlidev/eika/internal/egress"
 	"github.com/erlidev/eika/internal/event"
+	"github.com/erlidev/eika/internal/executor"
 	"github.com/erlidev/eika/internal/mcp"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/provider/openai"
@@ -19,7 +20,9 @@ import (
 	"github.com/erlidev/eika/internal/search/web"
 	"github.com/erlidev/eika/internal/search/wikipedia"
 	"github.com/erlidev/eika/internal/secret"
+	"github.com/erlidev/eika/internal/sentry"
 	"github.com/erlidev/eika/internal/store"
+	"github.com/erlidev/eika/internal/tool"
 	"github.com/erlidev/eika/internal/tool/builtin"
 )
 
@@ -39,11 +42,14 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 	if err != nil {
 		return err
 	}
+	var s *Server
 	host, err := computer.NewHost(computer.Options{
-		DockerSocket: cfg.DockerSocket,
-		Image:        cfg.SandboxImage,
-		Network:      cfg.SandboxNetwork,
-		EikadBinary:  cfg.EikadBinary,
+		Plant:                func(ctx context.Context, id string) []string { return s.plantedEnv(ctx, id) },
+		DockerSocket:         cfg.DockerSocket,
+		Image:                cfg.SandboxImage,
+		Network:              cfg.SandboxNetwork,
+		DirectNetworkAddress: opts.LiveTest,
+		EikadBinary:          cfg.EikadBinary,
 		// The internal network is used only beside the sandbox network,
 		// which is how a harness outside compose ends up without it.
 		InternalNetwork: cfg.SandboxInternalNetwork,
@@ -58,14 +64,16 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 		}
 	}()
 
-	engine, pages, err := buildSearch(ctx, cfg, st, secrets, log)
+	engine, pages, err := buildSearch(ctx, cfg, st, secrets, log, func() sentry.Gate { return s.gate })
 	if err != nil {
 		return err
 	}
 
 	questions := builtin.NewQuestions()
 	bus := event.NewBus(log)
-	tools, err := builtin.Registry(builtin.Deps{Questions: questions, Search: engine, Pages: pages})
+	tools, err := agentToolRegistry(builtin.Deps{Questions: questions, Search: engine, Pages: pages, Projects: st, History: st, ScreenHistory: func(ctx context.Context, segs []sentry.Segment) ([]sentry.Ingested, error) {
+		return s.ingestHistory(ctx, segs)
+	}}, func() *Server { return s })
 	if err != nil {
 		return err
 	}
@@ -76,12 +84,15 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 	// The proxy asks the server for a computer's policy, and the server
 	// reports what the proxy refused, so the proxy reaches the server
 	// through a variable set just below.
-	var s *Server
 	var proxy *egress.Proxy
 	if host.EgressControl() {
-		proxy = egress.New(egress.Options{Policy: func(ctx context.Context, id string) (egress.Policy, error) {
+		proxy = egress.New(egress.Options{Control: liveProxyControl(opts.LiveTest), Policy: func(ctx context.Context, id string) (egress.Policy, error) {
 			return s.EgressPolicy(ctx, id)
-		}}, log)
+		}, Halted: func() bool { return s.gate.Halted().Halted },
+			Decide: func(ctx context.Context, id, host, key, reason string) (bool, error) {
+				v, err := s.gate.Decide(ctx, sentry.Action{Key: key, Principal: sentry.Principal{Computer: id}, Kind: sentry.KindEgress, Name: host, Destination: host, EgressDenial: reason})
+				return v.Decision == sentry.Allow, err
+			}}, log)
 	}
 	s = New(cfg, log, Deps{
 		Store:     st,
@@ -104,8 +115,12 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 
 	// A container may have stopped or been removed while the harness was
 	// down. Reconciling is how the recorded states catch up; a Docker daemon
-	// that is not there yet must not stop the API from serving.
-	if err := s.Reconcile(ctx); err != nil {
+	// that is not there yet stops a controlled host from serving until it can
+	// verify that its computers are confined.
+	if err := s.reconcileComputers(ctx); err != nil {
+		if host.EgressControl() {
+			return err
+		}
 		log.Error("reconcile computers", "error", err)
 	}
 	if proxy != nil {
@@ -124,13 +139,15 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 }
 
 // buildSearch builds the search engine over the built-in backends and the
-// page reader. The sources share one client; fetch has its own, which
-// refuses to connect to a non-public address, because its URLs come from the
-// model.
-func buildSearch(ctx context.Context, cfg config.Config, st *store.Store, secrets *secret.Box, log *slog.Logger) (*search.Engine, *fetch.Reader, error) {
-	client := &http.Client{Timeout: search.Timeout}
+// page reader. Hosted sources share a guarded client; fetch has its own.
+// SearXNG uses a client that exempts its configured local origin.
+func buildSearch(ctx context.Context, cfg config.Config, st *store.Store, secrets *secret.Box, log *slog.Logger, gate func() sentry.Gate) (*search.Engine, *fetch.Reader, error) {
+	client := coreWebClient(gate, "")
+	client.Timeout = search.Timeout
+	searxClient := coreWebClient(gate, cfg.SearxNGURL)
+	searxClient.Timeout = search.Timeout
 	return NewSearch(ctx, cfg, st, secrets, log, search.Searchers{
-		SearxNG:      web.NewSearxNG(client, cfg.SearxNGURL),
+		SearxNG:      web.NewSearxNG(searxClient, cfg.SearxNGURL),
 		Exa:          web.NewExa(client),
 		Tavily:       web.NewTavily(client),
 		Brave:        web.NewBrave(client),
@@ -140,7 +157,7 @@ func buildSearch(ctx context.Context, cfg config.Config, st *store.Store, secret
 		GitHubCode:   github.New(client, github.DefaultURL, github.Code),
 		GitHubRepos:  github.New(client, github.DefaultURL, github.Repos),
 		GitHubIssues: github.New(client, github.DefaultURL, github.Issues),
-	}, fetch.NewClient())
+	}, coreWebClient(gate, "", cfg.FetchFixtureHosts...))
 }
 
 // NewSearch builds the search engine over searchers, and the page reader
@@ -165,7 +182,7 @@ func NewSearch(ctx context.Context, cfg config.Config, st *store.Store, secrets 
 	if err != nil {
 		return nil, nil, err
 	}
-	pages := fetch.New(fetch.Config{Client: pageClient, Tracker: tracker, Keys: backend, Quota: engine})
+	pages := fetch.New(fetch.Config{FixtureHosts: cfg.FetchFixtureHosts, Client: pageClient, Tracker: tracker, Keys: backend, Quota: engine})
 	return engine, pages, nil
 }
 
@@ -181,3 +198,18 @@ var (
 	_ search.Keys        = searchBackend{}
 	_ search.UsageStore  = searchBackend{}
 )
+
+// agentToolRegistry binds project status reads to the server's home computer,
+// and the delegation and report tools to its subagents.
+func agentToolRegistry(deps builtin.Deps, server func() *Server) (*tool.Registry, error) {
+	deps.HomeExecutor = func(ctx context.Context, sessionID string) (executor.Executor, func(), error) {
+		return server().projectExecutor(ctx, sessionID)
+	}
+	deps.Subagents = delegation{server: server}
+	deps.QuestionRelay = delegation{server: server}.AskSubagent
+	deps.Reports = delegation{server: server}
+	deps.Memory = memoryService{server: server}
+	deps.MemoryCheck = memoryCheck{server: server}
+	deps.Skills = skillService{server: server}
+	return builtin.Registry(deps)
+}

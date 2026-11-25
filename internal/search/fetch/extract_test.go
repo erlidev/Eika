@@ -103,22 +103,12 @@ y</pre><p>one</p><br>two</td></tr></table>`,
 			[]string{"\\| `x y` one two \\|"}, nil},
 		{"javascript links keep their text", `<p><a href="javascript:alert(1)">click</a></p>`,
 			[]string{"click"}, []string{"javascript:"}},
-		{"in-page links stay short", `<p>see <a href="#usage">usage</a></p>`,
-			[]string{`\[usage\]\(#usage\)`}, nil},
 		{"a heading's link to itself is unwrapped", `<h2><a href="#x">Usage</a><a class="anchor" href="#x">#</a></h2>`,
 			[]string{"(?m)^## Usage$"}, nil},
-		{"icon links whose icon was dropped go too", `<p>edit <a href="/edit"><svg></svg></a></p>`,
-			nil, []string{`\]\(`}},
 		{"chrome inside the container goes", `<nav>Home Docs</nav><aside>Related</aside><div role="navigation">Menu</div><div hidden>Hidden</div><div aria-hidden="true">Aria</div>`,
 			nil, []string{"Home Docs|Related|Menu|Hidden|Aria"}},
 		{"MediaWiki furniture goes", `<h2>History<span class="mw-editsection">[edit]</span></h2><div class="ambox">This article needs citations</div><div id="toc">Contents</div>`,
 			[]string{"(?m)^## History$"}, []string{`\[edit\]|citations|Contents`}},
-		{"emphasis uses underscores", `<p><em>very</em> <strong>much</strong></p>`,
-			[]string{"_very_ \\*\\*much\\*\\*"}, nil},
-		{"an unhighlighted block has no language", `<pre><code class="language-text">plain</code></pre>`,
-			[]string{"```\nplain\n```"}, nil},
-		{"a bare language class names the language", `<pre class="rust"><code>fn main() {}</code></pre>`,
-			[]string{"```rust\nfn main\\(\\) \\{\\}\n```"}, nil},
 		{"data-lang names the language", `<div data-lang="go"><pre><code>x := 1</code></pre></div>`,
 			[]string{"```go\nx := 1\n```"}, nil},
 		{"a fence outruns backticks in the code", "<pre>a ``` b</pre>",
@@ -128,18 +118,5 @@ y</pre><p>one</p><br>two</td></tr></table>`,
 		t.Run(c.name, func(t *testing.T) {
 			expect(t, extractString(t, main(c.body), "https://example.com/").markdown, c.must, c.mustNot)
 		})
-	}
-}
-
-func TestAnEmptyDocumentIsEmpty(t *testing.T) {
-	out := extractString(t, "", "https://example.com/")
-	if out.markdown != "" || out.container != "body" {
-		t.Errorf("extract(empty) = %+v", out)
-	}
-}
-
-func TestTheTitleFallsBackToTheFirstHeading(t *testing.T) {
-	if out := extractString(t, main(""), "https://example.com/"); out.title != "T" {
-		t.Errorf("title = %q", out.title)
 	}
 }

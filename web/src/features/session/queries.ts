@@ -13,10 +13,8 @@ import {
   getSession,
   getSessionOutline,
   getSessionPrediction,
-  listTools,
   postMessage,
   setSessionHead,
-  setSessionTools,
 } from "@/api/routes";
 import type {
   CompactRequest,
@@ -29,7 +27,6 @@ import type {
   RunStatus,
   Session,
   SessionOutline,
-  Tool,
 } from "@/api/types";
 import { draftsOf } from "@/features/session/attachments";
 import { useSessionStore } from "@/features/session/store";
@@ -192,43 +189,6 @@ export function useRewind(
     onSuccess: (_session, { text, images }) => {
       edit(text);
       editImages(draftsOf(images));
-    },
-  });
-}
-
-/**
- * useTools lists every tool a run can offer. The built-in ones are the
- * harness's build and the MCP servers' change only with an `mcp.server`
- * event, which invalidates this, so it is never refetched otherwise.
- */
-export function useTools(): UseQueryResult<Tool[]> {
-  return useQuery({
-    queryKey: queryKeys.tools(),
-    queryFn: ({ signal }) => listTools(signal),
-    staleTime: Infinity,
-  });
-}
-
-/**
- * useSetSessionTools chooses the tools the session's next run offers the
- * model; null goes back to its profile's choice.
- */
-export function useSetSessionTools(
-  sessionId: string,
-): UseMutationResult<Session, Error, string[] | null> {
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: (tools: string[] | null) => setSessionTools(sessionId, tools),
-    onSuccess: async (session) => {
-      client.setQueryData<{ session: Session; head?: Entry }>(
-        queryKeys.session(sessionId),
-        (old) => (old === undefined ? old : { ...old, session }),
-      );
-      await Promise.all([
-        client.invalidateQueries({ queryKey: queryKeys.sessionConfiguration(sessionId) }),
-        client.invalidateQueries({ queryKey: queryKeys.sessionContext(sessionId) }),
-        client.invalidateQueries({ queryKey: ["sessions"] }),
-      ]);
     },
   });
 }

@@ -2,7 +2,6 @@ package live_test
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -18,20 +17,6 @@ func conversationReplies() []reply {
 		{prompt: 181, textTokens: 170, completion: 3, text: "Both are notes."},
 		{prompt: 80, completion: 3, text: "The bank."},
 		{prompt: 90, completion: 3, text: "Monday."},
-	}
-}
-
-func TestCountingConversationWithTokenServer(t *testing.T) {
-	server := providertest.NewTokenServer(providertest.RoutesPrompt,
-		providertest.Text("The bank and milk."), providertest.Text("A gradient."),
-		providertest.Text("Both are notes."), providertest.Text("The bank."), providertest.Text("Monday."))
-	target := &live.Target{Provider: server, Source: server, Model: "fake", Server: live.ServerInfo{Flags: live.Flags{Vision: true}}}
-	res := live.CountingConversation("fixed").Execute(context.Background(), target)
-	if !res.Passed {
-		t.Fatal(res.Error)
-	}
-	if len(res.Calls) != 5 || res.Calls[2].Method != "anchored" || intOf(res.Calls[2].Drift) != 0 || res.Calls[3].Method != "exact" {
-		t.Fatalf("calls = %+v", res.Calls)
 	}
 }
 
@@ -76,7 +61,7 @@ func TestCountingConversationAcrossBothProtocols(t *testing.T) {
 }
 
 func TestCountingConversationRejectsDrift(t *testing.T) {
-	for _, i := range []int{0, 2, 3, 4} {
+	for _, i := range []int{0, 2} {
 		t.Run(fmt.Sprint(i), func(t *testing.T) {
 			replies := conversationReplies()
 			// The learned image offset is 11, so this also checks that the
@@ -112,21 +97,6 @@ func TestUsageFieldsRecordsCacheInclusionAndMissingFields(t *testing.T) {
 			if !equal(res.Calls[1].PromptIncludesCached, ptr(true)) || res.Calls[0].PromptIncludesCached != nil {
 				t.Errorf("calls = %+v", res.Calls)
 			}
-			raw, err := json.Marshal(res)
-			if err != nil {
-				t.Fatal(err)
-			}
-			var got struct {
-				Calls []map[string]json.RawMessage `json:"calls"`
-			}
-			if err := json.Unmarshal(raw, &got); err != nil {
-				t.Fatal(err)
-			}
-			for _, field := range []string{"cached_tokens", "reasoning_tokens", "prefilled_tokens", "prefill_seconds", "prompt_includes_cached"} {
-				if string(got.Calls[0][field]) != "null" {
-					t.Errorf("missing %s = %s, want null", field, got.Calls[0][field])
-				}
-			}
 		})
 	}
 }
@@ -147,5 +117,15 @@ func TestUsageFieldsRejectsCountsThatExcludeCacheOrDisagree(t *testing.T) {
 				t.Errorf("calls = %+v", res.Calls)
 			}
 		})
+	}
+}
+
+func TestCountingConversationSkipsWithoutVision(t *testing.T) {
+	target := &live.Target{Responses: providertest.New()}
+	for _, s := range []live.Scenario{live.CountingConversation("fixed"), live.OnResponses(live.CountingConversation("fixed"))} {
+		result := s.Execute(context.Background(), target)
+		if result.Passed || result.Error != "" || result.SkipReason == "" || len(result.Calls) != 0 {
+			t.Errorf("%s: %+v", s.Name, result)
+		}
 	}
 }

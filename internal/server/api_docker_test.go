@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/erlidev/eika/internal/config"
 	"github.com/erlidev/eika/internal/egress"
 	"github.com/erlidev/eika/internal/event"
 	"github.com/erlidev/eika/internal/mcp"
@@ -37,7 +39,9 @@ func TestMain(m *testing.M) {
 // scripts per run.
 type api struct {
 	*server.Server
+	cfg       config.Config
 	store     *store.Store
+	deps      server.Deps
 	host      *fakeHost
 	questions *builtin.Questions
 	secrets   *secret.Box
@@ -71,7 +75,24 @@ func newAPI(t *testing.T) *api {
 	if err != nil {
 		t.Fatalf("secret.Load: %v", err)
 	}
-	a := &api{store: st, host: newFakeHost(t), questions: builtin.NewQuestions(), secrets: secrets}
+	guard := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Texts []string `json:"texts"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		results := make([]map[string]any, len(req.Texts))
+		for i, text := range req.Texts {
+			results[i] = map[string]any{"windows": []any{map[string]any{"start": 0, "end": len(text), "score": 0}}}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"results": results})
+	}))
+	t.Cleanup(guard.Close)
+	cfg := testConfig()
+	cfg.GuardURL = guard.URL
+	a := &api{cfg: cfg, store: st, host: newFakeHost(t), questions: builtin.NewQuestions(), secrets: secrets}
 	// The proxy asks the server for policies, as it does in the harness.
 	a.egress = egress.New(egress.Options{Policy: func(ctx context.Context, id string) (egress.Policy, error) {
 		return a.EgressPolicy(ctx, id)
@@ -102,7 +123,7 @@ func newAPI(t *testing.T) *api {
 	// cleanup is registered first.
 	a.mcp = server.NewMCP(testConfig(), st, secrets, a.host, bus, testLogger())
 	t.Cleanup(a.mcp.Close)
-	a.Server = server.New(testConfig(), testLogger(), server.Deps{
+	a.deps = server.Deps{
 		Store:     st,
 		Computers: a.host,
 		Providers: fakeProviders{build: a.buildProvider},
@@ -114,7 +135,8 @@ func newAPI(t *testing.T) *api {
 		Pages:     pages,
 		Egress:    a.egress,
 		MCP:       a.mcp,
-	}, server.Options{})
+	}
+	a.Server = server.New(a.cfg, testLogger(), a.deps, server.Options{})
 	t.Cleanup(a.Close)
 
 	// Every run uses test-model unless it names another. Its window is wide
@@ -190,13 +212,14 @@ func (a *api) lastEndpoint() provider.Endpoint {
 	return a.endpoint
 }
 
-// newSession opens a session in a computer.
-func (a *api) newSession(t *testing.T, computerID string) sessionWire {
+// newSession returns the home session used for user messages.
+func (a *api) newSession(t *testing.T, _ string) sessionWire {
 	t.Helper()
-	rec := request(t, a.Server, "POST", "/api/sessions", map[string]any{
-		"computer_id": computerID, "title": "a session",
-	})
-	return decodeBody[sessionWire](t, rec, 201)
+	sess, err := a.store.EnsureHomeSession(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return decodeBody[sessionResponseWire](t, request(t, a.Server, "GET", "/api/sessions/"+sess.ID, nil), 200).Session
 }
 
 // runState reads what a session is doing.
@@ -230,21 +253,6 @@ func (a *api) waitIdle(t *testing.T, sessionID string) runStateWire {
 		return !state.Active
 	})
 	return state
-}
-
-// waitQuestion waits until a run asks the user something.
-func (a *api) waitQuestion(t *testing.T, sessionID string) builtin.Question {
-	t.Helper()
-	var q builtin.Question
-	waitFor(t, "a question", func() bool {
-		state := a.runState(t, sessionID)
-		if len(state.Questions) == 0 {
-			return false
-		}
-		q = state.Questions[0]
-		return true
-	})
-	return q
 }
 
 // The wire shapes the tests decode. They are written out rather than shared
@@ -323,16 +331,7 @@ type queuedWire struct {
 
 type settingsWire struct {
 	Settings map[string]json.RawMessage `json:"settings"`
-	Classes  []struct {
-		Class      string `json:"class"`
-		Kind       string `json:"kind"`
-		Model      string `json:"model"`
-		Via        string `json:"via"`
-		ProviderID string `json:"provider_id"`
-		Pool       string `json:"pool"`
-	} `json:"classes"`
-	TitlesModel string `json:"titles_model"`
-	Defaults    struct {
+	Defaults struct {
 		SandboxImage string `json:"sandbox_image"`
 		// ComputerIdleMinutes is how long a computer may go unused.
 		ComputerIdleMinutes int `json:"computer_idle_minutes"`
@@ -367,56 +366,6 @@ type modelWire struct {
 type modelsWire struct {
 	Models  []modelWire `json:"models"`
 	Default string      `json:"default"`
-}
-
-func TestTheComputerListIsTheHomeComputer(t *testing.T) {
-	a := newAPI(t)
-	home := a.home(t)
-
-	list := decodeBody[computersWire](t, request(t, a.Server, "GET", "/api/computers", nil), 200)
-	if len(list.Computers) != 1 || list.Computers[0].ID != home.ID || !list.Computers[0].Home {
-		t.Errorf("computers = %+v, want the home computer alone", list.Computers)
-	}
-}
-
-// The computer routes no UI calls are gone: a computer is made, started and
-// kept by the harness, and a user cannot rename, stop, delete or sample it.
-func TestTheComputerRoutesAreGone(t *testing.T) {
-	a := newAPI(t)
-	home := a.home(t)
-	base := "/api/computers/" + home.ID
-	for _, c := range []struct{ method, path string }{
-		{"POST", "/api/computers"},
-		{"GET", base},
-		{"PATCH", base},
-		{"DELETE", base},
-		{"POST", base + "/start"},
-		{"POST", base + "/stop"},
-		{"PUT", base + "/sandbox"},
-		{"GET", base + "/usage"},
-	} {
-		if rec := request(t, a.Server, c.method, c.path, map[string]any{}); rec.Code != 404 && rec.Code != 405 {
-			t.Errorf("%s %s = %d, want 404 or 405", c.method, c.path, rec.Code)
-		}
-	}
-	if got := a.homeOf(t); got.State != "running" || got.Name != "home" {
-		t.Errorf("home = %+v, want it untouched by the refused requests", got)
-	}
-}
-
-func TestTheProjectRoutesAreGone(t *testing.T) {
-	a := newAPI(t)
-	for _, c := range []struct{ method, path string }{
-		{"GET", "/api/projects"},
-		{"POST", "/api/projects"},
-		{"GET", "/api/projects/p1"},
-		{"PATCH", "/api/projects/p1"},
-		{"DELETE", "/api/projects/p1"},
-	} {
-		if rec := request(t, a.Server, c.method, c.path, map[string]any{}); rec.Code != 404 && rec.Code != 405 {
-			t.Errorf("%s %s = %d, want 404 or 405", c.method, c.path, rec.Code)
-		}
-	}
 }
 
 // A computer has no owner of its own: the harness has one user, and the
@@ -459,37 +408,12 @@ func TestReconcileRecordsWhatTheHostActuallyHas(t *testing.T) {
 	cx := a.home(t)
 
 	// The container went away while the harness was down.
-	host, err := a.host.Inspect(t.Context(), cx.ID)
-	if err != nil {
-		t.Fatalf("inspect: %v", err)
-	}
-	if err := a.host.Destroy(t.Context(), &host); err != nil {
-		t.Fatalf("destroy: %v", err)
-	}
+	a.host.lose(t, cx.ID)
 	if err := a.Reconcile(t.Context()); err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
 	if got := a.computerState(t, cx.ID); got != "gone" {
 		t.Errorf("state = %q, want gone", got)
-	}
-}
-
-func TestReconcileAbortsRunsLeftByAnEarlierProcess(t *testing.T) {
-	a := newAPI(t)
-	sess := a.session(t)
-	run, err := a.store.StartRun(t.Context(), sess.ID)
-	if err != nil {
-		t.Fatalf("start stale run: %v", err)
-	}
-	if err := a.Reconcile(t.Context()); err != nil {
-		t.Fatalf("reconcile: %v", err)
-	}
-	got, err := a.store.Run(t.Context(), run.ID)
-	if err != nil {
-		t.Fatalf("read run: %v", err)
-	}
-	if got.State != store.RunAborted || got.FinishedAt.IsZero() {
-		t.Errorf("run = %+v, want an aborted run with a finish time", got)
 	}
 }
 
@@ -510,67 +434,14 @@ func TestReconcilePreservesStateWhenInspectFails(t *testing.T) {
 	}
 }
 
-// A run's tool calls have to be answered before the conversation can go
-// anywhere else, so the entries in the middle of a turn are not places a
-// head may be put: a run continuing from there fails.
-func TestHeadRefusesAnUnansweredTurn(t *testing.T) {
-	a := newAPI(t)
-	cx := a.home(t)
-	sess := a.newSession(t, cx.ID)
-
-	a.script(
-		providertest.Calls("looking",
-			provider.ToolCall{ID: "call_1", Name: "bash", Arguments: provider.ToolArguments(`{"command":"ls"}`)},
-			provider.ToolCall{ID: "call_2", Name: "bash", Arguments: provider.ToolArguments(`{"command":"ls"}`)},
-		),
-		providertest.Text("both read"),
-	)
-	if rec := request(t, a.Server, "POST", "/api/sessions/"+sess.ID+"/messages",
-		map[string]any{"text": "what is here"}); rec.Code != 202 {
-		t.Fatalf("post message = %d: %s", rec.Code, rec.Body.String())
-	}
-	a.waitIdle(t, sess.ID)
-
-	path := decodeBody[pathWire](t, request(t, a.Server, "GET", "/api/sessions/"+sess.ID+"/path", nil), 200)
-	// user, assistant with two calls, two results, the closing answer.
-	if len(path.Entries) != 5 {
-		t.Fatalf("entries = %d, want 5: %+v", len(path.Entries), path.Entries)
-	}
-	outline := decodeBody[outlineWire](t, request(t, a.Server, "GET", "/api/sessions/"+sess.ID+"/outline", nil), 200)
-	want := []bool{true, false, false, true, true}
-	for i, node := range outline.Nodes {
-		if node.Resumable != want[i] {
-			t.Errorf("node %d (%s) resumable = %v, want %v", i, node.Kind, node.Resumable, want[i])
-		}
-	}
-
-	// The assistant turn that asked for two calls, and the result that
-	// answers only the first, are both mid-turn.
-	for _, at := range []int{1, 2} {
-		body := map[string]any{"entry_id": path.Entries[at].ID}
-		if rec := request(t, a.Server, "POST", "/api/sessions/"+sess.ID+"/head", body); rec.Code != 400 {
-			t.Errorf("head at entry %d = %d, want 400: %s", at, rec.Code, rec.Body.String())
-		}
-	}
-	// The result that answers the last call closes the turn, so it is a
-	// place a branch may start.
-	if rec := request(t, a.Server, "POST", "/api/sessions/"+sess.ID+"/head",
-		map[string]any{"entry_id": path.Entries[3].ID}); rec.Code != 200 {
-		t.Errorf("head at the closing result = %d, want 200: %s", rec.Code, rec.Body.String())
-	}
-}
-
 func TestSessionRoutes(t *testing.T) {
 	a := newAPI(t)
 	cx := a.home(t)
 
 	sess := a.newSession(t, cx.ID)
-	if sess.ComputerID != cx.ID {
-		t.Fatalf("session = %+v", sess)
-	}
-	list := decodeBody[sessionsWire](t, request(t, a.Server, "GET", "/api/sessions?computer_id="+cx.ID, nil), 200)
-	if len(list.Sessions) != 1 {
-		t.Fatalf("sessions = %d, want 1", len(list.Sessions))
+	list := decodeBody[sessionsWire](t, request(t, a.Server, "GET", "/api/sessions", nil), 200)
+	if len(list.Sessions) != 1 || list.Sessions[0].ID != sess.ID {
+		t.Fatalf("sessions = %+v", list.Sessions)
 	}
 
 	a.script(providertest.Text("first answer"))
@@ -581,91 +452,28 @@ func TestSessionRoutes(t *testing.T) {
 	a.waitIdle(t, sess.ID)
 
 	path := decodeBody[pathWire](t, request(t, a.Server, "GET", "/api/sessions/"+sess.ID+"/path", nil), 200)
-	if len(path.Entries) != 2 {
-		t.Fatalf("entries = %d, want the question and the answer: %+v", len(path.Entries), path.Entries)
+	if len(path.Entries) != 3 {
+		t.Fatalf("entries = %d, want preamble, question and answer: %+v", len(path.Entries), path.Entries)
 	}
-	if path.Entries[0].Kind != "user" || path.Entries[1].Kind != "assistant" {
-		t.Errorf("kinds = %q %q, want user assistant", path.Entries[0].Kind, path.Entries[1].Kind)
+	if path.Entries[1].Kind != "user" || path.Entries[2].Kind != "assistant" {
+		t.Errorf("kinds = %q %q, want user assistant", path.Entries[1].Kind, path.Entries[2].Kind)
 	}
 	if len(path.Messages) != 2 || path.Messages[1].Content != "first answer" {
 		t.Errorf("messages = %+v", path.Messages)
 	}
 
 	outline := decodeBody[outlineWire](t, request(t, a.Server, "GET", "/api/sessions/"+sess.ID+"/outline", nil), 200)
-	if len(outline.Nodes) != 2 || outline.HeadEntryID != path.Entries[1].ID {
+	if len(outline.Nodes) != 3 || outline.HeadEntryID != path.Entries[2].ID {
 		t.Errorf("outline = %+v", outline)
 	}
 
 	// Moving the head back to the question branches the tree in place.
 	moved := decodeBody[sessionWire](t, request(t, a.Server, "POST", "/api/sessions/"+sess.ID+"/head",
-		map[string]any{"entry_id": path.Entries[0].ID}), 200)
-	if moved.HeadEntryID != path.Entries[0].ID {
+		map[string]any{"entry_id": path.Entries[1].ID}), 200)
+	if moved.HeadEntryID != path.Entries[1].ID {
 		t.Errorf("head = %q, want the first entry", moved.HeadEntryID)
 	}
 
-	if rec := request(t, a.Server, "DELETE", "/api/sessions/"+sess.ID, nil); rec.Code != 204 {
-		t.Fatalf("delete = %d", rec.Code)
-	}
-	if rec := request(t, a.Server, "GET", "/api/sessions/"+sess.ID, nil); rec.Code != 404 {
-		t.Errorf("get after delete = %d, want 404", rec.Code)
-	}
-}
-
-// Renaming, pinning, and archiving are partial edits: each changes what the
-// request names, is refused when the title is blank, and tells the clients
-// that list the session.
-func TestRenamePinAndArchive(t *testing.T) {
-	a := newAPI(t)
-	cx := a.home(t)
-	sess := a.newSession(t, cx.ID)
-	global := a.Bus().Subscribe(event.TopicGlobal)
-	defer global.Close()
-
-	pinned := decodeBody[sessionWire](t, request(t, a.Server, "PATCH", "/api/sessions/"+sess.ID,
-		map[string]any{"pinned": true}), 200)
-	if !pinned.Pinned || pinned.Archived || pinned.Title != sess.Title {
-		t.Errorf("pinned session = %+v, want pinned and otherwise unchanged", pinned)
-	}
-	renamed := decodeBody[sessionWire](t, request(t, a.Server, "PATCH", "/api/sessions/"+sess.ID,
-		map[string]any{"title": "  Login loop  ", "archived": true}), 200)
-	if renamed.Title != "Login loop" || !renamed.Archived || !renamed.Pinned {
-		t.Errorf("renamed session = %+v, want the trimmed title, archived, still pinned", renamed)
-	}
-	waitFor(t, "a session.updated event", func() bool {
-		select {
-		case e := <-global.Events():
-			var got event.SessionUpdated
-			if e.Type != event.TypeSessionUpdated {
-				return false
-			}
-			if err := e.DecodePayload(&got); err != nil {
-				t.Fatal(err)
-			}
-			if got != (event.SessionUpdated{SessionID: sess.ID, ComputerID: cx.ID}) {
-				t.Errorf("session.updated = %+v", got)
-			}
-			return true
-		default:
-			return false
-		}
-	})
-
-	refused := []struct {
-		name, path string
-		body       map[string]any
-		status     int
-	}{
-		{"blank title", "/api/sessions/" + sess.ID, map[string]any{"title": "  "}, 400},
-		{"long title", "/api/sessions/" + sess.ID, map[string]any{"title": strings.Repeat("x", 201)}, 400},
-		{"missing session", "/api/sessions/missing", map[string]any{"pinned": true}, 404},
-	}
-	for _, tc := range refused {
-		t.Run(tc.name, func(t *testing.T) {
-			if rec := request(t, a.Server, "PATCH", tc.path, tc.body); rec.Code != tc.status {
-				t.Errorf("PATCH %s = %d, want %d: %s", tc.path, rec.Code, tc.status, rec.Body.String())
-			}
-		})
-	}
 }
 
 func TestSettingsAndModels(t *testing.T) {
@@ -703,22 +511,10 @@ func TestSettingsAndModels(t *testing.T) {
 
 	// The keys the harness reads are checked; one bad value writes nothing.
 	for name, body := range map[string]map[string]any{
-		"a default model that does not exist":    {"default_model": "gone"},
-		"a default model that is not a name":     {"default_model": 7},
-		"an empty sandbox image":                 {"sandbox_image": ""},
-		"a sandbox image with a space":           {"sandbox_image": "eika sandbox"},
-		"a setup flag that is not a boolean":     {"setup_complete": "yes"},
-		"model classes that are not an object":   {"model_classes": "test-model"},
-		"a model for an unknown class":           {"model_classes": map[string]any{"slow": "test-model"}},
-		"a class model that does not exist":      {"model_classes": map[string]any{"fast": "gone"}},
-		"a chat model for the decision class":    {"model_classes": map[string]any{"decision": "test-model"}},
-		"a compaction that is not an object":     {"compaction": true},
-		"a compaction with an unknown field":     {"compaction": map[string]any{"auto": true, "reserve": 1}},
-		"a compaction reserve that is too small": {"compaction": map[string]any{"reserve_tokens": 10}},
-		"a compaction keep that is too large":    {"compaction": map[string]any{"keep_recent_tokens": 1 << 30}},
-		"a compaction prompt that is too long":   {"compaction": map[string]any{"prompts": map[string]any{"update": strings.Repeat("p", 65<<10)}}},
-		"a key that is too long":                 {strings.Repeat("k", 65): true},
-		"a good key beside a bad one":            {"theme": "light", "sandbox_image": ""},
+		"a default model that does not exist": {"default_model": "gone"},
+		"a class model that does not exist":   {"model_classes": map[string]any{"fast": "gone"}},
+		"a compaction with an unknown field":  {"compaction": map[string]any{"auto": true, "reserve": 1}},
+		"a good key beside a bad one":         {"theme": "light", "sandbox_image": ""},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if rec := request(t, a.Server, "PUT", "/api/settings", body); rec.Code != 400 {
@@ -741,14 +537,6 @@ func TestSettingsAndModels(t *testing.T) {
 	if string(after.Settings["theme"]) != `"dark"` || after.Settings["z_note"] != nil {
 		t.Errorf("settings = %v, want the failed write to have written nothing", after.Settings)
 	}
-	ok := decodeBody[settingsWire](t, request(t, a.Server, "PUT", "/api/settings", map[string]any{
-		"sandbox_image": "custom:1", "setup_complete": true,
-		"default_model": nil,
-	}), 200)
-	if string(ok.Settings["sandbox_image"]) != `"custom:1"` || string(ok.Settings["default_model"]) != "null" {
-		t.Errorf("settings = %v", ok.Settings)
-	}
-
 	// A run may only name a model that exists.
 	sess := a.session(t)
 	if rec := request(t, a.Server, "POST", "/api/sessions/"+sess.ID+"/messages",

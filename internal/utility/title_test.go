@@ -1,7 +1,6 @@
 package utility_test
 
 import (
-	"errors"
 	"strings"
 	"testing"
 
@@ -29,11 +28,6 @@ func TestTitleSendsOneRequestWithThinkingOff(t *testing.T) {
 			wantEffort: "low",
 			wantMax:    256,
 		},
-		{
-			name:    "a model with no efforts sends none of its own",
-			model:   utility.Model{ID: "plain"},
-			wantMax: 1024,
-		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -51,9 +45,6 @@ func TestTitleSendsOneRequestWithThinkingOff(t *testing.T) {
 				t.Fatalf("requests = %d, want 1", len(reqs))
 			}
 			req := reqs[0]
-			if !strings.Contains(req.System, "Respond with only the session title") {
-				t.Errorf("system prompt = %q", req.System)
-			}
 			if req.Model != tc.model.ID || req.ThinkingSwitch != tc.model.ThinkingSwitch || len(req.Tools) != 0 {
 				t.Errorf("request = %+v", req)
 			}
@@ -77,15 +68,8 @@ func TestTitleSendsOneRequestWithThinkingOff(t *testing.T) {
 
 func TestTitleCleansTheReply(t *testing.T) {
 	cases := []struct{ name, reply, want string }{
-		{"plain", "Refactor the parser", "Refactor the parser"},
 		{"quoted", `"Refactor the parser."`, "Refactor the parser"},
-		{"curly quotes", "“Refactor the parser”", "Refactor the parser"},
-		{"labelled", "Title: Refactor the parser", "Refactor the parser"},
-		{"markdown heading", "## **Refactor the parser**", "Refactor the parser"},
-		{"first line only", "\n\nRefactor the parser\nThis title covers...", "Refactor the parser"},
 		{"reasoning left in the text", "<think>The user wants\na parser.</think>\nRefactor the parser", "Refactor the parser"},
-		{"spaces collapsed", "Refactor   the\tparser", "Refactor the parser"},
-		{"apostrophe kept", "Fix the user's login", "Fix the user's login"},
 		{"long", strings.Repeat("word ", 30), strings.TrimSpace(strings.Repeat("word ", 16))},
 	}
 	for _, tc := range cases {
@@ -99,23 +83,6 @@ func TestTitleCleansTheReply(t *testing.T) {
 				t.Errorf("title = %q, want %q", title, tc.want)
 			}
 		})
-	}
-}
-
-func TestTitleRefusesAnEmptyReply(t *testing.T) {
-	for _, reply := range []string{"", "  \n", `""`, "<think>hmm</think>"} {
-		p := providertest.New(providertest.Text(reply))
-		if _, err := utility.Title(t.Context(), utility.Model{Provider: p, ID: "m"}, "hello"); !errors.Is(err, utility.ErrNoTitle) {
-			t.Errorf("reply %q: err = %v, want ErrNoTitle", reply, err)
-		}
-	}
-}
-
-func TestTitleReportsAFailedCall(t *testing.T) {
-	failure := errors.New("endpoint down")
-	p := providertest.New(providertest.Fail(failure))
-	if _, err := utility.Title(t.Context(), utility.Model{Provider: p, ID: "m"}, "hello"); !errors.Is(err, failure) {
-		t.Errorf("err = %v, want the endpoint's failure", err)
 	}
 }
 

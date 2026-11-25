@@ -29,15 +29,9 @@ import type {
 } from "@/api/types";
 import { useStreamSubscription } from "@/api/useStream";
 
-/**
- * refresh invalidates what a change of a server makes stale: the servers,
- * and the tool list, which holds what each server offers.
- */
+/** refresh invalidates what a change of a server makes stale: the servers. */
 async function refresh(client: QueryClient): Promise<void> {
-  await Promise.all([
-    client.invalidateQueries({ queryKey: queryKeys.mcpServers() }),
-    client.invalidateQueries({ queryKey: queryKeys.tools() }),
-  ]);
+  await client.invalidateQueries({ queryKey: queryKeys.mcpServers() });
 }
 
 /** useMCPServers lists the configured MCP servers by name. */
@@ -59,7 +53,7 @@ export function useMCPServer(id: string): UseQueryResult<MCPServerDetails> {
 /**
  * useMCPEvents keeps every MCP query current: an `mcp.server` event on the
  * global topic says a server's state, what it serves, or its configuration
- * changed. The workbench calls it once, so the settings and a chat's tools
+ * changed. The shell calls it once, so the settings and a chat's tools
  * never poll.
  */
 export function useMCPEvents(): void {

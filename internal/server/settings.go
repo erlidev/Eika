@@ -8,15 +8,15 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
 
-	"github.com/erlidev/eika/internal/computer"
-	"github.com/erlidev/eika/internal/egress"
 	"github.com/erlidev/eika/internal/inference"
 	"github.com/erlidev/eika/internal/search"
 	"github.com/erlidev/eika/internal/store"
+	"github.com/erlidev/eika/internal/subagent"
 )
 
 // The settings keys the harness reads itself. Each is validated when it is
@@ -24,10 +24,12 @@ import (
 const (
 	// settingDefaultModel names the model a run uses when the request names
 	// none.
-	settingDefaultModel = "default_model"
-	// settingDefaultProfile is the id of the profile a session runs with
-	// when it chose none.
-	settingDefaultProfile = "default_profile"
+	settingDefaultModel    = "default_model"
+	settingScreenRequired  = "screen_required"
+	settingScreenThreshold = "screen_threshold"
+	// settingMemoryScreenThreshold is the score at or over which a memory
+	// write goes pending. Ingest never reads it.
+	settingMemoryScreenThreshold = "memory_screen_threshold"
 	// settingSandboxImage is the image the home computer's container is
 	// created from. A container that exists keeps the image it was created
 	// from.
@@ -43,15 +45,25 @@ const (
 	settingSetupComplete = "setup_complete"
 	// settingIdleMinutes is how long a running computer may go without a
 	// run before the harness stops it; 0 never stops one.
-	settingIdleMinutes = "computer_idle_minutes"
+	settingIdleMinutes        = "computer_idle_minutes"
+	settingCompactIdleFill    = "compact_idle_fill"
+	settingCompactIdleMinutes = "compact_idle_minutes"
+	// settingSubagentMaxRunning is how many subagents may run at once.
+	settingSubagentMaxRunning = "subagent_max_running"
 )
 
 // The idle timeout until the user sets one, and the longest the settings
 // accept: a week, past which a timeout is the same as none.
 const (
-	defaultIdleMinutes = 15
-	maxIdleMinutes     = 7 * 24 * 60
+	defaultIdleMinutes        = 15
+	defaultCompactIdleFill    = 60
+	defaultCompactIdleMinutes = 30
+	maxIdleMinutes            = 7 * 24 * 60
 )
+
+// The most subagents the settings accept as running at once. The default is
+// subagent.DefaultMaxRunning.
+const maxSubagentMaxRunning = 32
 
 // maxSettingKey bounds a setting key.
 const maxSettingKey = 64
@@ -73,7 +85,11 @@ type settingsResponse struct {
 // settingsDefaults are the values the harness's own keys have until the user
 // sets them.
 type settingsDefaults struct {
-	SandboxImage string `json:"sandbox_image"`
+	ScreenRequired  bool    `json:"screen_required"`
+	ScreenThreshold float64 `json:"screen_threshold"`
+	// MemoryScreenThreshold is the score at or over which a memory write goes pending.
+	MemoryScreenThreshold float64 `json:"memory_screen_threshold"`
+	SandboxImage          string  `json:"sandbox_image"`
 	// SandboxLimits and SandboxEgress are what the home computer gets until
 	// the user sets others.
 	SandboxLimits limitsBody `json:"sandbox_limits"`
@@ -87,6 +103,10 @@ type settingsDefaults struct {
 	// ComputerIdleMinutes is how long a running computer may go without a
 	// run before the harness stops it.
 	ComputerIdleMinutes int `json:"computer_idle_minutes"`
+	CompactIdleFill     int `json:"compact_idle_fill"`
+	CompactIdleMinutes  int `json:"compact_idle_minutes"`
+	// SubagentMaxRunning is how many subagents may run at once.
+	SubagentMaxRunning int `json:"subagent_max_running"`
 	// MaintenanceIdleSeconds, AgingSeconds and PreemptRunning are the
 	// inference queue's settings: how long a pool is idle before it admits
 	// maintenance calls, how long a waiting call waits for each priority
@@ -116,6 +136,24 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for key, value := range req {
+		if key == ntfySetting {
+			var topic string
+			if string(value) != "null" && (json.Unmarshal(value, &topic) != nil || !validTopic(topic) || s.cfg.PublicURL == "") {
+				s.fail(w, r, invalidf("ntfy topic requires a valid URL and public_url"))
+				return
+			}
+			sealed, err := s.deps.Secrets.Seal(topic)
+			if err != nil {
+				s.fail(w, r, err)
+				return
+			}
+			req[key], err = json.Marshal(sealed)
+			if err != nil {
+				s.fail(w, r, err)
+				return
+			}
+			continue
+		}
 		if err := s.validateSetting(r.Context(), key, value); err != nil {
 			s.fail(w, r, err)
 			return
@@ -158,18 +196,32 @@ func (s *Server) writeSettings(w http.ResponseWriter, r *http.Request, status in
 	}
 	out := make(map[string]json.RawMessage, len(rows))
 	for _, row := range rows {
-		out[row.Key] = row.Value
+		if row.Key == canarySetting {
+			continue
+		}
+		if row.Key == ntfySetting {
+			var sealed []byte
+			_ = json.Unmarshal(row.Value, &sealed)
+			out[row.Key] = []byte(strconv.FormatBool(len(sealed) > 0))
+		} else {
+			out[row.Key] = row.Value
+		}
 	}
 	sandbox := builtinSandboxDefaults()
 	defaults := settingsDefaults{
-		SandboxImage:  s.cfg.SandboxImage,
-		SandboxLimits: sandbox.Limits,
-		SandboxEgress: sandbox.Egress,
-		SearchOrder:   []string{},
-		SearchLimits:  map[string]search.Limit{},
-		Compaction:    compactionDefaults(),
+		SandboxImage:          s.cfg.SandboxImage,
+		ScreenThreshold:       s.cfg.ScreenThreshold,
+		MemoryScreenThreshold: s.cfg.MemoryScreenThreshold,
+		SandboxLimits:         sandbox.Limits,
+		SandboxEgress:         sandbox.Egress,
+		SearchOrder:           []string{},
+		SearchLimits:          map[string]search.Limit{},
+		Compaction:            compactionDefaults(),
 		// The idle timeout is the harness's own, not the deployment's.
 		ComputerIdleMinutes:    defaultIdleMinutes,
+		CompactIdleFill:        defaultCompactIdleFill,
+		CompactIdleMinutes:     defaultCompactIdleMinutes,
+		SubagentMaxRunning:     subagent.DefaultMaxRunning,
 		MaintenanceIdleSeconds: int(inference.DefaultMaintenanceIdle / time.Second),
 		AgingSeconds:           int(inference.DefaultAging / time.Second),
 	}
@@ -201,6 +253,30 @@ func (s *Server) validateSetting(ctx context.Context, key string, value json.Raw
 		return nil
 	}
 	switch key {
+	case "time_zone", "locale":
+		var text string
+		if json.Unmarshal(value, &text) != nil {
+			return invalidf("%s must be a string", key)
+		}
+		if key == "time_zone" {
+			if _, err := time.LoadLocation(text); err != nil || text == "" || text == "Local" {
+				return invalidf("time_zone must be an IANA time zone")
+			}
+		} else if len(text) == 0 || len(text) > 64 || strings.IndexFunc(text, func(r rune) bool {
+			return (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '-'
+		}) >= 0 {
+			return invalidf("locale must be 1 to 64 letters, digits or hyphens")
+		}
+	case settingScreenRequired:
+		var on bool
+		if json.Unmarshal(value, &on) != nil {
+			return invalidf("%s must be true or false", key)
+		}
+	case settingScreenThreshold, settingMemoryScreenThreshold:
+		var n float64
+		if json.Unmarshal(value, &n) != nil || n <= 0 || n > 1 {
+			return invalidf("%s must be above 0 and at most 1", key)
+		}
 	case settingDefaultModel:
 		var name string
 		if err := json.Unmarshal(value, &name); err != nil {
@@ -209,20 +285,6 @@ func (s *Server) validateSetting(ctx context.Context, key string, value json.Raw
 		return s.checkChatModelName(ctx, key, name)
 	case settingModelClasses:
 		return s.validateModelClasses(ctx, value)
-	case settingDefaultProfile:
-		var id string
-		if err := json.Unmarshal(value, &id); err != nil {
-			return invalidf("%s must be a profile id", key)
-		}
-		if id == "" {
-			return nil
-		}
-		if _, err := s.deps.Store.Profile(ctx, id); err != nil {
-			if errors.Is(err, store.ErrNotFound) {
-				return invalidf("%s names %q, which is not a profile", key, id)
-			}
-			return err
-		}
 	case settingSandboxImage:
 		var image string
 		if err := json.Unmarshal(value, &image); err != nil {
@@ -245,13 +307,25 @@ func (s *Server) validateSetting(ctx context.Context, key string, value json.Raw
 		if _, err := checkEgress(e); err != nil {
 			return err
 		}
-		if e.Mode != string(egress.ModeOpen) && !s.deps.Computers.EgressControl() {
-			return computer.ErrNoEgressControl
-		}
 	case settingIdleMinutes:
 		var n int
 		if err := json.Unmarshal(value, &n); err != nil || n < 0 || n > maxIdleMinutes {
 			return invalidf("%s must be a whole number of minutes from 0 to %d", key, maxIdleMinutes)
+		}
+	case settingCompactIdleFill:
+		var n int
+		if err := json.Unmarshal(value, &n); err != nil || n < 1 || n > 100 {
+			return invalidf("%s must be a whole percentage from 1 to 100", key)
+		}
+	case settingCompactIdleMinutes:
+		var n int
+		if err := json.Unmarshal(value, &n); err != nil || n < 0 || n > maxIdleMinutes {
+			return invalidf("%s must be a whole number of minutes from 0 to %d", key, maxIdleMinutes)
+		}
+	case settingSubagentMaxRunning:
+		var n int
+		if err := json.Unmarshal(value, &n); err != nil || n < 1 || n > maxSubagentMaxRunning {
+			return invalidf("%s must be a whole number of subagents from 1 to %d", key, maxSubagentMaxRunning)
 		}
 	case settingMaintenanceIdle:
 		var n int
@@ -401,7 +475,66 @@ func (s *Server) idleTimeout(ctx context.Context) time.Duration {
 	return time.Duration(minutes) * time.Minute
 }
 
+func (s *Server) idleCompactionSettings(ctx context.Context) (int, time.Duration) {
+	fill, minutes := defaultCompactIdleFill, defaultCompactIdleMinutes
+	var n int
+	if readSetting(ctx, s.deps.Store, s.log, settingCompactIdleFill, &n) && n >= 1 && n <= 100 {
+		fill = n
+	}
+	if readSetting(ctx, s.deps.Store, s.log, settingCompactIdleMinutes, &n) && n >= 0 && n <= maxIdleMinutes {
+		minutes = n
+	}
+	return fill, time.Duration(minutes) * time.Minute
+}
+
 // jsonString encodes a string as a JSON value.
 func jsonString(v string) []byte {
 	return fmt.Appendf(nil, "%q", v)
+}
+
+func (s *Server) screenSettings(ctx context.Context) (float64, bool, error) {
+	rows, err := s.deps.Store.Settings(ctx)
+	if err != nil {
+		return 0, false, err
+	}
+	return parseScreenSettings(rows, s.cfg.ScreenThreshold)
+}
+
+// memoryScreenThreshold is the threshold for a memory write: the stored
+// memory_screen_threshold, else the deployment's.
+func (s *Server) memoryScreenThreshold(ctx context.Context) (float64, error) {
+	rows, err := s.deps.Store.Settings(ctx)
+	if err != nil {
+		return 0, err
+	}
+	threshold := s.cfg.MemoryScreenThreshold
+	for _, row := range rows {
+		if row.Key == settingMemoryScreenThreshold && string(row.Value) != "null" {
+			if err := json.Unmarshal(row.Value, &threshold); err != nil {
+				return 0, err
+			}
+		}
+	}
+	return threshold, nil
+}
+
+func parseScreenSettings(rows []store.Setting, defaultThreshold float64) (float64, bool, error) {
+	threshold, required := defaultThreshold, false
+	for _, row := range rows {
+		var target any
+		switch row.Key {
+		case settingScreenThreshold:
+			target = &threshold
+		case settingScreenRequired:
+			target = &required
+		default:
+			continue
+		}
+		if string(row.Value) != "null" {
+			if err := json.Unmarshal(row.Value, target); err != nil {
+				return 0, false, err
+			}
+		}
+	}
+	return threshold, required, nil
 }

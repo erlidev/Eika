@@ -77,7 +77,7 @@ func (a *Agent) seedCounter(ctx context.Context, s *Session, prompt []Section) {
 	if _, at := lastMeasured(msgs); at >= 0 {
 		countCtx, cancel := context.WithTimeout(ctx, a.opts.CountTimeout)
 		defer cancel()
-		req := a.base(prompt).WithMessages(msgs[:at]).Request()
+		req := a.sessionBase(s, prompt).WithMessages(msgs[:at]).Request()
 		a.counter.Seed(countCtx, req, msgs[at].Metrics.Context)
 	}
 }

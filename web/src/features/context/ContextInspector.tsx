@@ -10,7 +10,7 @@
 import { Check, Copy } from "lucide-react";
 import { useState } from "react";
 
-import type { ModelCall, ModelContext, SessionConfiguration } from "@/api/types";
+import type { ModelCall, ModelContext } from "@/api/types";
 import { LoadError, Notice } from "@/components/Notice";
 import { Button } from "@/components/ui/button";
 import {
@@ -36,23 +36,21 @@ import { formatAgo, formatTokens } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 export type ContextInspectorProps = {
-  sessionId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   view: View;
   onView: (view: View) => void;
   requests: RequestSelection;
-  config: SessionConfiguration | undefined;
+  onSettings?: ((tab: "agents" | "instructions" | "models" | "mcp") => void) | undefined;
 };
 
 export function ContextInspector({
-  sessionId,
   open,
   onOpenChange,
   view,
   onView,
   requests,
-  config,
+  onSettings,
 }: ContextInspectorProps) {
   const { shown } = requests;
   return (
@@ -87,15 +85,10 @@ export function ContextInspector({
         )}
         {shown.data !== undefined && (
           <Inspection
-            sessionId={sessionId}
             context={shown.data}
-            live={requests.selected === nextRequest}
-            config={config}
             view={view}
             onView={onView}
-            onEdit={() => {
-              onOpenChange(false);
-            }}
+            onSettings={requests.selected === nextRequest ? onSettings : undefined}
           />
         )}
       </DialogContent>
@@ -164,7 +157,13 @@ function CopyButton({ context }: CopyButtonProps) {
         title="The request as the harness hands it to the provider, before the provider adapts it to its endpoint"
         onClick={() => {
           const text = JSON.stringify(requestJSON(context), null, 2);
-          navigator.clipboard.writeText(text).then(
+          const clipboard = Reflect.get(navigator, "clipboard") as Clipboard | undefined;
+          if (!clipboard) {
+            setFailed(true);
+            setCopied(false);
+            return;
+          }
+          clipboard.writeText(text).then(
             () => {
               setFailed(false);
               setCopied(true);
@@ -174,6 +173,7 @@ function CopyButton({ context }: CopyButtonProps) {
             },
             () => {
               setFailed(true);
+              setCopied(false);
             },
           );
         }}

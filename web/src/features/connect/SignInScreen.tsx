@@ -62,7 +62,7 @@ export function SignInScreen({ unreachable, retry, retrying = false }: SignInScr
       const connection = { baseUrl: url, token: token.trim() };
       setChecking(true);
       // Try the token on a real route before storing it. Storing first would
-      // mount the workbench, whose own 401s would forget the token again
+      // mount the shell, whose own 401s would forget the token again
       // before this screen could say what went wrong.
       request("/api/settings", { connection })
         .then(() => {
@@ -166,8 +166,14 @@ export function SignInScreen({ unreachable, retry, retrying = false }: SignInScr
                 }}
               />
               <p className="text-muted-foreground text-xs">
-                Leave empty unless the frontend runs somewhere else. The Vite dev server proxies
-                <code className="mx-1">/api</code>, so leave it empty there too.
+                Leave empty unless the frontend runs somewhere else.
+                {import.meta.env.DEV && (
+                  <>
+                    {" "}
+                    The Vite dev server proxies<code className="mx-1">/api</code>, so leave it empty
+                    there too.
+                  </>
+                )}
               </p>
             </div>
           </CollapsibleContent>

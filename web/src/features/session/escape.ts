@@ -1,6 +1,6 @@
 /**
- * Who owns an Escape key press. Escape is the way out of a dialog, a select,
- * and a command palette, and it is how a text field cancels an input method's
+ * Who owns an Escape key press. Escape is the way out of a dialog and a
+ * select, and it is how a text field cancels an input method's
  * composition. Only an Escape that nothing else wanted aborts the run.
  */
 
@@ -11,7 +11,7 @@ export type EscapeTarget = {
 };
 
 /** overlays are the things that own Escape while they are on screen. */
-const overlays = '[role="dialog"], [role="alertdialog"], [role="listbox"], [cmdk-root]';
+const overlays = '[role="dialog"], [role="alertdialog"], [role="listbox"]';
 
 /** editable matches a contenteditable host, which `[contenteditable=false]` is not. */
 const editable = '[contenteditable]:not([contenteditable="false"])';

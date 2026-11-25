@@ -12,7 +12,7 @@ codebase. Read it fully before editing.
 2. `docs/ARCHITECTURE.md`: how the system works and fits together.
 3. `docs/DECISIONS.md`: why it is built that way. Read the section for the
    area you change before reversing anything.
-4. `docs/EXTENDING.md` when adding a tool, provider, search backend, or UI panel.
+4. `docs/EXTENDING.md` when adding a tool, provider, search backend, or UI page.
 5. `docs/PLAN.md` and `docs/design/`: the phased plan that turns Eika into a
    persistent local assistant. Work on it starts from the plan's ground rules.
    `docs/DEFERRED.md` holds what was cut from it: do not start that work unless it
@@ -27,8 +27,8 @@ codebase. Read it fully before editing.
   tests both Go and the frontend, then compares the UI with its visual
   baselines (about a minute in all). Fix everything it reports. There is
   no CI: `make check` is the only gate, so run it locally before every push.
-- New behavior needs tests. A bug fix needs a regression test. See the style
-  guide for what a good test looks like here.
+- Test what matters, and no more: see "Testing" below. Test code is code
+  someone has to read, run and keep working, so a test must earn its place.
 - Keep documentation current in the same change: `ARCHITECTURE.md` if
   structure moved, `DECISIONS.md` for a new decision, `EXTENDING.md` if an
   extension point changed, `docs/api/` if the API or event protocol changed.
@@ -41,6 +41,45 @@ codebase. Read it fully before editing.
   message and confirmation that nothing in the standard library covers it.
 - Do not introduce a second way to do something that already has one way
   (a second config loader, a second logger, a second HTTP client wrapper).
+
+## Testing
+
+Write the feature first, then the few tests that would catch it breaking. A
+change normally carries less test code than product code. If your tests are
+longer than the code they cover, stop and cut them before going on.
+
+Write a test for:
+
+- behavior a user or a caller would notice breaking, once, through the public
+  API of the package that owns it
+- security and isolation boundaries: the sandbox and executor, egress,
+  `netguard`, secrets, authentication, redaction
+- data safety: migrations of a populated database, restart recovery, anything
+  that could lose work or run it twice
+- concurrency that is easy to get wrong: queue order, leases, cancellation
+- parsers and protocol code, one case per distinct real input
+- a bug you fixed, when it is subtle enough to come back
+
+Do not write a test for:
+
+- behavior another test already covers. Do not repeat a check at the store,
+  session and handler layers: test it where it lives
+- trivial code: getters, constructors, defaults, struct mapping, formatting
+- the exact wording of an error, prompt, log line or description, call counts
+  on a fake, or any other implementation detail
+- every permutation of an input. A table holds the cases that take different
+  branches, not fifteen that take the same one
+- the fakes, mocks and test helpers themselves
+- branches that cannot happen, or lines that only lack coverage. Coverage is
+  not a goal and no number is tracked
+
+A mistake you made and fixed while building a feature needs no regression test
+of its own: the feature's test covers the corrected behavior. When a test gets
+in the way of a legitimate change and guards nothing a user would notice,
+delete it in that change and say so in the commit body.
+
+`docs/STYLE_GUIDE.md` has the mechanics (table tests, fakes, the Docker tag,
+Vitest and Playwright).
 
 ## Layout
 
@@ -56,6 +95,7 @@ internal/egress    sandbox egress    internal/netguard  public-only dials
 internal/mcp       MCP client        internal/utility   utility model tasks
 internal/event     event bus         internal/eikad     sandbox daemon wire
 internal/imaging   image input       sandbox/           sandbox image
+internal/skill     skill parser, zip reader
 internal/inference model-call queue  (standard library only)
 compose.yaml       the whole stack   deploy/            entrypoint, searxng
 docs/              documentation     evals/             live tests, model bench
@@ -99,7 +139,7 @@ there, test it, document it. Full walkthroughs are in `docs/EXTENDING.md`.
 | utility task    | function in `internal/utility` | its trigger in `internal/server`, which resolves a class with `resolveClass` (`internal/server/classes.go`) |
 | API endpoint    | handler in `internal/server` | `internal/server/routes.go` + `routeWire` in `contract_test.go` + `docs/api/http.md` |
 | event type      | struct in `internal/event`   | `docs/api/events.md` + `web/src/api/events.ts` + `eventPayloads` in `internal/server/contract_test.go` |
-| UI panel        | component in `web/src/`      | `web/src/app/panels.tsx`           |
+| UI page         | component in `web/src/features/` | route in `web/src/app/App.tsx` + `web/src/app/pages.ts` |
 
 ## When unsure
 

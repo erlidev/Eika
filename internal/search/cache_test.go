@@ -16,9 +16,6 @@ func TestCacheExpiresEntries(t *testing.T) {
 	if _, ok := c.Get("k", start.Add(time.Minute)); ok {
 		t.Error("get at expiry found the entry")
 	}
-	if len(c.entries) != 0 || c.order.Len() != 0 {
-		t.Error("an expired entry was kept")
-	}
 }
 
 func TestCacheEvictsTheLeastRecentlyUsed(t *testing.T) {

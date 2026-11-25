@@ -8,15 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path"
-	"path/filepath"
-	"strconv"
-	"strings"
 
 	cerrdefs "github.com/containerd/errdefs"
-	"github.com/docker/docker/api/types/build"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
@@ -67,33 +62,6 @@ func (h *Host) pullImage(ctx context.Context, ref string) error {
 	return nil
 }
 
-// buildImage builds a computer image from the spec's build context and tags
-// it as ref.
-func (h *Host) buildImage(ctx context.Context, spec Spec, ref string) error {
-	buildContext, err := tarDir(spec.BuildContext)
-	if err != nil {
-		return err
-	}
-	dockerfile := spec.Dockerfile
-	if dockerfile == "" {
-		dockerfile = "Dockerfile"
-	}
-	resp, err := h.docker.ImageBuild(ctx, buildContext, build.ImageBuildOptions{
-		Tags:       []string{ref},
-		Dockerfile: dockerfile,
-		Remove:     true,
-	})
-	if err != nil {
-		return fmt.Errorf("build image %s: %w", ref, err)
-	}
-	defer resp.Body.Close()
-	if err := drainDockerStream(resp.Body); err != nil {
-		return fmt.Errorf("build image %s: %w", ref, err)
-	}
-	h.log.Info("computer image built", "image", ref, "context", spec.BuildContext)
-	return nil
-}
-
 // injectDaemon copies the harness's eikad binary into a created container, so
 // that any image works as a sandbox without being rebuilt.
 //
@@ -121,52 +89,27 @@ func (h *Host) injectDaemon(ctx context.Context, containerID string) error {
 // owned by root, which the user could read and never write. The container
 // has not started, so the daemon extracts the directory entry itself,
 // carrying the owner in the archive.
-//
-// A user given by name, which the harness cannot resolve to a uid, is left
-// to its image.
-func (h *Host) ownRoot(ctx context.Context, containerID, user string) error {
-	uid, gid, ok := numericUser(user)
-	if !ok {
-		return nil
-	}
+func (h *Host) ownRoot(ctx context.Context, containerID, root string) error {
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
 	if err := tw.WriteHeader(&tar.Header{
 		Typeflag: tar.TypeDir,
-		Name:     path.Base(Root) + "/",
+		Name:     path.Base(root) + "/",
 		Mode:     0o755,
-		Uid:      uid,
-		Gid:      gid,
+		Uid:      userID,
+		Gid:      groupID,
 	}); err != nil {
-		return fmt.Errorf("write tar header for %s: %w", Root, err)
+		return fmt.Errorf("write tar header for %s: %w", root, err)
 	}
 	if err := tw.Close(); err != nil {
 		return fmt.Errorf("close tar archive: %w", err)
 	}
-	if err := h.docker.CopyToContainer(ctx, containerID, path.Dir(Root), &buf, container.CopyToContainerOptions{
+	if err := h.docker.CopyToContainer(ctx, containerID, path.Dir(root), &buf, container.CopyToContainerOptions{
 		CopyUIDGID: true,
 	}); err != nil {
-		return fmt.Errorf("own %s in container: %w", Root, err)
+		return fmt.Errorf("own %s in container: %w", root, err)
 	}
 	return nil
-}
-
-// numericUser parses a container user of the form "uid" or "uid:gid". The
-// group defaults to the uid. It reports false for a name.
-func numericUser(user string) (uid, gid int, ok bool) {
-	u, g, hasGroup := strings.Cut(user, ":")
-	uid, err := strconv.Atoi(u)
-	if err != nil || uid < 0 {
-		return 0, 0, false
-	}
-	if !hasGroup {
-		return uid, uid, true
-	}
-	gid, err = strconv.Atoi(g)
-	if err != nil || gid < 0 {
-		return 0, 0, false
-	}
-	return uid, gid, true
 }
 
 // tarFile wraps one file's contents in a tar archive.
@@ -185,55 +128,6 @@ func tarFile(name string, data []byte, mode int64) (io.Reader, error) {
 	}
 	if err := tw.Close(); err != nil {
 		return nil, fmt.Errorf("close tar archive: %w", err)
-	}
-	return &buf, nil
-}
-
-// tarDir packs a build context directory into a tar archive. Only directories
-// and regular files are packed; a build context needs nothing else.
-func tarDir(dir string) (io.Reader, error) {
-	var buf bytes.Buffer
-	tw := tar.NewWriter(&buf)
-	err := filepath.WalkDir(dir, func(path string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, err := filepath.Rel(dir, path)
-		if err != nil || rel == "." {
-			return err
-		}
-		if !entry.IsDir() && !entry.Type().IsRegular() {
-			return nil
-		}
-		info, err := entry.Info()
-		if err != nil {
-			return err
-		}
-		header, err := tar.FileInfoHeader(info, "")
-		if err != nil {
-			return err
-		}
-		header.Name = filepath.ToSlash(rel)
-		if entry.IsDir() {
-			header.Name += "/"
-			return tw.WriteHeader(header)
-		}
-		if err := tw.WriteHeader(header); err != nil {
-			return err
-		}
-		f, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		defer f.Close()
-		_, err = io.Copy(tw, f)
-		return err
-	})
-	if err != nil {
-		return nil, fmt.Errorf("pack build context %s: %w", dir, err)
-	}
-	if err := tw.Close(); err != nil {
-		return nil, fmt.Errorf("close build context archive: %w", err)
 	}
 	return &buf, nil
 }

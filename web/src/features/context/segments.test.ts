@@ -3,10 +3,8 @@ import { describe, expect, it } from "vitest";
 import type { Breakdown, ModelCall, ModelContext } from "@/api/types";
 import {
   barTotal,
-  editTargetOf,
   exactDrift,
   messageSizes,
-  parameterTarget,
   requestJSON,
   requestSize,
   schemaParameters,
@@ -93,6 +91,15 @@ function call(over: Partial<ModelCall> = {}): ModelCall {
 }
 
 describe("segments", () => {
+  it("includes the preamble in the bar and its total", () => {
+    const parts = segments(
+      request({
+        breakdown: breakdown({ sections: [{ kind: "preamble", tokens: 40 }], remainder: null }),
+      }),
+    );
+    expect(parts.find((part) => part.kind === "preamble")?.tokens).toBe(40);
+    expect(barTotal(parts)).toBe(114);
+  });
   it("splits a request into its counted parts in the bar's order, then what the template adds", () => {
     expect(segments(request())).toEqual([
       { kind: "base", label: "Base prompt", tokens: 6, approximate: false },
@@ -344,17 +351,5 @@ describe("requestJSON", () => {
       { name: "mcp__docs__search", description: "", parameters: {} },
       { name: "mcp__docs__read", description: "", parameters: {} },
     ]);
-  });
-});
-
-describe("edit targets", () => {
-  it("names the setting behind each part and parameter", () => {
-    expect(editTargetOf("base")).toEqual({ key: "chat_prompt", section: "prompt" });
-    expect(editTargetOf("mcp_tools")).toEqual({ key: "tools", section: "tools" });
-    expect(editTargetOf("messages")).toBeUndefined();
-    expect(parameterTarget("sampling.temperature")?.section).toBe("sampling");
-    expect(parameterTarget("sampling.max_output")?.section).toBe("model");
-    expect(parameterTarget("preserve_thinking")?.section).toBe("model");
-    expect(parameterTarget("thinking_switch")).toBeUndefined();
   });
 });

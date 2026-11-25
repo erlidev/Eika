@@ -8,36 +8,46 @@
 import type { EikaEvent } from "../../src/api/events.ts";
 import {
   builtinToolTokens,
-  defaultProfile,
   previewContext,
   record,
+  syncSession,
   toolTokens,
-} from "./profiles.ts";
-import type { RecordedCall, StoredProfile } from "./profiles.ts";
+} from "./modelContext.ts";
+import type { RecordedCall } from "./modelContext.ts";
 import type {
+  AgentOverride,
+  Project,
   ContentDetail,
   Elicitation,
   Entry,
+  Halt,
   MCPServer,
   MCPServerDetails,
   Message,
   Model,
   ModelClass,
   ModelClassName,
-  ProfileSettings,
   QueuedMessage,
+  Withheld,
+  Memory,
+  Skill,
   Provider,
   ProbeFindings,
   Question,
   Run,
   Sandbox,
   SearchStatus,
-  Session,
+  Session as WireSession,
   SettingsState,
   SystemStatus,
   Tool,
   Computer,
 } from "../../src/api/types.ts";
+
+export type Session = WireSession;
+export function wireSession(session: Session): WireSession {
+  return session;
+}
 
 /**
  * Reply is what the mock agent does when a message starts a run: the events
@@ -118,12 +128,25 @@ export type World = {
   probeFinds: ProbeFindings;
   /** eventsOnConnect are sent once to every event stream that opens. */
   eventsOnConnect: EikaEvent[];
-  /** profiles are the profiles, oldest first; the default_profile setting names the default. */
-  profiles: StoredProfile[];
-  /** overrides are what each session sets over its profile, by session id. */
-  overrides: Record<string, ProfileSettings>;
-  /** toolChoices are the sessions' own tool choices, by session id; one with none inherits. */
-  toolChoices: Record<string, string[]>;
+  /** agentOverrides holds only user overrides of the built-in definitions. */
+  agentOverrides: Record<string, AgentOverride>;
+  projects: Project[];
+  instructions: { about_me: string; rules: string };
+  projectInstructions: Record<string, string>;
+  projectInstructionVersions: Record<string, number>;
+  /** memories is GET /api/memories: every memory; content_sha is computed by the route. */
+  memories: Memory[];
+  /** skills is GET /api/skills: every installed skill, in any order; the route sorts. */
+  skills: Skill[];
+  /** withheld is GET /api/withheld: every removal, in any order; the route sorts. */
+  withheld: Withheld[];
+  guard: "unknown" | "up" | "down";
+  /** trustedSources holds the exact hosts the user trusts. */
+  trustedSources: string[];
+  /** blockedHosts holds exact hosts refused by the proxy. */
+  blockedHosts: string[];
+  /** halt is GET /api/halt; the routes change it and a refused run reads it. */
+  halt: Halt;
   /** calls are each session's recorded model calls, oldest first. */
   calls: Record<string, RecordedCall[]>;
 };
@@ -138,7 +161,7 @@ export function minutesAgo(minutes: number): string {
 
 /** emptyWorld is a harness that is set up and signed in, with nothing configured. */
 export function emptyWorld(): World {
-  return {
+  const world: World = {
     passwordSet: true,
     signedIn: true,
     settings: {
@@ -147,13 +170,19 @@ export function emptyWorld(): World {
       classes: [],
       titles_model: "",
       defaults: {
+        screen_required: false,
+        screen_threshold: 0.9,
+        memory_screen_threshold: 0.99,
         sandbox_image: "eika-sandbox:latest",
         computer_idle_minutes: 15,
+        compact_idle_fill: 60,
+        compact_idle_minutes: 30,
+        subagent_max_running: 4,
         maintenance_idle_seconds: 120,
         aging_seconds: 300,
         preempt_running: false,
         sandbox_limits: { cpus: 0, memory_mb: 0, pids: 4096 },
-        sandbox_egress: { mode: "open", allow: [...defaultAllowlist] },
+        sandbox_egress: { mode: "public", allow: [...defaultAllowlist] },
         // As the harness documents them in docs/api/http.md.
         search_order: ["searxng", "exa", "tavily", "brave", "marginalia"],
         search_limits: {
@@ -216,10 +245,43 @@ export function emptyWorld(): World {
       capabilities: { counting: "none", cache_metrics: "unknown", slot_hints: false },
     },
     eventsOnConnect: [],
-    profiles: [defaultProfile()],
-    overrides: {},
-    toolChoices: {},
+    agentOverrides: {},
+    projects: [],
+    instructions: { about_me: "", rules: "" },
+    projectInstructions: {},
+    projectInstructionVersions: {},
+    memories: [],
+    skills: [],
+    withheld: [],
+    guard: "up",
+    trustedSources: [],
+    blockedHosts: [],
+    halt: { halted: false },
     calls: {},
+  };
+  // The harness makes the home session when it starts, so every world has it.
+  const home = homeSession();
+  world.sessions.push(home);
+  world.entries[home.id] = [];
+  return world;
+}
+
+/** homeSession is the local owner's persistent conversation, empty, as the harness makes it. */
+function homeSession(): Session {
+  return {
+    id: "home-main",
+    title: "Home",
+    kind: "home",
+    owner: "local",
+    name: "home",
+    agent: "eika",
+    state: "idle",
+    last_active_at: minutesAgo(5),
+    tools: ["web_search"],
+    pinned: false,
+    archived: false,
+    created_at: minutesAgo(90),
+    updated_at: minutesAgo(5),
   };
 }
 
@@ -242,7 +304,7 @@ const defaultAllowlist = [
 export function defaultSandbox(): Sandbox {
   return {
     limits: { cpus: 0, memory_mb: 0, pids: 4096 },
-    egress: { mode: "open", allow: [...defaultAllowlist] },
+    egress: { mode: "public", allow: [...defaultAllowlist] },
   };
 }
 
@@ -309,6 +371,18 @@ function toolCatalog(): Tool[] {
       "Run a shell command in the computer root. This is also how you explore, read, and edit files.",
     ),
     tool(
+      "file_edit",
+      "Replace exactly one occurrence of old_text with new_text in a UTF-8 file in the working directory. Read the file first. Both the original and result must be at most 1048576 bytes. No match or multiple matches leave the file unchanged. An empty new_text deletes the match.",
+    ),
+    tool(
+      "file_read",
+      "Read a UTF-8 text file of at most 32768 bytes in the working directory. Use bash for larger files or binary data.",
+    ),
+    tool(
+      "file_write",
+      "Create or replace a UTF-8 text file of at most 1048576 bytes in the working directory. Creates parent directories. An empty content string creates an empty file.",
+    ),
+    tool(
       "web_fetch",
       "Fetch a web page or file by URL and return its content as Markdown.\nUse it to read a page you already have a URL for.",
       false,
@@ -319,14 +393,6 @@ function toolCatalog(): Tool[] {
       false,
     ),
   ];
-}
-
-/**
- * sessionTools is the tool list a new session reports: every tool, or for a
- * chat every tool that needs no computer, as the harness narrows it.
- */
-export function sessionTools(world: World, chat: boolean): string[] {
-  return world.tools.filter((t) => !chat || !t.needs_computer).map((t) => t.name);
 }
 
 /** WorldBuilder adds rows with consistent ids and timestamps. */
@@ -340,6 +406,13 @@ export class WorldBuilder {
 
   private id(prefix: string): string {
     this.seq += 1;
+    if (prefix === "ent") {
+      const digits = Array.from(
+        this.seq.toString(32),
+        (c) => "abcdefghijklmnopqrstuvwxyz234567"[parseInt(c, 32)],
+      ).join("");
+      return `a${digits.padStart(19, "a")}`;
+    }
     return `${prefix}-${String(this.seq)}`;
   }
 
@@ -410,15 +483,19 @@ export class WorldBuilder {
     const row: Session = {
       id: this.id("ses"),
       computer_id: computer.id,
-      kind: "user",
-      tools: sessionTools(this.world, false),
-      overridden: false,
+      kind: "routine",
+      agent: "eika",
+      owner: "local",
+      state: "idle",
+      last_active_at: minutesAgo(5),
+      tools: [],
       pinned: false,
       archived: false,
       created_at: minutesAgo(120),
       updated_at: minutesAgo(5),
       ...input,
     };
+    syncSession(this.world, row);
     this.world.sessions.unshift(row);
     this.world.entries[row.id] ??= [];
     return row;
@@ -428,18 +505,42 @@ export class WorldBuilder {
   chat(input: Partial<Session> & { title: string }): Session {
     const row: Session = {
       id: this.id("chat"),
-      kind: "user",
-      tools: sessionTools(this.world, true),
-      overridden: false,
+      kind: "routine",
+      agent: "eika",
+      owner: "local",
+      state: "idle",
+      last_active_at: minutesAgo(5),
+      tools: [],
       pinned: false,
       archived: false,
       created_at: minutesAgo(90),
       updated_at: minutesAgo(5),
       ...input,
     };
+    syncSession(this.world, row);
     this.world.sessions.unshift(row);
     this.world.entries[row.id] ??= [];
     return row;
+  }
+
+  /** home changes the local owner's persistent conversation, which every world starts with. */
+  home(input: Partial<Session> = {}): Session {
+    const row = this.world.sessions.find((s) => s.kind === "home");
+    if (row === undefined) throw new Error("the world has no home session");
+    Object.assign(row, input);
+    syncSession(this.world, row);
+    return row;
+  }
+
+  /** subagent adds a named session under home. */
+  subagent(parent: Session, input: Partial<Session> & { name: string; agent: string }): Session {
+    return this.chat({
+      title: input.name,
+      ...input,
+      kind: "subagent",
+      owner: parent.owner,
+      parent_session_id: parent.id,
+    });
   }
 
   /**
@@ -484,19 +585,6 @@ export class WorldBuilder {
     return row;
   }
 
-  /** profile adds a profile that sets what input names and nothing else. */
-  profile(input: Partial<StoredProfile> & { name: string }): StoredProfile {
-    const row: StoredProfile = {
-      ...defaultProfile(),
-      id: this.id("prof"),
-      created_at: minutesAgo(200),
-      updated_at: minutesAgo(200),
-      ...input,
-    };
-    this.world.profiles.push(row);
-    return row;
-  }
-
   /**
    * call records the model call a session's run made when its path ended
    * where it ends now, as the harness keeps one per call.
@@ -528,6 +616,9 @@ export class WorldBuilder {
         kind: entryKind(message),
         created_at: minutesAgo(at),
         message,
+        ...(session.kind === "home" && (message.role === "user" || message.role === "assistant")
+          ? { channel: "web" }
+          : {}),
         ...(parent === undefined ? {} : { parent_id: parent }),
       };
       at = Math.max(1, at - 3);
@@ -542,6 +633,8 @@ export class WorldBuilder {
 /** entryKind is the entry kind the harness stores a message under. */
 export function entryKind(message: Message): Entry["kind"] {
   switch (message.role) {
+    case "":
+      throw new Error("cannot record an empty provider message");
     case "user":
       return "user";
     case "system":

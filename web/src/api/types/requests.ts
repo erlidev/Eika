@@ -1,11 +1,25 @@
 /** Wire types for model requests: the next one, and the model calls recorded for a session. */
 
-import type { ConfigLayer, Sampling } from "@/api/types/profiles";
+import type { ReasoningEffort } from "@/api/types/providers";
+
+/** Sampling is the set of parameters sent to the model. */
+export type Sampling = {
+  temperature?: number;
+  top_p?: number;
+  top_k?: number;
+  min_p?: number;
+  frequency_penalty?: number;
+  presence_penalty?: number;
+  seed?: number;
+  stop?: string[];
+  max_output?: number;
+  reasoning_effort?: ReasoningEffort;
+};
 import type { ThinkingSwitch } from "@/api/types/providers";
 import type { Message } from "@/api/types/sessions";
 
 /** SectionKind names a part of the system prompt. */
-export type SectionKind = "base" | "instructions";
+export type SectionKind = "base" | "instructions" | "preamble" | "memory";
 
 /** ContextSection is one part of the system prompt, with its estimated size. */
 export type ContextSection = {
@@ -85,12 +99,6 @@ export type ReasoningSource = "reported" | "tokenised";
 /** Prediction is how the token counter reached its expectation of a prompt. */
 export type Prediction = "exact" | "anchored" | "estimated";
 
-/** ModelCalls is the body of GET /api/sessions/{id}/calls. */
-export type ModelCalls = {
-  session_id: string;
-  calls: ModelCall[] | null;
-};
-
 /**
  * PartSize is the size of one part of a request. approximate is set when the
  * number is not the endpoint's own tokenisation of the part: estimated from
@@ -156,7 +164,7 @@ export type ModelContext = {
   message_sizes: number[] | null;
   parameters: RequestParameters;
   /** sources names the layer of each parameter: model, thinking_switch, preserve_thinking, sampling.<name>. */
-  sources: Record<string, ConfigLayer> | null;
+  sources: Record<string, string> | null;
   dropped_effort?: string;
   /** call is the record this is; absent for the next request. */
   call?: ModelCall;

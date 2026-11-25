@@ -3,11 +3,10 @@
  * the list of items the session view renders, and it is a pure function so
  * that a scripted event sequence is the whole test.
  *
- * Two sources feed one transcript. `session.message` events, which a replay
- * sends, are the committed conversation and are keyed by entry id. Run events
+ * Two sources feed one transcript. Stored pages are keyed by entry id. Run events
  * (`turn.start`, `message.delta`, `tool.*`) are the turn in flight and are
  * keyed by its `run_id`. A turn that ends is sealed: its live items are
- * dropped as soon as the replay that follows delivers the stored entries, so
+ * dropped when catch-up delivers the stored entries, so
  * nothing is rendered twice.
  */
 
@@ -20,7 +19,16 @@ import type {
   TurnProgress,
   Usage,
 } from "@/api/events";
-import type { Compaction, Elicitation, Message, MessageImage, Question } from "@/api/types";
+import type {
+  Compaction,
+  QuestionNotice,
+  Elicitation,
+  Entry,
+  Message,
+  MessageImage,
+  Question,
+  SessionOutline,
+} from "@/api/types";
 
 /** UserItem is a message the user sent. */
 export type UserItem = {
@@ -78,6 +86,8 @@ export type ToolItem = {
   isError: boolean;
   details?: unknown;
   durationMs?: number;
+  /** removed counts the windows ingest removed from the result, 0 when none. */
+  removed: number;
   done: boolean;
 };
 
@@ -97,6 +107,9 @@ export type NoticeItem = {
   runId: string;
   entryId?: string;
   text: string;
+  entryKind: string;
+  /** question is the structured question of a subagent's notice. */
+  question?: QuestionNotice;
 };
 
 /**
@@ -115,6 +128,7 @@ export type CompactionItem = {
   tokensBefore: number;
   tokensAfter?: number;
   summary: string;
+  boardAsOf?: string;
   /** running is whether the summary is still being written. */
   running: boolean;
   /** error says why a compaction failed, which leaves the conversation as it was. */
@@ -158,6 +172,12 @@ export type TranscriptState = {
   sessionId: string;
   /** committed holds the stored entries a replay delivered, in path order. */
   committed: TranscriptItem[];
+  /** entries are the loaded stored entries in write order. */
+  entries: Entry[];
+  /** offPath holds known entries that the current head cannot reach. */
+  offPath: ReadonlySet<string>;
+  /** revision changes when a rewind invalidates in-flight page requests. */
+  revision: number;
   /** entryIds are the entries already held, which is how a replay dedupes. */
   entryIds: ReadonlySet<string>;
   /** lastEntryId is the newest entry seen; a replay resumes after it. */
@@ -196,6 +216,7 @@ export type ToolResultRecord = {
   isError: boolean;
   details?: unknown;
   durationMs: number;
+  removed: number;
 };
 
 /**
@@ -209,6 +230,9 @@ export function newTranscript(sessionId: string): TranscriptState {
   return {
     sessionId,
     committed: [],
+    entries: [],
+    offPath: new Set(),
+    revision: 0,
     entryIds: new Set(),
     lastEntryId: "",
     live: [],
@@ -247,7 +271,34 @@ export function cutOffText(stopReason: string | undefined): string | undefined {
 
 /** items is the whole transcript in render order. */
 export function items(state: TranscriptState): TranscriptItem[] {
-  return [...state.committed, ...state.live];
+  return visibleItems(state.committed, state.live);
+}
+
+function rowIdentity(item: TranscriptItem): string {
+  return `${item.runId}:${item.kind}:${item.kind === "tool" ? item.callId : item.kind === "user" ? item.text : ""}`;
+}
+
+/** visibleItems keeps live turns in place of the stored rows they cover. */
+export function visibleItems(
+  committed: TranscriptItem[],
+  live: TranscriptItem[],
+): TranscriptItem[] {
+  const failed = new Set(live.filter((item) => item.kind === "error").map((item) => item.runId));
+  const liveRuns = new Set(
+    live
+      .filter((item) => item.kind !== "error" && !failed.has(item.runId))
+      .map((item) => item.runId),
+  );
+  const failedRows = new Set(
+    live.filter((item) => failed.has(item.runId) && item.kind !== "error").map(rowIdentity),
+  );
+  return [
+    ...committed.filter(
+      (item) =>
+        item.runId === "" || (!liveRuns.has(item.runId) && !failedRows.has(rowIdentity(item))),
+    ),
+    ...live,
+  ];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -324,7 +375,20 @@ function applyTurnStart(state: TranscriptState, e: EikaEvent): TranscriptState {
   if (p.message !== "" || images.length > 0) {
     live.push({ kind: "user", key: `${p.run_id}:user`, runId: p.run_id, text: p.message, images });
   }
-  return { ...state, live, activeTurnId: p.run_id, stopReason: undefined };
+  return {
+    ...state,
+    live,
+    activeTurnId: p.run_id,
+    stopReason: undefined,
+    sealedTurns:
+      state.activeTurnId !== "" &&
+      state.activeTurnId !== p.run_id &&
+      !state.sealedTurns.includes(state.activeTurnId)
+        ? [...state.sealedTurns, state.activeTurnId]
+        : state.sealedTurns,
+    needsReplay:
+      state.needsReplay || (state.activeTurnId !== "" && state.activeTurnId !== p.run_id),
+  };
 }
 
 function applyDelta(state: TranscriptState, e: EikaEvent): TranscriptState {
@@ -467,6 +531,7 @@ function applyToolCall(state: TranscriptState, e: EikaEvent): TranscriptState {
         arguments: p.arguments,
         output: "",
         isError: result?.isError ?? false,
+        removed: result?.removed ?? 0,
         done: result !== undefined,
         ...(result === undefined
           ? {}
@@ -503,6 +568,7 @@ function applyToolResult(state: TranscriptState, e: EikaEvent): TranscriptState 
       isError: p.is_error,
       details: p.details,
       durationMs: p.duration_ms,
+      removed: p.removed ?? 0,
     },
   };
   const index = findTool(state.live, p.call_id);
@@ -522,6 +588,7 @@ function applyToolResult(state: TranscriptState, e: EikaEvent): TranscriptState 
       isError: p.is_error,
       details: p.details,
       durationMs: p.duration_ms,
+      removed: p.removed ?? 0,
       done: true,
     }),
   };
@@ -563,6 +630,10 @@ function applyRunError(state: TranscriptState, e: EikaEvent): TranscriptState {
     ],
     activeTurnId: state.activeTurnId === p.run_id ? "" : state.activeTurnId,
     ...(meter === undefined ? {} : { meter }),
+    sealedTurns: state.sealedTurns.includes(p.run_id)
+      ? state.sealedTurns
+      : [...state.sealedTurns, p.run_id],
+    needsReplay: true,
   };
 }
 
@@ -670,11 +741,14 @@ function entryItems(p: SessionMessage): TranscriptItem[] {
   const message = asMessage(p.message);
   switch (p.kind) {
     case "user":
+      // A background turn's message carries only the context block the model
+      // reads, with the notices it delivers; there is nothing the user wrote.
+      if ((message?.content ?? "") === "" && (message?.images ?? []).length === 0) return [];
       return [
         {
           kind: "user",
           key: p.entry_id,
-          runId: "",
+          runId: p.run_id ?? "",
           entryId: p.entry_id,
           text: message?.content ?? "",
           images: message?.images ?? [],
@@ -686,7 +760,7 @@ function entryItems(p: SessionMessage): TranscriptItem[] {
         out.push({
           kind: "reasoning",
           key: `${p.entry_id}:reasoning`,
-          runId: "",
+          runId: p.run_id ?? "",
           entryId: p.entry_id,
           text: message.reasoning,
           streaming: false,
@@ -696,7 +770,7 @@ function entryItems(p: SessionMessage): TranscriptItem[] {
         out.push({
           kind: "assistant",
           key: p.entry_id,
-          runId: "",
+          runId: p.run_id ?? "",
           entryId: p.entry_id,
           text: message.content,
           streaming: false,
@@ -707,12 +781,13 @@ function entryItems(p: SessionMessage): TranscriptItem[] {
         out.push({
           kind: "tool",
           key: call.id,
-          runId: "",
+          runId: p.run_id ?? "",
           callId: call.id,
           name: call.name,
           arguments: call.arguments,
           output: "",
           isError: false,
+          removed: 0,
           done: false,
         });
       }
@@ -724,12 +799,13 @@ function entryItems(p: SessionMessage): TranscriptItem[] {
         {
           kind: "compaction",
           key: p.entry_id,
-          runId: "",
+          runId: p.run_id ?? "",
           entryId: p.entry_id,
           reason: c?.reason ?? "manual",
           tokensBefore: c?.tokens_before ?? 0,
           ...(c === null ? {} : { tokensAfter: c.tokens_after }),
           summary: c?.summary ?? "",
+          ...(c?.board_as_of === undefined ? {} : { boardAsOf: c.board_as_of }),
           running: false,
         },
       ];
@@ -739,12 +815,148 @@ function entryItems(p: SessionMessage): TranscriptItem[] {
         {
           kind: "notice",
           key: p.entry_id,
-          runId: "",
+          runId: p.run_id ?? "",
           entryId: p.entry_id,
-          text: message?.content ?? "",
+          text:
+            message?.content ??
+            (isRecord(p.message) && typeof p.message.text === "string" ? p.message.text : ""),
+          entryKind: p.kind,
+          ...(isRecord(p.message) && isRecord(p.message.question)
+            ? { question: p.message.question as QuestionNotice }
+            : {}),
         },
       ];
   }
+}
+
+/** mergeEntries combines pages and catch-up responses by entry ID. */
+export function mergeEntries(current: Entry[], incoming: Entry[]): Entry[] {
+  const entries = new Map(current.map((entry) => [entry.id, entry]));
+  for (const entry of incoming) entries.set(entry.id, entry);
+  return [...entries.values()].sort((a, b) => a.seq - b.seq);
+}
+
+/** applyOutline selects the current branch while keeping pages in write order. */
+export function applyOutline(state: TranscriptState, outline: SessionOutline): TranscriptState {
+  const nodes = new Map(outline.nodes.map((node) => [node.id, node]));
+  const path = new Set<string>();
+  let id = outline.head_entry_id;
+  while (id !== undefined && !path.has(id)) {
+    path.add(id);
+    id = nodes.get(id)?.parent_id;
+  }
+  const offPath = new Set(
+    outline.nodes.filter((node) => !path.has(node.id)).map((node) => node.id),
+  );
+  return applyEntries(
+    { ...state, offPath, meter: state.meter?.source === "replay" ? undefined : state.meter },
+    [],
+  );
+}
+
+// Stored entries are immutable. Keep their rows stable across page loads so
+// memoised transcript items do not render again when only older entries arrive.
+const entryRows = new WeakMap<Entry, TranscriptItem[]>();
+
+/** applyEntries builds rows and the tool-call index in one pass. */
+export function applyEntries(
+  state: TranscriptState,
+  incoming: Entry[],
+  completed: readonly string[] = [],
+): TranscriptState {
+  const entries = mergeEntries(state.entries, incoming);
+  const committed: TranscriptItem[] = [];
+  const entryIds = new Set<string>();
+  const tools = new Map<string, number>();
+  const completedIds = new Set(completed);
+  const failed = new Set(
+    state.live.filter((item) => item.kind === "error").map((item) => item.runId),
+  );
+  const storedKinds = new Set<string>();
+  let meter = state.meter;
+  for (const entry of entries) {
+    entryIds.add(entry.id);
+    if (state.offPath.has(entry.id)) continue;
+    const payload: SessionMessage = {
+      session_id: state.sessionId,
+      entry_id: entry.id,
+      kind: entry.kind,
+      created_at: entry.created_at,
+      ...(entry.run_id === undefined ? {} : { run_id: entry.run_id }),
+      message:
+        entry.kind === "compaction"
+          ? entry.compaction
+          : entry.text !== undefined
+            ? {
+                role: "system",
+                content: entry.text,
+                ...(entry.question === undefined ? {} : { question: entry.question }),
+              }
+            : entry.message,
+    };
+    const message = asMessage(payload.message);
+    const metrics = message?.metrics;
+    if (
+      metrics !== undefined &&
+      (state.activeTurnId === "" || state.activeTurnId === metrics.run_id) &&
+      !(meter?.source === "live" && meter.runId !== metrics.run_id)
+    ) {
+      meter = {
+        runId: metrics.run_id,
+        usage: metrics.usage,
+        context: metrics.context,
+        generationMs: metrics.generation_ms,
+        contextWindow: metrics.context_window,
+        live: false,
+        source: "replay",
+        ...(metrics.timings === undefined ? {} : { timings: metrics.timings }),
+      };
+    }
+    if (entry.kind === "compaction" && meter?.source === "replay") meter = undefined;
+    if (entry.kind === "tool_result") {
+      const callId = message?.tool_call_id ?? "";
+      const index = tools.get(callId);
+      const item = index === undefined ? undefined : committed[index];
+      if (index !== undefined && item?.kind === "tool") {
+        const known = state.toolResults[callId];
+        committed[index] = {
+          ...item,
+          content: message?.content ?? "",
+          isError: message?.is_error ?? false,
+          removed: message?.removed ?? 0,
+          done: true,
+          ...(known === undefined ? {} : { details: known.details, durationMs: known.durationMs }),
+        };
+      }
+      continue;
+    }
+    let rows = entryRows.get(entry);
+    if (rows === undefined) {
+      rows = entryItems(payload);
+      entryRows.set(entry, rows);
+    }
+    for (const item of rows) {
+      if (item.kind === "tool") tools.set(item.callId, committed.length);
+      if (item.runId !== "") storedKinds.add(rowIdentity(item));
+      committed.push(item);
+    }
+  }
+  const live = state.live.filter((item) => {
+    if (!completedIds.has(item.runId) || item.kind === "error") return true;
+    if (!failed.has(item.runId)) return false;
+    return !storedKinds.has(rowIdentity(item));
+  });
+  return {
+    ...state,
+    entries,
+    committed,
+    live,
+    meter,
+    activeTurnId: completedIds.has(state.activeTurnId) ? "" : state.activeTurnId,
+    sealedTurns: state.sealedTurns.filter((id) => !completedIds.has(id)),
+    entryIds,
+    lastEntryId: entries.at(-1)?.id ?? "",
+  };
 }
 
 function applySessionMessage(state: TranscriptState, e: EikaEvent): TranscriptState {
@@ -807,11 +1019,14 @@ function applySessionMessage(state: TranscriptState, e: EikaEvent): TranscriptSt
           ...item,
           content: message?.content ?? "",
           isError: message?.is_error ?? false,
+          removed: message?.removed ?? 0,
           done: true,
           ...(known === undefined ? {} : { details: known.details, durationMs: known.durationMs }),
         }),
       };
     }
+    // The call may be on an older page. Keep the result hidden until it loads.
+    return base;
   }
   return { ...base, committed: [...base.committed, ...entryItems(p)] };
 }

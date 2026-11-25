@@ -57,7 +57,7 @@ func withArguments(m provider.Message) provider.Message {
 // events are shown in the user interface and are not sent to the model.
 func Message(e store.Entry) (provider.Message, bool, error) {
 	switch e.Kind {
-	case store.KindUser, store.KindAssistant, store.KindToolCall, store.KindToolResult:
+	case store.KindUser, store.KindAssistant, store.KindToolResult:
 	default:
 		return provider.Message{}, false, nil
 	}
@@ -123,4 +123,146 @@ func kindOf(role provider.Role) (store.EntryKind, error) {
 	default:
 		return "", fmt.Errorf("record message: unknown role %q", role)
 	}
+}
+
+// TextEntry records a preamble snapshot or notice without changing its text.
+func TextEntry(kind store.EntryKind, text string) (store.Entry, error) {
+	if kind != store.KindPreamble && kind != store.KindNotice {
+		return store.Entry{}, fmt.Errorf("record text: unsupported kind %q", kind)
+	}
+	payload, err := json.Marshal(struct {
+		Text string `json:"text"`
+	}{text})
+	if err != nil {
+		return store.Entry{}, fmt.Errorf("encode text entry: %w", err)
+	}
+	return store.Entry{Kind: kind, Payload: payload}, nil
+}
+
+// QuestionNotice is the structured form of a subagent's question, stored on
+// its notice beside the model-facing text so the interface can show the
+// question without parsing that text.
+type QuestionNotice struct {
+	// Name and Agent say who asks.
+	Name  string `json:"name"`
+	Agent string `json:"agent"`
+	// QuestionID is the id to answer it with.
+	QuestionID string `json:"question_id"`
+	Question   string `json:"question"`
+	// Options are the answers offered, empty for free text.
+	Options       []string `json:"options,omitempty"`
+	AllowFreeText bool     `json:"allow_free_text"`
+}
+
+// QuestionNoticeEntry records a notice whose text is for the model and whose
+// question is for the interface.
+func QuestionNoticeEntry(text string, q QuestionNotice) (store.Entry, error) {
+	payload, err := json.Marshal(struct {
+		Text     string         `json:"text"`
+		Question QuestionNotice `json:"question"`
+	}{text, q})
+	if err != nil {
+		return store.Entry{}, fmt.Errorf("encode question notice: %w", err)
+	}
+	return store.Entry{Kind: store.KindNotice, Payload: payload}, nil
+}
+
+// QuestionOf reads the question of a notice, nil when it has none.
+func QuestionOf(e store.Entry) (*QuestionNotice, error) {
+	var payload struct {
+		Question *QuestionNotice `json:"question"`
+	}
+	if err := json.Unmarshal(e.Payload, &payload); err != nil {
+		return nil, fmt.Errorf("decode notice %s: %w", e.ID, err)
+	}
+	return payload.Question, nil
+}
+
+// TextOf reads the text of a preamble snapshot or notice.
+func TextOf(e store.Entry) (string, error) {
+	var payload struct {
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(e.Payload, &payload); err != nil {
+		return "", fmt.Errorf("decode text entry %s: %w", e.ID, err)
+	}
+	return payload.Text, nil
+}
+
+// PreambleEntry records a preamble snapshot: its text and, when prompt is
+// not nil, the base prompt and tool names of the agent definition it was
+// taken with, which runs use until a compaction replaces the snapshot
+// (runtime.md 4).
+func PreambleEntry(text string, prompt *string, tools []string) (store.Entry, error) {
+	return PreambleEntryWithMemory(text, agent.MemorySnapshot{}, prompt, tools)
+}
+
+// PreambleEntryWithMemory is PreambleEntry for a snapshot whose text ends with
+// a memory section: mem records that section and the revision it was built
+// from, so the stored prefix can be inspected and compared without parsing
+// the text. A zero mem records none.
+func PreambleEntryWithMemory(text string, mem agent.MemorySnapshot, prompt *string, tools []string) (store.Entry, error) {
+	payload := preamblePayload{Text: text}
+	if mem != (agent.MemorySnapshot{}) {
+		payload.Memory = &mem
+	}
+	if prompt != nil {
+		if tools == nil {
+			tools = []string{}
+		}
+		payload.Definition = &definitionPayload{Prompt: *prompt, Tools: tools}
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return store.Entry{}, fmt.Errorf("encode preamble entry: %w", err)
+	}
+	return store.Entry{Kind: store.KindPreamble, Payload: data}, nil
+}
+
+// preamblePayload is a preamble entry's payload. A snapshot stored before
+// definitions were pinned has text alone.
+type preamblePayload struct {
+	Text       string                `json:"text"`
+	Memory     *agent.MemorySnapshot `json:"memory,omitempty"`
+	Definition *definitionPayload    `json:"definition,omitempty"`
+}
+
+// definitionPayload is the part of an agent definition a snapshot pins.
+type definitionPayload struct {
+	Prompt string   `json:"prompt"`
+	Tools  []string `json:"tools"`
+}
+
+// Snapshot is a session's stored snapshot. Prompt is nil when it pins no
+// definition.
+type Snapshot struct {
+	Text   string
+	Memory agent.MemorySnapshot
+	Prompt *string
+	Tools  []string
+}
+
+// SnapshotOf returns the most recent snapshot on a session path.
+func SnapshotOf(entries []store.Entry) (Snapshot, error) {
+	var snap Snapshot
+	for _, e := range entries {
+		if e.Kind != store.KindPreamble {
+			continue
+		}
+		var payload preamblePayload
+		if err := json.Unmarshal(e.Payload, &payload); err != nil {
+			return Snapshot{}, fmt.Errorf("decode preamble entry %s: %w", e.ID, err)
+		}
+		snap = Snapshot{Text: payload.Text}
+		if payload.Memory != nil {
+			snap.Memory = *payload.Memory
+		}
+		if d := payload.Definition; d != nil {
+			snap.Prompt, snap.Tools = &d.Prompt, d.Tools
+			if snap.Tools == nil {
+				snap.Tools = []string{}
+			}
+		}
+	}
+	return snap, nil
 }

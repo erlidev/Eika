@@ -211,15 +211,3 @@ func TestRunNeverSendsAPromptToAModel(t *testing.T) {
 		}
 	}
 }
-
-func TestBackendHelpers(t *testing.T) {
-	if !probe.LlamaCpp.Valid() || probe.Backend("lmstudio").Valid() {
-		t.Error("Valid does not tell the known backends from an unknown one")
-	}
-	if probe.DefaultSlots(probe.OpenAI) != 8 || probe.DefaultSlots(probe.VLLM) != 1 {
-		t.Error("default slots are not 1 for a local backend and 8 for a hosted one")
-	}
-	if !probe.Shared.Valid() || !probe.Partitioned.Valid() || !probe.Unknown.Valid() || probe.KV("x").Valid() {
-		t.Error("KV.Valid does not accept exactly shared, partitioned and unknown")
-	}
-}

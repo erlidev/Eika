@@ -139,7 +139,7 @@ function LimitField({
               </Slider.Track>
               <Slider.Thumb
                 aria-label={`${label} limit slider`}
-                className="border-primary bg-background ring-ring/50 block size-3 rounded-full border transition-shadow hover:ring-3 focus-visible:ring-3 focus-visible:outline-none"
+                className="border-primary bg-background ring-ring/50 relative block size-3 rounded-full border transition-shadow hover:ring-3 focus-visible:ring-3 focus-visible:outline-none"
               />
             </Slider.Root>
             <div
@@ -184,7 +184,6 @@ function LimitField({
 /** EgressFields edits what a sandbox may reach: the mode, and the allowlist it uses. */
 export function EgressFields({ id, draft, onChange, host, problems }: SandboxFieldsProps) {
   const labelId = `${id}-egress-label`;
-  const control = host?.egress_control ?? false;
   const mode = egressModes.find((m) => m.value === draft.mode);
   return (
     <div className="space-y-2">
@@ -208,19 +207,20 @@ export function EgressFields({ id, draft, onChange, host, problems }: SandboxFie
             <ToggleGroupItem
               key={m.value}
               value={m.value}
-              disabled={m.value !== "open" && !control && draft.mode !== m.value}
               className="data-[state=on]:border-primary/40 data-[state=on]:bg-primary/10 data-[state=on]:text-primary h-6 px-2.5 text-xs font-normal data-[state=on]:font-medium"
             >
               {m.label}
             </ToggleGroupItem>
           ))}
         </ToggleGroup>
-        <p className="text-muted-foreground text-xs">
-          {control || draft.mode !== "open"
-            ? mode?.hint
-            : "This harness runs outside the compose stack, which has the internal network a restricted sandbox needs, so every sandbox's network is open."}
-        </p>
+        <p className="text-muted-foreground text-xs">{mode?.hint}</p>
       </div>
+      {host?.egress_control === false && (
+        <p role="alert" className="text-destructive text-xs">
+          This host has no network access control. Computers connect directly, so these settings and
+          the allowlist do not restrict their network access.
+        </p>
+      )}
       {draft.mode === "allowlist" && (
         <AllowlistField
           id={`${id}-allow`}
@@ -312,7 +312,7 @@ function AllowlistField({ id, allow, problem, onChange }: AllowlistFieldProps) {
         )}
       >
         {shown ??
-          "A host such as github.com, or *.github.com for every name below it. Git, npm, pip, Go, curl, and Node reach them through the harness's proxy."}
+          "Enter a host such as github.com, or *.github.com for its subdomains. Programs must use the proxy to reach these hosts."}
       </p>
     </div>
   );

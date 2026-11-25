@@ -9,53 +9,88 @@
  */
 
 import { ArrowDown, Scissors, TriangleAlert, Undo2 } from "lucide-react";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Profiler,
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import type { MessageImage } from "@/api/types";
 import { Markdown } from "@/components/Markdown";
+import { ScrollRegion } from "@/components/ScrollRegion";
 import { MessageImages } from "@/components/MessageImages";
 import { Button } from "@/components/ui/button";
+import { SubagentLink } from "@/features/session/renderers/HomeRenderer";
 import { Compaction } from "@/features/session/Compaction";
 import { useRewind, useSessionOutline, useRunStatus } from "@/features/session/queries";
 import { useTranscriptPreferences } from "@/features/session/preferences";
 import { Reasoning } from "@/features/session/Reasoning";
 import { Speed } from "@/features/session/Speed";
-import { rewindTarget } from "@/features/session/tree";
+import { rewindableEntries } from "@/features/session/tree";
 import { useSessionStore } from "@/features/session/store";
 import { ToolCard } from "@/features/session/ToolCard";
-import { cutOffText } from "@/features/session/transcript";
+import { cutOffText, visibleItems } from "@/features/session/transcript";
 import type { AssistantItem, TranscriptItem } from "@/features/session/transcript";
 import { cn } from "@/lib/utils";
+import type { TranscriptPages } from "@/features/session/useSessionStream";
 import { failureText } from "@/lib/failure";
+
+declare const __EIKA_MEASURE_HISTORY__: boolean;
+
+declare global {
+  interface Window {
+    eikaHistoryMeasurement?: { rows: number; commits: { duration: number; rows: number }[] };
+  }
+}
 
 export type TranscriptProps = {
   /** sessionId is the session on screen, which a rewind acts on. */
   sessionId: string;
+  pages: TranscriptPages;
   /** empty is what the view shows before the session has any entries. */
   empty?: React.ReactNode;
+  /**
+   * readOnly is a transcript that is watched, not steered: it reads no outline
+   * and no row offers a rewind, which would move the head of a session Eika owns.
+   */
+  readOnly?: boolean;
 };
+
+const none: TranscriptItem[] = [];
 
 /** bottomSlackPx is how far from the bottom still counts as following along. */
 const bottomSlackPx = 100;
 
-export function Transcript({ sessionId, empty }: TranscriptProps) {
+export function Transcript({ sessionId, pages, empty, readOnly = false }: TranscriptProps) {
   // Three selectors rather than the whole store: a panel that only wants the
   // questions should not re-render on every token.
-  const committed = useSessionStore((s) => s.committed);
-  const live = useSessionStore((s) => s.live);
+  const storeSessionId = useSessionStore((s) => s.sessionId);
+  const storedCommitted = useSessionStore((s) => s.committed);
+  const storedLive = useSessionStore((s) => s.live);
+  // The store holds one session, and opens the next in an effect, so for one
+  // render a view that just switched sessions would still show the last one.
+  const open = storeSessionId === sessionId;
+  const committed = open ? storedCommitted : none;
+  const live = open ? storedLive : none;
   const questions = useSessionStore((s) => s.questions);
   const elicitations = useSessionStore((s) => s.elicitations);
   const stopReason = useSessionStore((s) => s.stopReason);
 
-  const rendered = useMemo(() => [...committed, ...live], [committed, live]);
+  const rendered = useMemo(() => visibleItems(committed, live), [committed, live]);
   const announcement = useAnnouncement(rendered);
 
   // Rewinding takes the conversation back to before a message the user sent
   // and puts it back in the composer. A run in progress owns the head, so it
   // is offered only while the session is idle.
-  const outline = useSessionOutline(sessionId);
+  const outline = useSessionOutline(readOnly ? undefined : sessionId);
   const status = useRunStatus(sessionId);
   const rewind = useRewind(sessionId);
+  const rewindMutate = rewind.mutate;
   const idle = !(status.data?.active ?? false);
   // A card whose call waits on the user opens by itself: an ask_user
   // question, or an MCP server asking for input. The run state holds a
@@ -70,24 +105,40 @@ export function Transcript({ sessionId, empty }: TranscriptProps) {
     [questions, elicitations, status.data?.elicitations],
   );
   const nodes = outline.data?.nodes;
-  const rewindable = useMemo(() => {
-    const ids = new Set<string>();
-    for (const node of nodes ?? []) {
-      if (node.kind === "user" && rewindTarget(nodes ?? [], node.id) !== null) ids.add(node.id);
-    }
-    return ids;
-  }, [nodes]);
+  const rewindable = useMemo(() => rewindableEntries(nodes ?? []), [nodes]);
   // A stable callback, so that a row memoised on its item is not re-rendered
   // by every token of the turn in flight.
   const onRewind = useCallback(
     (entryId: string, text: string, images: MessageImage[]) => {
-      rewind.mutate({ entryId, text, images });
+      rewindMutate({ entryId, text, images });
     },
-    [rewind],
+    [rewindMutate],
   );
 
   const scroller = useRef<HTMLDivElement>(null);
   const bottom = useRef<HTMLDivElement>(null);
+  const anchor = useRef<{ element: Element; top: number } | null>(null);
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    const saved = anchor.current;
+    if (el && saved?.element.isConnected) {
+      el.scrollTop += saved.element.getBoundingClientRect().top - saved.top;
+    }
+    anchor.current = null;
+  }, [pages.pageVersion]);
+
+  const loadOlder = () => {
+    pages.loadOlder(() => {
+      const el = scroller.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top;
+      const row = [...el.querySelectorAll("[data-transcript-row]")].find(
+        (item) => item.getBoundingClientRect().bottom > top,
+      );
+      if (row) anchor.current = { element: row, top: row.getBoundingClientRect().top };
+      setFollowing(false);
+    });
+  };
   // Following the stream is the point of the view, so it scrolls itself —
   // but only while the user is at the bottom. Scrolling up to read earlier
   // output during a run is a deliberate act, and yanking it back is not.
@@ -97,7 +148,8 @@ export function Transcript({ sessionId, empty }: TranscriptProps) {
   useEffect(() => {
     if (!following) return;
     bottom.current?.scrollIntoView({ block: "end" });
-  }, [rendered, following]);
+    // A question opens its card without adding a row, so it counts too.
+  }, [rendered, following, waitingCalls]);
 
   const jumpToLatest = () => {
     setFollowing(true);
@@ -119,27 +171,64 @@ export function Transcript({ sessionId, empty }: TranscriptProps) {
           setFollowing(el.scrollHeight - el.scrollTop - el.clientHeight <= bottomSlackPx);
         }}
       >
+        {pages.hasOlder && (
+          <div className="flex justify-center px-4 pt-4">
+            <Button size="sm" variant="secondary" disabled={pages.loading} onClick={loadOlder}>
+              {pages.loading ? "Loading older messages…" : "Load older messages"}
+            </Button>
+          </div>
+        )}
+        {pages.error !== undefined && (
+          <div
+            role="alert"
+            className="text-destructive flex items-center justify-center gap-2 p-3 text-xs"
+          >
+            {failureText("load messages", pages.error)}
+            <Button size="sm" variant="secondary" onClick={pages.retry}>
+              Retry
+            </Button>
+          </div>
+        )}
         {rendered.length === 0 ? (
           <div className="text-muted-foreground flex h-full items-center justify-center p-8 text-sm">
             {empty ?? "No messages yet."}
           </div>
         ) : (
-          <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-5">
-            {rendered.map((item) => (
-              <Item
-                key={item.key}
-                item={item}
-                openTool={item.kind === "tool" && waitingCalls.has(item.callId)}
-                onRewind={
-                  idle && item.kind === "user" && rewindable.has(item.entryId ?? "")
-                    ? onRewind
-                    : undefined
-                }
-              />
-            ))}
-            <CutOff reason={stopReason} />
-            <div ref={bottom} />
-          </div>
+          <Profiler
+            id="transcript"
+            onRender={(_id, _phase, duration) => {
+              if (!__EIKA_MEASURE_HISTORY__) return;
+              const measurement = window.eikaHistoryMeasurement;
+              if (measurement) {
+                measurement.commits.push({ duration, rows: measurement.rows });
+                measurement.rows = 0;
+              }
+            }}
+          >
+            <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-5">
+              {rendered.map((item) => (
+                <div key={item.key} data-transcript-row>
+                  <Item
+                    item={item}
+                    openTool={
+                      item.kind === "tool" &&
+                      (waitingCalls.has(item.callId) ||
+                        // A watched subagent's stored question has no live event on reload.
+                        (readOnly && item.name === "ask_user" && !item.done))
+                    }
+                    readOnly={readOnly}
+                    onRewind={
+                      idle && item.kind === "user" && rewindable.has(item.entryId ?? "")
+                        ? onRewind
+                        : undefined
+                    }
+                  />
+                </div>
+              ))}
+              <CutOff reason={stopReason} />
+              <div ref={bottom} />
+            </div>
+          </Profiler>
         )}
       </div>
       {/*
@@ -246,11 +335,17 @@ function Assistant({ item }: AssistantProps) {
 type ItemProps = {
   item: TranscriptItem;
   openTool: boolean;
+  /** readOnly is passed to the tool cards, which then take no answers. */
+  readOnly: boolean;
   /** onRewind is absent when this row cannot be rewound to. */
   onRewind?: (entryId: string, text: string, images: MessageImage[]) => void;
 };
 
-const Item = memo(function Item({ item, openTool, onRewind }: ItemProps) {
+const Item = memo(function Item({ item, openTool, readOnly, onRewind }: ItemProps) {
+  if (__EIKA_MEASURE_HISTORY__ && window.eikaHistoryMeasurement) {
+    // eslint-disable-next-line react-hooks/immutability -- Count render attempts only in the profiling build.
+    window.eikaHistoryMeasurement.rows += 1;
+  }
   switch (item.kind) {
     case "user":
       // A message the user wrote is the one thing on screen that did not come
@@ -269,7 +364,7 @@ const Item = memo(function Item({ item, openTool, onRewind }: ItemProps) {
             <Button
               size="icon-xs"
               variant="ghost"
-              className="mt-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100"
+              className="rewind-action mt-1 transition-opacity"
               aria-label="Rewind the conversation to this message and edit it"
               title="Rewind to this message and edit it"
               onClick={() => {
@@ -300,7 +395,7 @@ const Item = memo(function Item({ item, openTool, onRewind }: ItemProps) {
     case "assistant":
       return <Assistant item={item} />;
     case "tool":
-      return <ToolCard call={item} open={openTool} />;
+      return <ToolCard call={item} open={openTool} readOnly={readOnly} />;
     case "compaction":
       return <Compaction item={item} />;
     case "error":
@@ -322,11 +417,45 @@ const Item = memo(function Item({ item, openTool, onRewind }: ItemProps) {
           </div>
         </div>
       );
-    default:
-      return item.text === "" ? null : (
-        <p className="text-muted-foreground border-l-2 pl-3 font-mono text-xs whitespace-pre-wrap">
-          {item.text}
-        </p>
+    case "notice": {
+      if (item.text === "") return null;
+      const name = /^([a-z0-9-]+) \([^)]+\) (?:reported:|asks:|was interrupted)/.exec(
+        item.text,
+      )?.[1];
+      const asked = item.question;
+      if (asked !== undefined) {
+        return (
+          <article className="bg-muted/40 min-w-0 rounded-md border px-3 py-2 text-sm">
+            <h3 className="text-muted-foreground mb-1 text-xs font-semibold">
+              {asked.name} ({asked.agent}) asks
+            </h3>
+            <p className="break-words whitespace-pre-wrap">{asked.question}</p>
+            {(asked.options?.length ?? 0) > 0 && (
+              <ul className="text-muted-foreground mt-1 list-disc pl-5 text-xs">
+                {asked.options?.map((option) => (
+                  <li key={option}>{option}</li>
+                ))}
+              </ul>
+            )}
+            <SubagentLink name={asked.name} />
+          </article>
+        );
+      }
+      return (
+        <article className="bg-muted/40 min-w-0 rounded-md border px-3 py-2 text-sm">
+          <h3 className="text-muted-foreground mb-1 text-xs font-semibold">
+            {item.entryKind === "notice"
+              ? "Notice"
+              : item.entryKind === "preamble"
+                ? "Session context"
+                : item.entryKind}
+          </h3>
+          <ScrollRegion label="Notice text" className="max-h-48 whitespace-pre-wrap break-words">
+            {item.text}
+          </ScrollRegion>
+          {name !== undefined && <SubagentLink name={name} />}
+        </article>
       );
+    }
   }
 });

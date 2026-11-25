@@ -58,7 +58,108 @@ are stored.
 `make local` runs the same `docker compose up`, `make local-logs` follows the
 logs, and `make local-down` stops the stack. Docker volumes keep the database
 and the key that encrypts stored credentials. The stack listens
-on 127.0.0.1 only; put a reverse proxy in front of it for remote access.
+on 127.0.0.1 only.
+
+### Backup
+
+```sh
+make backup
+```
+
+writes one backup set to `backups/eika-backup-<UTC time>/` (override the place
+with `EIKA_BACKUP_DIR`). The directory is mode 0700 and each file 0600. A set
+holds exactly:
+
+- `postgres.dump`: the database (`pg_dump -Fc`), sealed credentials included.
+- `memory.tar`: the whole memory repository, git history included, read from
+  the memory computer's volume `eika-cx-<id>`, where `<id>` is the id this
+  install recorded in its database (`core.memory_computer`). `EIKA_MEMORY_VOLUME` names another volume.
+- `secret.key`: the key that seals stored credentials. Without it the dump's
+  sealed settings cannot be read, so the set is refused when it is missing.
+- `manifest.json`: format, UTC time, Eika commit (and whether the tree was
+  modified), harness image id, the last migration applied, and the SHA-256 and
+  size of each file.
+
+Not included: the files of other computers (their volumes), the sandbox images,
+the guard and search services, `.env`. Back those up separately if you need them.
+
+Eika is stopped while the set is taken, so the database, the memory repository
+and the key match each other, and started again afterwards, also when the backup
+fails. Expect it to be unavailable for the length of the dump and copy, normally
+seconds. The postgres service must be running. Nothing secret is printed; the
+set itself is secret, so keep it somewhere only you can read. A set is built in a
+hidden `.eika-backup-*.partial` directory and renamed only when complete; a
+failed run leaves none. `make restore` reads this format.
+
+### Restore
+
+```sh
+docker compose up -d postgres      # a new stack needs only its database running
+make restore BACKUP=backups/eika-backup-<UTC time>
+```
+
+Restore only into a stopped, empty target: a new stack, or one whose data you
+removed (`docker compose down -v` destroys it). Before it writes anything,
+`make restore` checks the whole set: `manifest.json`, `postgres.dump`,
+`memory.tar` and `secret.key` are all there, every size and SHA-256 matches the
+manifest, the dump and the archive can be read, and the set's migration is not
+newer than this build (upgrade Eika first if it is). It then refuses, writing
+nothing, when Eika is running, the database holds any table, `secret.key`
+already exists in the data volume, or the memory volume is not empty. Then it
+restores the database, the key (unchanged, mode 0600, owned by the harness
+user) and the memory repository with its git history into the volume
+`eika-cx-<id>`, named from the `core.memory_computer` id in the restored
+database, and starts the stack. Core's startup reconcile verifies the memory
+index against the restored files and rebuilds what is missing; look for the
+`memory reconciled` line in `docker compose logs eika`, which the command
+prints. Sign in with the backed-up password; sealed credentials open because
+the key came back with them.
+
+**Restoring beside the source.** The memory volume `eika-cx-<id>` is named per
+Docker host, not per stack. When the set's volume exists and is not empty, it
+belongs to another stack on this host (typically the backed-up stack, still
+running). It is never written: the repository goes into a volume named from a
+fresh id, and `core.memory_computer` in the restored database is changed to
+that id before Core starts. So you can back up a running stack and restore it
+into a separate empty compose project (`COMPOSE="docker compose -p other"`) on
+the same host, with the source intact. Other computers' files and the home
+computer's volume are not in a set; Eika makes the home container again.
+
+`FORCE=1 make restore BACKUP=...` is **destructive**: it drops the target
+database and replaces it, overwrites the key file and empties the target's own memory
+volume (the one its database records, never another stack's) first. Use it only when the target holds nothing you need. Eika must
+still be stopped. If a restore fails part-way the target is partly written;
+fix the cause and rerun with `FORCE=1`. Nothing secret is printed.
+
+`make restore-test` runs the whole cycle on throwaway compose projects of its
+own (never your stack, never `make smoke`'s): it populates a source stack
+(sign-in password, a sealed provider key, sessions with entries, memories
+active, pending and archived), backs it up, checks that incomplete, damaged and
+too-new sets are rejected and that a running or filled target is refused, restores
+into a new stack beside it and checks the sessions, memories, sealed
+key, key mode and git history, then repeats with `FORCE=1` and checks the
+source, which kept running throughout, is unchanged. It needs about
+3 GB of free memory and takes a few minutes; both stacks are removed afterwards,
+and the images `eika:restoretest` and `eika-sandbox:restoretest` stay as a
+build cache.
+
+### Access from a phone
+
+Install Tailscale on the host and phone, and connect both to the same tailnet.
+Enable HTTPS for the tailnet, then run this on the host:
+
+```sh
+tailscale serve --bg http://127.0.0.1:8080
+```
+
+Open the HTTPS address that Tailscale gives you on the phone. You can install
+Eika from the browser's app or home screen menu. Tailscale Serve keeps access
+within the tailnet without opening a public port. The app shell can load offline,
+but chats and other data need a connection to Eika.
+
+You can also use a reverse proxy. Set `public_url` to the HTTPS address for
+OAuth metadata. If the frontend uses a different origin from the server, add
+its host to `allowed_origins` in the harness configuration.
 
 To change the published port or set a fixed API token for scripts, copy
 `.env.example` to `.env` and edit it.
@@ -104,7 +205,7 @@ part of `make check`.
 - `AGENTS.md` — start here before changing the codebase.
 - `docs/ARCHITECTURE.md` — how the pieces fit together.
 - `docs/DECISIONS.md` — why they are built that way, and what is deferred.
-- `docs/EXTENDING.md` — adding a tool, provider, search source, or UI panel.
+- `docs/EXTENDING.md` — adding a tool, provider, search source, or UI page.
 - `docs/STYLE_GUIDE.md` — coding and documentation rules.
 - `docs/api/` — HTTP, WebSocket, and sandbox daemon wire contract.
 - `docs/PLAN.md`, `docs/DEFERRED.md` and `docs/design/` — where Eika is going, and the phases that

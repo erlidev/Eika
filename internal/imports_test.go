@@ -24,7 +24,6 @@ type boundary struct {
 
 // boundaries are the dependency rules AGENTS.md states. Paths are relative to
 // the module root, and a rule covers a package and every package below it.
-// Phase 4 adds the Sentry rules here.
 var boundaries = []boundary{
 	// Nothing imports server; only the binaries wire it.
 	{from: "", to: "internal/server", allowed: []string{
@@ -37,6 +36,17 @@ var boundaries = []boundary{
 	{from: "internal/tool", to: "internal/eikad", allowed: []string{
 		"internal/tool/builtin", // eikad.BinaryPath, the binary web_fetch's filter runs in the sandbox
 	}},
+	// Sentry is the permission authority, and no part of Core it judges can
+	// reach back into it: it never imports the server, the agent or computers.
+	{from: "internal/sentry", to: "internal/server"},
+	{from: "internal/sentry", to: "internal/agent"},
+	{from: "internal/sentry", to: "internal/computer"},
+	// The skill format is read before anything is stored or run, so it
+	// depends on no part of Core that does either.
+	{from: "internal/skill", to: "internal/server"},
+	{from: "internal/skill", to: "internal/agent"},
+	{from: "internal/skill", to: "internal/computer"},
+	{from: "internal/skill", to: "internal/store"},
 }
 
 // TestImportBoundaries checks every non-test Go file in the repository
@@ -69,6 +79,8 @@ var leaves = map[string]string{
 	// to it in its own terms, so the agent, the probe, the utility tasks and
 	// the server can all hold a lease without it knowing any of them.
 	"internal/inference": "the inference queue is imported by every package that makes model calls",
+	"internal/memory":    "the memory file format is independent of repository and service code",
+	"internal/skill":     "the skill parser, zip reader and installer are pure; the volume and the store reach them through interfaces",
 }
 
 // TestLeavesImportNothingOfTheModule checks the packages in leaves.
@@ -81,7 +93,7 @@ func TestLeavesImportNothingOfTheModule(t *testing.T) {
 			continue
 		}
 		for _, dep := range deps {
-			t.Errorf("%s imports %s, but it must import only the standard library: %s", pkg, dep, reason)
+			t.Errorf("%s imports %s, but it must not import another module package: %s", pkg, dep, reason)
 		}
 	}
 }

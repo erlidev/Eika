@@ -1,11 +1,14 @@
 package server
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
+	"unicode/utf8"
 
 	"github.com/erlidev/eika/internal/computer"
 	"github.com/erlidev/eika/internal/mcp"
@@ -39,16 +42,24 @@ func decodeJSON[T any](r *http.Request) (T, error) {
 }
 
 // decodeJSONWithin reads a JSON request body of at most limit bytes, for the
-// one route whose body carries files.
+// one route whose body carries files. A body that is not valid UTF-8 is
+// refused before encoding/json can replace the bad bytes silently.
 func decodeJSONWithin[T any](r *http.Request, limit int64) (T, error) {
 	var v T
-	dec := json.NewDecoder(http.MaxBytesReader(nil, r.Body, limit))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&v); err != nil {
+	raw, err := io.ReadAll(http.MaxBytesReader(nil, r.Body, limit))
+	if err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
 			return v, tooLargef("the request body is over the limit of %d bytes", limit)
 		}
+		return v, invalidf("read request body: %v", err)
+	}
+	if !utf8.Valid(raw) {
+		return v, invalidf("request body must be valid UTF-8")
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&v); err != nil {
 		return v, invalidf("decode request body: %v", err)
 	}
 	return v, nil
@@ -109,6 +120,15 @@ func conflictf(format string, args ...any) error {
 	return apiError{status: http.StatusConflict, code: codeConflict, message: fmt.Sprintf(format, args...)}
 }
 
+// isConflict reports whether err is a conflict, such as conflictf reports.
+func isConflict(err error) bool {
+	if err == nil {
+		return false
+	}
+	status, _ := statusOf(err)
+	return status == http.StatusConflict
+}
+
 // fail writes err as the API's error body, mapping the sentinel errors of the
 // packages the handlers call onto status codes. An unmapped error is the
 // harness's own failure: it is logged in full and reported as internal, so
@@ -138,7 +158,7 @@ func statusOf(err error) (int, string) {
 		return http.StatusNotFound, codeNotFound
 	case errors.Is(err, store.ErrConflict), errors.Is(err, mcp.ErrDisabled):
 		return http.StatusConflict, codeConflict
-	case errors.Is(err, builtin.ErrBadAnswer), errors.Is(err, mcp.ErrBadElicitationAnswer),
+	case errors.Is(err, store.ErrInvalidInstructions), errors.Is(err, store.ErrInvalidProject), errors.Is(err, builtin.ErrBadAnswer), errors.Is(err, mcp.ErrBadElicitationAnswer),
 		errors.Is(err, mcp.ErrNeedsComputer), errors.Is(err, computer.ErrNoEgressControl):
 		return http.StatusBadRequest, codeInvalidRequest
 	default:

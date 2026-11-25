@@ -14,7 +14,6 @@ import type {
   SectionKind,
   ToolSchema,
 } from "@/api/types";
-import type { EditorSection } from "@/features/profiles/form";
 
 /** SegmentKind names one part of a request, in the order the bar draws them. */
 export type SegmentKind =
@@ -31,6 +30,8 @@ export type Segment = { kind: SegmentKind; label: string; tokens: number; approx
 export const segmentLabels: Record<SegmentKind, string> = {
   base: "Base prompt",
   instructions: "Instructions",
+  preamble: "Preamble",
+  memory: "Memory",
   builtin_tools: "Built-in tools",
   mcp_tools: "MCP tools",
   messages: "Messages",
@@ -42,6 +43,8 @@ export const segmentLabels: Record<SegmentKind, string> = {
 const segmentOrder: readonly SegmentKind[] = [
   "base",
   "instructions",
+  "preamble",
+  "memory",
   "builtin_tools",
   "mcp_tools",
   "messages",
@@ -61,6 +64,8 @@ export function segments(c: ModelContext): Segment[] {
   const tokens: Record<SegmentKind, number> = {
     base: 0,
     instructions: 0,
+    preamble: 0,
+    memory: 0,
     builtin_tools: 0,
     mcp_tools: 0,
     messages: 0,
@@ -70,6 +75,8 @@ export function segments(c: ModelContext): Segment[] {
   const approximate: Record<SegmentKind, boolean> = {
     base: false,
     instructions: false,
+    preamble: false,
+    memory: false,
     builtin_tools: false,
     mcp_tools: false,
     messages: false,
@@ -382,47 +389,12 @@ export function requestJSON(c: ModelContext): Record<string, unknown> {
   };
 }
 
-/** EditTarget is the setting a part of a request comes from, and the editor tab that holds it. */
-export type EditTarget = { key: string; section: EditorSection };
-
-/**
- * editTargetOf is the setting behind a part of the request, or undefined
- * for one no editor sets: the messages are the conversation's.
- */
-export function editTargetOf(kind: SegmentKind): EditTarget | undefined {
-  switch (kind) {
-    case "base":
-      return { key: "chat_prompt", section: "prompt" };
-    case "instructions":
-      return { key: "instructions", section: "prompt" };
-    case "builtin_tools":
-    case "mcp_tools":
-      return { key: "tools", section: "tools" };
-    case "messages":
-    case "reasoning":
-    case "template":
-      return undefined;
-  }
-}
-
-/**
- * parameterTarget is the setting behind one parameter a request sends, keyed
- * as the request's sources are, or undefined for one only a model row sets.
- */
-export function parameterTarget(key: string): EditTarget | undefined {
-  if (key === "model" || key === "preserve_thinking") return { key, section: "model" };
-  if (key.startsWith("sampling.")) {
-    const name = key.slice("sampling.".length);
-    const section = name === "max_output" || name === "reasoning_effort" ? "model" : "sampling";
-    return { key, section };
-  }
-  return undefined;
-}
-
 /** segmentColors are the parts' colours, from the theme's chart tokens. */
 export const segmentColors: Record<SegmentKind, string> = {
   base: "bg-chart-1",
   instructions: "bg-chart-3",
+  preamble: "bg-chart-3",
+  memory: "bg-chart-2",
   builtin_tools: "bg-chart-5",
   mcp_tools: "bg-chart-4",
   messages: "bg-primary/40",
@@ -445,7 +417,7 @@ export function percent(part: number, whole: number): string {
  */
 export type View =
   | "system"
-  | `section:${"base" | "instructions"}`
+  | `section:${"base" | "instructions" | "preamble" | "memory"}`
   | "tools"
   | `group:${string}`
   | "messages"

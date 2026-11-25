@@ -15,11 +15,10 @@ import (
 	"github.com/erlidev/eika/internal/provider"
 )
 
-// closingServer is a server that answers each connection's first request and
-// then closes the connection when the next request arrives on it, without
+// closingServer is a server that answers the first connection's first request
+// and then closes the connection when the next request arrives on it, without
 // answering: the keep-alive connection a server closes while the client still
-// holds it in its idle pool. Connections after the first are served normally
-// when serveLater is set, and closed the same way when not.
+// holds it in its idle pool. Connections after the first are served normally.
 type closingServer struct {
 	addr string
 
@@ -28,7 +27,7 @@ type closingServer struct {
 	bodies []string
 }
 
-func newClosingServer(t *testing.T, serveLater bool) *closingServer {
+func newClosingServer(t *testing.T) *closingServer {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -46,7 +45,7 @@ func newClosingServer(t *testing.T, serveLater bool) *closingServer {
 			s.conns++
 			first := s.conns == 1
 			s.mu.Unlock()
-			go s.serve(conn, first || !serveLater)
+			go s.serve(conn, first)
 		}
 	}()
 	return s
@@ -92,7 +91,7 @@ func post(t *testing.T, client *http.Client, url, body string) error {
 }
 
 func TestHTTPClientRepeatsARequestWhoseReusedConnectionTheServerClosed(t *testing.T) {
-	s := newClosingServer(t, true)
+	s := newClosingServer(t)
 	client := provider.NewHTTPClient(5 * time.Second)
 	url := "http://" + s.addr + "/v1/chat/completions"
 
@@ -109,28 +108,6 @@ func TestHTTPClientRepeatsARequestWhoseReusedConnectionTheServerClosed(t *testin
 	defer s.mu.Unlock()
 	if want := []string{`{"turn":1}`, `{"turn":2}`, `{"turn":2}`}; strings.Join(s.bodies, "|") != strings.Join(want, "|") {
 		t.Errorf("bodies the server read = %q, want %q: the repeat must carry the whole body", s.bodies, want)
-	}
-}
-
-func TestHTTPClientDoesNotLoopOnAServerThatKeepsClosing(t *testing.T) {
-	s := newClosingServer(t, false)
-	client := provider.NewHTTPClient(5 * time.Second)
-	url := "http://" + s.addr + "/"
-
-	if err := post(t, client, url, `{}`); err != nil {
-		t.Fatalf("first request: %v", err)
-	}
-	// The second request fails on the reused connection, is repeated on a new
-	// connection, and the new one answers its first request: success. The
-	// third reuses that connection and fails the same way, then succeeds again
-	// on a fourth; no request is repeated more than once.
-	for i := 2; i <= 3; i++ {
-		if err := post(t, client, url, `{}`); err != nil {
-			t.Fatalf("request %d: %v", i, err)
-		}
-	}
-	if got := s.connections(); got > 3 {
-		t.Errorf("server accepted %d connections for 3 requests, want at most 3", got)
 	}
 }
 

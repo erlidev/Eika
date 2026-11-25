@@ -5,8 +5,12 @@
  * status line is read after it, not through it.
  */
 
-import { Brain, FoldVertical, Loader2, Radio, Square, WifiOff } from "lucide-react";
+import { Brain, FoldVertical, Loader2, Radio, Search, Square, WifiOff } from "lucide-react";
 
+import { useState } from "react";
+
+import { ContextInspector, useRequestSelection } from "@/features/context";
+import type { View } from "@/features/context";
 import type { StreamStatus } from "@/api/stream";
 import { useStreamStatus } from "@/api/useStream";
 import { Badge } from "@/components/ui/badge";
@@ -20,7 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { SessionProfile, useSessionConfiguration } from "@/features/profiles";
+import { useSettingsDialog } from "@/features/settings";
 import { ContextMeter } from "@/features/session/ContextMeter";
 import {
   useAbortRun,
@@ -43,23 +47,19 @@ import { cn } from "@/lib/utils";
 
 export type RunStatusBarProps = {
   sessionId: string;
-  /** chat says the session has no computer. */
-  chat: boolean;
-  /** overridden says the session sets something of its own over its profile. */
-  overridden: boolean;
+  /**
+   * agent says the session runs an agent, whose class picks the model and
+   * whose model is chosen by its class: the model control would change
+   * nothing, so it is not drawn.
+   */
+  agent: boolean;
   /** model is the model the composer will use. */
   model: string;
   /** onModelChange overrides the model for this session only. */
   onModelChange: (model: string) => void;
 };
 
-export function RunStatusBar({
-  sessionId,
-  chat,
-  overridden,
-  model,
-  onModelChange,
-}: RunStatusBarProps) {
+export function RunStatusBar({ sessionId, agent, model, onModelChange }: RunStatusBarProps) {
   const status = useRunStatus(sessionId);
   const abort = useAbortRun(sessionId);
   const compact = useCompact(sessionId);
@@ -73,13 +73,6 @@ export function RunStatusBar({
   const run = status.data?.run;
   const active = status.data?.active ?? false;
   const chosen = useModel(model);
-  // A profile or the session can set the effort over the model's own, and
-  // then the model's cycle would change nothing the next run sends.
-  const configuration = useSessionConfiguration(sessionId);
-  const resolved = configuration.data?.resolved;
-  const effortSource =
-    resolved?.model === model ? resolved.sources?.["sampling.reasoning_effort"] : undefined;
-  const configuredEffort = resolved?.sampling.reasoning_effort ?? "";
 
   return (
     <div className="text-muted-foreground flex flex-wrap items-center gap-2 border-t px-3 py-1 text-xs">
@@ -97,49 +90,36 @@ export function RunStatusBar({
         <span className="text-destructive truncate">{run.error}</span>
       )}
 
-      <Select value={model} onValueChange={onModelChange}>
-        <SelectTrigger size="sm" className="h-6 w-auto gap-1 text-xs" aria-label="Model">
-          <SelectValue placeholder="default model" />
-        </SelectTrigger>
-        <SelectContent>
-          {(providers.data?.providers ?? []).map((provider) => {
-            const own = chatModels(models.data?.models).filter(
-              (m) => m.provider_id === provider.id,
-            );
-            if (own.length === 0) return null;
-            return (
-              <SelectGroup key={provider.id}>
-                <SelectLabel className="text-xs">{provider.name}</SelectLabel>
-                {own.map((entry) => (
-                  <SelectItem key={entry.id} value={entry.name} className="text-xs">
-                    {entry.name}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            );
-          })}
-        </SelectContent>
-      </Select>
+      {!agent && (
+        <Select value={model} onValueChange={onModelChange}>
+          <SelectTrigger size="sm" className="h-6 w-auto gap-1 text-xs" aria-label="Model">
+            <SelectValue placeholder="model class" />
+          </SelectTrigger>
+          <SelectContent>
+            {(providers.data?.providers ?? []).map((provider) => {
+              const own = chatModels(models.data?.models).filter(
+                (m) => m.provider_id === provider.id,
+              );
+              if (own.length === 0) return null;
+              return (
+                <SelectGroup key={provider.id}>
+                  <SelectLabel className="text-xs">{provider.name}</SelectLabel>
+                  {own.map((entry) => (
+                    <SelectItem key={entry.id} value={entry.name} className="text-xs">
+                      {entry.name}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              );
+            })}
+          </SelectContent>
+        </Select>
+      )}
 
-      <SessionProfile sessionId={sessionId} chat={chat} overridden={overridden} />
-
-      {chosen &&
-        (effortSource === "session" || effortSource === "profile" ? (
-          <span
-            className="flex h-6 items-center gap-1 rounded-md border border-dashed px-1.5"
-            title={`Reasoning effort ${configuredEffort === "" ? "default" : configuredEffort}, set by the ${effortSource === "session" ? "session" : "profile"}. Change it in the profile's settings.`}
-          >
-            <Brain aria-hidden className="size-3" />
-            <span className="sr-only">Reasoning effort, set by the {effortSource}: </span>
-            <span className="font-mono">
-              {configuredEffort === "" ? "default" : configuredEffort}
-            </span>
-          </span>
-        ) : (
-          <EffortCycle model={chosen} />
-        ))}
+      {chosen && !agent && <EffortCycle model={chosen} />}
 
       <ContextMeter meter={meter} prediction={prediction.data} />
+      <InspectContext sessionId={sessionId} model={agent ? "" : model} />
       {!active && hasHistory && (
         <Button
           size="xs"
@@ -179,6 +159,63 @@ export function RunStatusBar({
         )}
       </span>
     </div>
+  );
+}
+
+function InspectContext({ sessionId, model }: { sessionId: string; model: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button
+        size="xs"
+        variant="ghost"
+        onClick={() => {
+          setOpen(true);
+        }}
+        aria-label="Inspect context"
+      >
+        <Search aria-hidden />
+        Inspect
+      </Button>
+      {open && (
+        <OpenInspector
+          sessionId={sessionId}
+          model={model}
+          onClose={() => {
+            setOpen(false);
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+function OpenInspector({
+  sessionId,
+  model,
+  onClose,
+}: {
+  sessionId: string;
+  model: string;
+  onClose: () => void;
+}) {
+  const requests = useRequestSelection(sessionId, model);
+  const showSettings = useSettingsDialog((s) => s.show);
+  const [view, setView] = useState<View>("system");
+  return (
+    <ContextInspector
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+      view={view}
+      onView={setView}
+      requests={requests}
+      onSettings={(tab) => {
+        onClose();
+        showSettings(tab);
+      }}
+    />
   );
 }
 

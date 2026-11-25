@@ -1,2 +1,4 @@
-/** The context feature: the Context panel, which shows what a model request sends. */
-export { ContextPanel } from "@/features/context/ContextPanel";
+/** Request inspector and its request selection. */
+export { ContextInspector, RequestSelect } from "@/features/context/ContextInspector";
+export { useRequestSelection } from "@/features/context/queries";
+export type { View } from "@/features/context/segments";

@@ -30,9 +30,11 @@ import { failureText } from "@/lib/failure";
 
 export type ElicitationFormProps = {
   elicitation: Elicitation;
+  /** readOnly shows what is asked and none of the controls that answer it. */
+  readOnly?: boolean;
 };
 
-export function ElicitationForm({ elicitation }: ElicitationFormProps) {
+export function ElicitationForm({ elicitation, readOnly = false }: ElicitationFormProps) {
   const sessionId = useSessionStore((s) => s.sessionId);
   const dismiss = useSessionStore((s) => s.dismissElicitation);
   const answer = useAnswerElicitation(sessionId);
@@ -65,7 +67,9 @@ export function ElicitationForm({ elicitation }: ElicitationFormProps) {
         <span className="font-mono">{elicitation.server}</span> asks:
       </p>
       <p className="text-sm font-medium whitespace-pre-wrap">{elicitation.message}</p>
-      {elicitation.mode === "url" ? (
+      {readOnly ? (
+        <p className="text-muted-foreground text-xs">Waiting for an answer.</p>
+      ) : elicitation.mode === "url" ? (
         <UrlRequest elicitation={elicitation} busy={busy} send={send} />
       ) : (
         <FormRequest elicitation={elicitation} busy={busy} send={send} />

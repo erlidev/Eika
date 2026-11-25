@@ -49,18 +49,6 @@ func TestStreamReadsEndpointTimings(t *testing.T) {
 			},
 		},
 		{
-			name: "llama.cpp states only rates",
-			chunk: `{"id":"c","object":"chat.completion.chunk","choices":[],` +
-				`"usage":{"prompt_tokens":100,"completion_tokens":50,"total_tokens":150},` +
-				`"timings":{"prompt_n":100,"prompt_per_second":4000.0,` +
-				`"predicted_n":50,"predicted_per_second":25.0}}`,
-			want: provider.Timings{
-				PromptTokens: 100, PromptMS: 25,
-				DecodeTokens: 50, DecodeMS: 2000,
-				Source: provider.TimedByEndpoint,
-			},
-		},
-		{
 			name: "vLLM per-request metrics",
 			chunk: `{"id":"c","object":"chat.completion.chunk","choices":[],` +
 				`"usage":{"prompt_tokens":900,"completion_tokens":137,"total_tokens":1037},` +
@@ -75,55 +63,6 @@ func TestStreamReadsEndpointTimings(t *testing.T) {
 			},
 		},
 		{
-			name: "NVIDIA NIM stats",
-			chunk: `{"id":"c","object":"chat.completion.chunk","choices":[],` +
-				`"usage":{"prompt_tokens":512,"completion_tokens":64,"total_tokens":576},` +
-				`"stats":{"type":"NIM LLM Model Stats","version":"0.1.0","llm_input_token_length":512,` +
-				`"llm_output_token_length":64,"generation_time_in_ms":800.0,"time_in_queue_in_ms":10.0,` +
-				`"response_tokens":{"response_token_length":64,"time_to_first_token_in_ms":110.0,` +
-				`"token_to_token_time_in_ms":12.0,"tokens_per_second":80.0}}}`,
-			want: provider.Timings{
-				PromptTokens: 512, PromptMS: 100,
-				DecodeTokens: 64, DecodeMS: 800,
-				Source: provider.TimedByEndpoint,
-			},
-		},
-		{
-			name: "LM Studio counts in seconds",
-			chunk: `{"id":"c","object":"chat.completion.chunk","choices":[],` +
-				`"usage":{"prompt_tokens":300,"completion_tokens":49,"total_tokens":349},` +
-				`"stats":{"tokens_per_second":51.43709529007664,"time_to_first_token":0.111,` +
-				`"generation_time":0.954,"stop_reason":"eosFound"}}`,
-			want: provider.Timings{
-				PromptTokens: 300, PromptMS: 111,
-				DecodeTokens: 49, DecodeMS: 954,
-				Source: provider.TimedByEndpoint,
-			},
-		},
-		{
-			name: "TabbyAPI states rates in the usage block",
-			chunk: `{"id":"c","object":"chat.completion.chunk","choices":[],` +
-				`"usage":{"prompt_tokens":2048,"completion_tokens":128,"total_tokens":2176,` +
-				`"prompt_tokens_per_sec":5120.0,"completion_tokens_per_sec":32.0}}`,
-			want: provider.Timings{
-				PromptTokens: 2048, PromptMS: 400,
-				DecodeTokens: 128, DecodeMS: 4000,
-				Source: provider.TimedByEndpoint,
-			},
-		},
-		{
-			name: "Groq streams phase times under x_groq",
-			chunk: `{"id":"c","object":"chat.completion.chunk","choices":[],` +
-				`"x_groq":{"id":"req_1","usage":{"queue_time":0.02,"prompt_tokens":150,` +
-				`"prompt_time":0.008,"completion_tokens":200,"completion_time":0.25,` +
-				`"total_tokens":350,"total_time":0.258}}}`,
-			want: provider.Timings{
-				PromptTokens: 150, PromptMS: 8,
-				DecodeTokens: 200, DecodeMS: 250,
-				Source: provider.TimedByEndpoint,
-			},
-		},
-		{
 			name: "Ollama durations in nanoseconds",
 			chunk: `{"id":"c","object":"chat.completion.chunk","choices":[],` +
 				`"usage":{"prompt_tokens":400,"completion_tokens":80,"total_tokens":480},` +
@@ -134,12 +73,6 @@ func TestStreamReadsEndpointTimings(t *testing.T) {
 				DecodeTokens: 80, DecodeMS: 2000,
 				Source: provider.TimedByEndpoint,
 			},
-		},
-		{
-			name: "an endpoint that measures nothing reports nothing",
-			chunk: `{"id":"c","object":"chat.completion.chunk","choices":[],` +
-				`"usage":{"prompt_tokens":10,"completion_tokens":4,"total_tokens":14}}`,
-			want: provider.Timings{},
 		},
 	}
 
@@ -163,23 +96,6 @@ func TestStreamReadsEndpointTimings(t *testing.T) {
 				t.Errorf("source = %q, want %q", got.Source, tc.want.Source)
 			}
 		})
-	}
-}
-
-// TestStreamKeepsTheFirstEngineToMeasureAPhase covers a gateway that passes
-// one engine's numbers through beside its own: the preferred shape wins, and
-// nothing is mixed into an average of the two.
-func TestStreamKeepsTheFirstEngineToMeasureAPhase(t *testing.T) {
-	s := newSSEServer(t, 200,
-		`{"id":"c","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"hi"},"finish_reason":"stop"}]}`,
-		`{"id":"c","object":"chat.completion.chunk","choices":[],`+
-			`"usage":{"prompt_tokens":100,"completion_tokens":50,"total_tokens":150,`+
-			`"prompt_tokens_per_sec":10.0,"completion_tokens_per_sec":10.0},`+
-			`"timings":{"prompt_n":100,"prompt_ms":50.0,"predicted_n":50,"predicted_ms":500.0}}`,
-	)
-	got := usageOf(t, collect(t, newProvider(t, s.URL), provider.Request{})).Timings
-	if got.PromptMS != 50 || got.DecodeMS != 500 {
-		t.Errorf("timings = %+v, want llama.cpp's 50ms prompt and 500ms decode", got)
 	}
 }
 

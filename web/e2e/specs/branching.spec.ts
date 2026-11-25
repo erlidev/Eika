@@ -12,6 +12,14 @@ test("rewinding a message takes the conversation back and puts it in the box", a
   const answers = eika.page.getByRole("region", { name: "Session" }).getByRole("article");
   await eika.send("Run the tests");
   await expect(answers.filter({ hasText: "Tests pass." })).toBeVisible();
+  await expect(
+    eika.page
+      .getByRole("button", { name: "Rewind the conversation to this message and edit it" })
+      .nth(1),
+  ).toBeEnabled();
+  // Reload to make the answer a stored row before rewinding it.
+  await eika.page.reload();
+  await expect(answers.filter({ hasText: "Tests pass." })).toBeVisible();
 
   // The second message the user sent: the first is the stored conversation's.
   await eika.page
@@ -23,4 +31,7 @@ test("rewinding a message takes the conversation back and puts it in the box", a
   // in the composer, ready to be edited and asked again.
   await expect(answers.filter({ hasText: "Tests pass." })).toHaveCount(0);
   await expect(eika.page.getByLabel("Message", { exact: true })).toHaveValue("Run the tests");
+  await eika.page.reload();
+  await expect(answers.first()).toBeVisible();
+  await expect(answers.filter({ hasText: "Tests pass." })).toHaveCount(0);
 });

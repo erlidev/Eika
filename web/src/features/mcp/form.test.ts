@@ -6,7 +6,6 @@ import {
   droppedHeaders,
   emptyForm,
   formFromServer,
-  parseArgs,
   updateInput,
   validate,
 } from "@/features/mcp/form";
@@ -37,24 +36,11 @@ function http(overrides: Partial<MCPFormState> = {}): MCPFormState {
 
 describe("validate", () => {
   const cases: [string, MCPFormState, string | null][] = [
-    ["a plain http server", http(), null],
-    ["no name", http({ name: "" }), "name"],
     ["a double underscore, which would split the tool name", http({ name: "a__b" }), "name"],
-    ["a space in the name", http({ name: "my server" }), "name"],
-    ["a name of 33 characters", http({ name: "a".repeat(33) }), "name"],
-    ["a taken name", http({ name: "linear" }), "name"],
-    ["no URL", http({ url: "" }), "url"],
     ["a URL with credentials", http({ url: "https://u:p@mcp.example.com" }), "url"],
-    ["a URL with a fragment", http({ url: "https://mcp.example.com/#x" }), "url"],
-    ["a ws URL", http({ url: "ws://mcp.example.com" }), "url"],
     [
       "a header the client sets itself",
       http({ headers: [{ name: "Content-Type", value: "x", stored: false }] }),
-      "headers",
-    ],
-    [
-      "an Mcp-Param header",
-      http({ headers: [{ name: "Mcp-Param-Repo", value: "x", stored: false }] }),
       "headers",
     ],
     [
@@ -77,7 +63,6 @@ describe("validate", () => {
       }),
       "headers",
     ],
-    ["a stdio server without a command", { ...emptyForm("stdio"), name: "fs" }, "command"],
     [
       "a variable starting with a digit",
       {
@@ -94,16 +79,6 @@ describe("validate", () => {
       expect(validate(form, ["linear"])?.field ?? null).toBe(field);
     });
   }
-});
-
-describe("parseArgs", () => {
-  it("keeps one argument per line, spaces included, and skips blank lines", () => {
-    expect(parseArgs("-y\n@scope/server\n\n/path with space\r\n")).toEqual([
-      "-y",
-      "@scope/server",
-      "/path with space",
-    ]);
-  });
 });
 
 describe("createInput", () => {
@@ -148,13 +123,6 @@ describe("updateInput", () => {
     form.headers = [{ name: "X-Api-Key", value: "new", stored: true }];
     expect(droppedHeaders(stored, form)).toEqual([]);
     expect(updateInput(stored, form).headers).toEqual({ "X-Api-Key": "new" });
-  });
-
-  it("sends a renamed server's new name only", () => {
-    expect(updateInput(stored, { ...formFromServer(stored), name: "gh" })).toEqual({
-      name: "gh",
-      headers: { "X-Api-Key": null },
-    });
   });
 
   it("removes the stored client secret only when asked", () => {

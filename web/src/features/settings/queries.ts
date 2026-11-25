@@ -4,8 +4,15 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { UseMutationResult, UseQueryResult } from "@tanstack/react-query";
 
 import { queryKeys } from "@/api/keys";
-import { getSettings, getSystem, putSettings } from "@/api/routes";
+import {
+  getInstructions,
+  getSettings,
+  getSystem,
+  putInstructions,
+  putSettings,
+} from "@/api/routes";
 import type {
+  GlobalInstructions,
   SandboxEgress,
   SandboxLimits,
   Settings,
@@ -16,8 +23,6 @@ import type { SandboxSettings } from "@/features/sandbox";
 
 /** The settings keys the harness reads itself. Every other key is the UI's own. */
 export const settingKeys = {
-  defaultModel: "default_model",
-  defaultProfile: "default_profile",
   sandboxImage: "sandbox_image",
   sandboxLimits: "sandbox_limits",
   sandboxEgress: "sandbox_egress",
@@ -38,18 +43,41 @@ export function useSettings(): UseQueryResult<SettingsState> {
 export function useSaveSettings(): UseMutationResult<SettingsState, Error, Settings> {
   const client = useQueryClient();
   return useMutation({
+    mutationKey: queryKeys.settings(),
     mutationFn: putSettings,
     onSuccess: async (state) => {
       client.setQueryData(queryKeys.settings(), state);
-      // The default model and profile, the sandbox image, and the search
+      // The sandbox image and the search
       // order and quotas are reported elsewhere too.
       await Promise.all([
         client.invalidateQueries({ queryKey: queryKeys.models() }),
-        client.invalidateQueries({ queryKey: queryKeys.profiles() }),
         client.invalidateQueries({ queryKey: ["session"] }),
         client.invalidateQueries({ queryKey: queryKeys.system() }),
         client.invalidateQueries({ queryKey: queryKeys.searchStatus() }),
       ]);
+    },
+  });
+}
+
+/** useInstructions reads the user's global About me and rules. */
+export function useInstructions(): UseQueryResult<GlobalInstructions> {
+  return useQuery({
+    queryKey: queryKeys.instructions(),
+    queryFn: ({ signal }) => getInstructions(signal),
+  });
+}
+
+/** useSaveInstructions replaces both global instruction texts. */
+export function useSaveInstructions(): UseMutationResult<
+  GlobalInstructions,
+  Error,
+  GlobalInstructions
+> {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: putInstructions,
+    onSuccess: (saved) => {
+      client.setQueryData(queryKeys.instructions(), saved);
     },
   });
 }
@@ -66,12 +94,6 @@ export function useSystem(): UseQueryResult<SystemStatus> {
 export function settingString(state: SettingsState | undefined, key: string): string {
   const value = state?.settings[key];
   return typeof value === "string" ? value : "";
-}
-
-/** settingNumber reads a numeric setting, undefined when it is absent. */
-export function settingNumber(state: SettingsState | undefined, key: string): number | undefined {
-  const value = state?.settings[key];
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 /**
@@ -117,7 +139,7 @@ function isEgress(value: unknown): value is SandboxEgress {
   if (typeof value !== "object" || value === null) return false;
   const v = value as Record<string, unknown>;
   return (
-    (v.mode === "open" || v.mode === "allowlist" || v.mode === "none") &&
+    (v.mode === "public" || v.mode === "allowlist" || v.mode === "none") &&
     (v.allow === null || (Array.isArray(v.allow) && v.allow.every((h) => typeof h === "string")))
   );
 }

@@ -11,6 +11,9 @@ import (
 	"github.com/erlidev/eika/internal/store"
 )
 
+// maxPromptBytes bounds compaction instructions.
+const maxPromptBytes = 64 << 10
+
 // settingCompaction configures how a run compacts a conversation that
 // outgrows its model's context window.
 const settingCompaction = "compaction"
@@ -145,6 +148,10 @@ func (s *Server) handleCompact(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(req.Instructions) > maxPromptBytes {
 		s.fail(w, r, invalidf("instructions must be at most %d bytes", maxPromptBytes))
+		return
+	}
+	if err := s.refuseSubagent(r.Context(), r.PathValue("id")); err != nil {
+		s.fail(w, r, err)
 		return
 	}
 	run, err := s.runs.compact(r.Context(), r.PathValue("id"), req.Instructions, req.Model)

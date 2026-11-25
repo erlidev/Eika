@@ -64,7 +64,8 @@ func (s *Server) EnsureHome(ctx context.Context) error {
 		if host, err = s.deps.Computers.Create(ctx, computer.Spec{
 			ID:          row.ID,
 			Image:       row.Image,
-			Confinement: confinement(row.Sandbox),
+			Confinement: s.confinement(row.Sandbox),
+			ReadOnly:    s.skillsMounts(ctx),
 		}); err != nil {
 			return fmt.Errorf("create the home computer: %w", err)
 		}
@@ -91,6 +92,12 @@ func (s *Server) EnsureHome(ctx context.Context) error {
 		}
 		s.idle.used(row.ID, time.Now())
 		return nil
+	}
+	// A computer that is already up, as one is after the harness restarts or
+	// on an install that predates the canary, gets it now rather than at its
+	// next start.
+	if err := s.deps.Computers.Refresh(ctx, host); err != nil {
+		return fmt.Errorf("set the home computer's environment: %w", err)
 	}
 	return s.record(ctx, row.ID, host)
 }
@@ -135,7 +142,7 @@ func (s *Server) applyHomeSandbox(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := s.deps.Computers.Confine(ctx, &host, confinement(sandbox)); err != nil {
+	if err := s.deps.Computers.Confine(ctx, &host, s.confinement(sandbox)); err != nil {
 		return err
 	}
 	s.computerState(ctx, home.ID, home.State)
@@ -195,7 +202,10 @@ func (s *Server) keepHome(ctx context.Context, delay time.Duration) {
 // its row records: a change that reached the container only in part before it
 // stopped is completed here.
 func (s *Server) startComputer(ctx context.Context, cx store.Computer, host *computer.Computer) error {
-	if err := s.deps.Computers.Confine(ctx, host, confinement(cx.Sandbox)); err != nil {
+	if err := s.mountSkills(ctx, cx, host); err != nil {
+		return err
+	}
+	if err := s.deps.Computers.Confine(ctx, host, s.confinement(cx.Sandbox)); err != nil {
 		return err
 	}
 	return s.deps.Computers.Start(ctx, host)
@@ -239,4 +249,24 @@ func (s *Server) runExecutor(ctx context.Context, id string) (executor.Executor,
 		return nil, notRunning(cx, host.State)
 	}
 	return s.deps.Computers.Executor(host)
+}
+
+// projectExecutor holds the home computer in use until the status read ends.
+func (s *Server) projectExecutor(ctx context.Context, sessionID string) (executor.Executor, func(), error) {
+	home, err := s.deps.Store.HomeComputer(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	s.startMu.Lock()
+	release, err := s.runs.borrowComputer(sessionID, home.ID)
+	s.startMu.Unlock()
+	if err != nil {
+		return nil, nil, err
+	}
+	ex, err := s.runExecutor(ctx, home.ID)
+	if err != nil {
+		release()
+		return nil, nil, err
+	}
+	return ex, release, nil
 }

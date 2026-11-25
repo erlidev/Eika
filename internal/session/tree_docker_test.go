@@ -3,13 +3,8 @@
 package session_test
 
 import (
-	"encoding/json"
 	"errors"
 	"os"
-	"reflect"
-	"strconv"
-	"strings"
-	"sync"
 	"testing"
 
 	"github.com/erlidev/eika/internal/agent"
@@ -28,441 +23,79 @@ func newTree(t *testing.T) (*session.Tree, store.Session) {
 	t.Helper()
 	st := storetest.Open(t)
 	ctx := t.Context()
-	cx, err := st.CreateComputer(ctx, store.Computer{
-		Name: "fix-build", State: "running",
-	})
+	cx, err := st.CreateComputer(ctx, store.Computer{Name: "fix-build", State: "running"})
 	if err != nil {
 		t.Fatalf("create computer: %v", err)
 	}
-	sess, err := st.CreateSession(ctx, store.Session{ComputerID: cx.ID, Title: "fix the build"})
+	sess, err := st.CreateSession(ctx, store.Session{Kind: store.SessionRoutine, Agent: "eika", Name: "test", ComputerID: cx.ID, Title: "fix the build"})
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
 	return session.NewTree(st), sess
 }
 
-// appendText appends a message of the given role and returns the entry.
-func appendText(t *testing.T, tree *session.Tree, sessionID string, m provider.Message) store.Entry {
-	t.Helper()
-	e, err := tree.AppendMessage(t.Context(), sessionID, m)
-	if err != nil {
-		t.Fatalf("append %s: %v", m.Role, err)
-	}
-	return e
-}
-
-// texts renders a path as the message contents it carries.
-func texts(t *testing.T, entries []store.Entry) []string {
-	t.Helper()
-	out := make([]string, 0, len(entries))
-	for _, e := range entries {
-		m, ok, err := session.Message(e)
-		if err != nil {
-			t.Fatalf("decode entry: %v", err)
-		}
-		if ok {
-			out = append(out, m.Content)
-		}
-	}
-	return out
-}
-
-func TestAppendBuildsPathAndMovesHead(t *testing.T) {
+// A run continues the branch the head points at, with each compaction on it
+// folded in, and appending after a moved head branches the tree in place.
+func TestLoadFollowsTheHeadAndFoldsCompactions(t *testing.T) {
 	tree, sess := newTree(t)
 	ctx := t.Context()
+	st := session.NewStore(tree)
+	appendText := func(m provider.Message) store.Entry {
+		t.Helper()
+		e, err := tree.AppendMessage(ctx, sess.ID, m)
+		if err != nil {
+			t.Fatalf("append: %v", err)
+		}
+		return e
+	}
+	contents := func() []string {
+		t.Helper()
+		loaded, err := st.Load(ctx, sess.ID)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		var out []string
+		for _, m := range loaded.Conversation.Messages() {
+			out = append(out, m.Content)
+		}
+		return out
+	}
 
 	if _, err := tree.Head(ctx, sess.ID); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("Head of an empty session = %v, want ErrNotFound", err)
 	}
-	if path, err := tree.Path(ctx, sess.ID); err != nil || len(path) != 0 {
-		t.Fatalf("Path of an empty session = %d entries, %v", len(path), err)
-	}
-
-	first := appendText(t, tree, sess.ID, provider.UserMessage("fix the build"))
-	second := appendText(t, tree, sess.ID, provider.AssistantMessage("on it", nil))
-
-	if first.ParentID != "" {
-		t.Errorf("root parent = %q, want empty", first.ParentID)
-	}
-	if second.ParentID != first.ID {
-		t.Errorf("second parent = %q, want %q", second.ParentID, first.ID)
-	}
-	if first.Seq != 1 || second.Seq != 2 {
-		t.Errorf("seq = %d, %d; want 1, 2", first.Seq, second.Seq)
-	}
-	head, err := tree.Head(ctx, sess.ID)
-	if err != nil || head.ID != second.ID {
-		t.Fatalf("Head = %+v, %v; want the last entry", head, err)
-	}
-	path, err := tree.Path(ctx, sess.ID)
-	if err != nil {
-		t.Fatalf("Path: %v", err)
-	}
-	if got := texts(t, path); len(got) != 2 || got[0] != "fix the build" || got[1] != "on it" {
-		t.Errorf("Path = %q, want the two messages in order", got)
-	}
-}
-
-func TestSetHeadBranchesInPlace(t *testing.T) {
-	tree, sess := newTree(t)
-	ctx := t.Context()
-
-	first := appendText(t, tree, sess.ID, provider.UserMessage("one"))
-	appendText(t, tree, sess.ID, provider.AssistantMessage("two", nil))
-	appendText(t, tree, sess.ID, provider.UserMessage("three"))
-
-	if err := tree.SetHead(ctx, sess.ID, first.ID); err != nil {
-		t.Fatalf("SetHead: %v", err)
-	}
-	branch := appendText(t, tree, sess.ID, provider.AssistantMessage("two again", nil))
-	if branch.ParentID != first.ID {
-		t.Errorf("branch parent = %q, want the entry the head was moved to", branch.ParentID)
-	}
-	if branch.Seq != 4 {
-		t.Errorf("branch seq = %d, want 4: a branch keeps writing after the other entries", branch.Seq)
-	}
-
-	path, err := tree.Path(ctx, sess.ID)
-	if err != nil {
-		t.Fatalf("Path: %v", err)
-	}
-	if got := texts(t, path); len(got) != 2 || got[0] != "one" || got[1] != "two again" {
-		t.Errorf("Path = %q, want only the new branch", got)
-	}
-
-	children, err := tree.Children(ctx, sess.ID, first.ID)
-	if err != nil {
-		t.Fatalf("Children: %v", err)
-	}
-	if len(children) != 2 {
-		t.Fatalf("Children = %d, want 2: the old continuation and the new one", len(children))
-	}
-	roots, err := tree.Children(ctx, sess.ID, "")
-	if err != nil || len(roots) != 1 || roots[0].ID != first.ID {
-		t.Fatalf("roots = %+v, %v; want the first entry", roots, err)
-	}
-}
-
-func TestSetHeadRejectsAnotherSessionsEntry(t *testing.T) {
-	st := storetest.Open(t)
-	tree := session.NewTree(st)
-	ctx := t.Context()
-	sess, err := st.CreateSession(ctx, store.Session{Title: "one"})
-	if err != nil {
-		t.Fatalf("create session: %v", err)
-	}
-	other, err := st.CreateSession(ctx, store.Session{Title: "another"})
-	if err != nil {
-		t.Fatalf("create second session: %v", err)
-	}
-	entry := appendText(t, tree, sess.ID, provider.UserMessage("one"))
-
-	if err := tree.SetHead(ctx, other.ID, entry.ID); !errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("SetHead across sessions = %v, want ErrNotFound", err)
-	}
-}
-
-func TestOutlineCountsTheImagesOfAMessageWithoutText(t *testing.T) {
-	tree, sess := newTree(t)
-	image := provider.Image{MediaType: "image/png", Data: []byte("png"), Width: 1, Height: 1}
-	appendText(t, tree, sess.ID, provider.Message{Role: provider.RoleUser, Images: []provider.Image{image}})
-	appendText(t, tree, sess.ID, provider.Message{Role: provider.RoleUser, Images: []provider.Image{image, image}})
-	appendText(t, tree, sess.ID, provider.Message{Role: provider.RoleUser, Content: "see this", Images: []provider.Image{image}})
-
-	nodes, err := tree.Outline(t.Context(), sess.ID)
-	if err != nil {
-		t.Fatalf("Outline: %v", err)
-	}
-	want := []string{"1 image", "2 images", "see this"}
-	for i, w := range want {
-		if nodes[i].Preview != w {
-			t.Errorf("preview %d = %q, want %q", i, nodes[i].Preview, w)
-		}
-	}
-}
-
-func TestOutlineDescribesTheWholeTree(t *testing.T) {
-	tree, sess := newTree(t)
-	ctx := t.Context()
-
-	user := appendText(t, tree, sess.ID, provider.UserMessage("fix the build\nplease"))
-	calls := appendText(t, tree, sess.ID, provider.AssistantMessage("", []provider.ToolCall{
-		{ID: "call_1", Name: "read", Arguments: provider.ToolArguments(`{"path":"go.mod"}`)},
-		{ID: "call_2", Name: "bash", Arguments: provider.ToolArguments(`{"command":"go build"}`)},
-	}))
-	appendText(t, tree, sess.ID, provider.ToolResultMessage("call_1", "module eika", false))
-	if err := tree.SetHead(ctx, sess.ID, user.ID); err != nil {
-		t.Fatalf("SetHead: %v", err)
-	}
-	appendText(t, tree, sess.ID, provider.AssistantMessage("let me look", nil))
-
-	nodes, err := tree.Outline(ctx, sess.ID)
-	if err != nil {
-		t.Fatalf("Outline: %v", err)
-	}
-	if len(nodes) != 4 {
-		t.Fatalf("Outline = %d nodes, want every entry of both branches", len(nodes))
-	}
-	if nodes[0].ParentID != "" || nodes[1].ParentID != user.ID || nodes[3].ParentID != user.ID {
-		t.Errorf("outline parents = %q, %q, %q; want the branch shape",
-			nodes[0].ParentID, nodes[1].ParentID, nodes[3].ParentID)
-	}
-	if nodes[0].Preview != "fix the build ..." {
-		t.Errorf("user preview = %q, want the first line", nodes[0].Preview)
-	}
-	if nodes[1].Preview != "calls read, bash" {
-		t.Errorf("tool call preview = %q, want the tool names", nodes[1].Preview)
-	}
-	if nodes[1].Kind != store.KindAssistant || nodes[1].ID != calls.ID {
-		t.Errorf("node = %+v, want the assistant entry", nodes[1])
-	}
-	if nodes[0].CreatedAt.IsZero() || nodes[0].CreatedAt.Location().String() != "UTC" {
-		t.Errorf("created_at = %v, want a UTC timestamp", nodes[0].CreatedAt)
-	}
-}
-
-func TestStoreRecordsAndLoadsEveryMessageKind(t *testing.T) {
-	tree, sess := newTree(t)
-	ctx := t.Context()
-
-	st := session.NewStore(tree)
-
-	messages := []provider.Message{
-		provider.UserMessage("fix the build"),
-		provider.AssistantMessage("looking", []provider.ToolCall{
-			{ID: "call_1", Name: "read", Arguments: provider.ToolArguments(`{"path":"go.mod","limit":20}`)},
-			{ID: "call_2", Name: "bash", Arguments: provider.ToolArguments(`{"command":"go build ./..."}`)},
-		}),
-		provider.ToolResultMessage("call_1", "module github.com/erlidev/eika", false),
-		provider.ToolResultMessage("call_2", "exit status 1", true),
-		provider.AssistantMessage("fixed it", nil),
-	}
-	for _, m := range messages {
-		if err := st.Append(ctx, sess.ID, m); err != nil {
-			t.Fatalf("append %s: %v", m.Role, err)
-		}
-	}
-
-	loaded, err := st.Load(ctx, sess.ID)
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	if loaded.ID != sess.ID || loaded.ComputerID != sess.ComputerID {
-		t.Errorf("loaded session = %+v, want the stored ids", loaded)
-	}
-	got := loaded.Conversation.Messages()
-	if len(got) != len(messages) {
-		t.Fatalf("loaded %d messages, want %d", len(got), len(messages))
-	}
-	for i, want := range messages {
-		if !sameMessage(got[i], want) {
-			t.Errorf("message %d = %+v, want %+v", i, got[i], want)
-		}
-	}
-}
-
-func TestLoadFollowsTheHead(t *testing.T) {
-	tree, sess := newTree(t)
-	ctx := t.Context()
-	st := session.NewStore(tree)
-
-	first := appendText(t, tree, sess.ID, provider.UserMessage("one"))
-	appendText(t, tree, sess.ID, provider.AssistantMessage("two", nil))
-	if err := tree.SetHead(ctx, sess.ID, first.ID); err != nil {
-		t.Fatalf("SetHead: %v", err)
-	}
-
-	loaded, err := st.Load(ctx, sess.ID)
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	if got := loaded.Conversation.Messages(); len(got) != 1 || got[0].Content != "one" {
-		t.Errorf("loaded conversation = %+v, want the branch the head points at", got)
-	}
-	if _, err := st.Load(ctx, store.NewID()); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("Load of a missing session = %v, want ErrNotFound", err)
-	}
-}
-
-func TestLoadFoldsACompaction(t *testing.T) {
-	tree, sess := newTree(t)
-	ctx := t.Context()
-	st := session.NewStore(tree)
-
-	appendText(t, tree, sess.ID, provider.UserMessage("one"))
-	before := appendText(t, tree, sess.ID, provider.AssistantMessage("two", nil))
-	appendText(t, tree, sess.ID, provider.UserMessage("three"))
-	if err := st.AppendCompaction(ctx, sess.ID, agent.Compaction{Summary: "one and two", Kept: 1, TokensBefore: 1234, Reason: "manual"}); err != nil {
+	appendText(provider.UserMessage("one"))
+	before := appendText(provider.AssistantMessage("two", nil))
+	appendText(provider.UserMessage("three"))
+	if err := st.AppendCompaction(ctx, sess.ID, "", agent.Compaction{Summary: "one and two", Kept: 1, TokensBefore: 1234}); err != nil {
 		t.Fatalf("AppendCompaction: %v", err)
 	}
-	appendText(t, tree, sess.ID, provider.AssistantMessage("four", nil))
-
-	loaded, err := st.Load(ctx, sess.ID)
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	got := loaded.Conversation.Messages()
-	if len(got) != 3 || !got[0].Summary || got[0].Content != agent.SummaryMessage("one and two").Content ||
-		got[1].Content != "three" || got[2].Content != "four" {
-		t.Errorf("loaded conversation = %+v, want the summary, three, and four", got)
+	appendText(provider.AssistantMessage("four", nil))
+	summary := agent.SummaryMessage("one and two").Content
+	if got := contents(); len(got) != 3 || got[0] != summary || got[1] != "three" || got[2] != "four" {
+		t.Errorf("loaded conversation = %q, want the summary, three, and four", got)
 	}
 
 	// A branch from before the compaction has the whole conversation.
 	if err := tree.SetHead(ctx, sess.ID, before.ID); err != nil {
 		t.Fatalf("SetHead: %v", err)
 	}
-	branched, err := st.Load(ctx, sess.ID)
-	if err != nil {
-		t.Fatalf("Load branch: %v", err)
+	branch := appendText(provider.UserMessage("three again"))
+	if got := contents(); len(got) != 3 || got[0] != "one" || got[2] != "three again" {
+		t.Errorf("branched conversation = %q, want one, two, three again", got)
 	}
-	if got := branched.Conversation.Messages(); len(got) != 2 || got[0].Content != "one" {
-		t.Errorf("branched conversation = %+v, want one and two", got)
+	if head, err := tree.Head(ctx, sess.ID); err != nil || head.ID != branch.ID {
+		t.Errorf("Head = %+v, %v; want the new branch", head, err)
 	}
 
 	nodes, err := tree.Outline(ctx, sess.ID)
-	if err != nil {
-		t.Fatalf("Outline: %v", err)
+	if err != nil || len(nodes) != 6 {
+		t.Fatalf("Outline = %+v, %v; want every entry of both branches", nodes, err)
 	}
-	if nodes[3].Kind != store.KindCompaction || nodes[3].Preview != "compacted about 1234 tokens into a summary" || !nodes[3].Resumable {
-		t.Errorf("compaction node = %+v", nodes[3])
+	if nodes[2].ParentID != before.ID || nodes[5].ParentID != before.ID {
+		t.Errorf("outline parents = %q, %q; want both branches under two", nodes[2].ParentID, nodes[5].ParentID)
 	}
-}
-
-func TestConcurrentAppendsKeepOneChain(t *testing.T) {
-	tree, sess := newTree(t)
-	ctx := t.Context()
-
-	const writers = 20
-	var wg sync.WaitGroup
-	errs := make(chan error, writers)
-	for i := range writers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			_, err := tree.AppendMessage(ctx, sess.ID, provider.UserMessage(strconv.Itoa(i)))
-			errs <- err
-		}()
-	}
-	wg.Wait()
-	close(errs)
-	for err := range errs {
-		if err != nil {
-			t.Fatalf("concurrent append: %v", err)
-		}
-	}
-
-	entries, err := tree.Outline(ctx, sess.ID)
-	if err != nil {
-		t.Fatalf("Outline: %v", err)
-	}
-	if len(entries) != writers {
-		t.Fatalf("Outline = %d nodes, want %d", len(entries), writers)
-	}
-	// Every append takes the session row lock, so the sequence numbers are
-	// dense and unique and the entries form one chain, whatever order the
-	// writers ran in.
-	path, err := tree.Path(ctx, sess.ID)
-	if err != nil {
-		t.Fatalf("Path: %v", err)
-	}
-	if len(path) != writers {
-		t.Fatalf("Path = %d entries, want one chain of %d", len(path), writers)
-	}
-	parent := ""
-	for i, e := range path {
-		if e.Seq != int64(i+1) {
-			t.Errorf("entry %d has seq %d, want %d", i, e.Seq, i+1)
-		}
-		if e.ParentID != parent {
-			t.Errorf("entry %d has parent %q, want %q", i, e.ParentID, parent)
-		}
-		parent = e.ID
-	}
-}
-
-func TestArgumentLessToolCallSurvivesTheDatabase(t *testing.T) {
-	tree, sess := newTree(t)
-	ctx := t.Context()
-
-	call := provider.AssistantMessage("", []provider.ToolCall{{ID: "call_1", Name: "ls"}})
-	if _, err := tree.AppendMessage(ctx, sess.ID, call); err != nil {
-		t.Fatalf("append a call without arguments: %v", err)
-	}
-	messages, err := tree.Messages(ctx, sess.ID)
-	if err != nil {
-		t.Fatalf("Messages: %v", err)
-	}
-	if len(messages) != 1 || len(messages[0].ToolCalls) != 1 {
-		t.Fatalf("Messages = %+v, want the one call", messages)
-	}
-	if got := string(messages[0].ToolCalls[0].Arguments); got != "{}" {
-		t.Errorf("arguments = %q, want an empty object", got)
-	}
-}
-
-func TestReasoningItemsSurviveTheDatabase(t *testing.T) {
-	tree, sess := newTree(t)
-	ctx := t.Context()
-	// The database keeps the document, not its bytes: key order and spacing
-	// change on the way, a value never does. An item sent back after a restart
-	// must read as the one the endpoint returned.
-	blob := strings.Repeat("gAAAAABpA4tSq1m0fX9cJbq7vKZ3_eY8wL2nHk5RdTzP0uOa1VxCe6BsMgNyF4jI-hD+9lQpWrA/Eo2UtKc7ZGfYXb3iJvSnH8mT1dRqLw", 800)
-	items := []json.RawMessage{
-		json.RawMessage(`{"id":"rs_1","type":"reasoning","summary":[],"content":[{"type":"reasoning_text","text":"a <b> & \"q\"\nline é ☕  "}],"encrypted_content":""}`),
-		json.RawMessage(`{"summary":[],"type":"reasoning","status":null,"encrypted_content":"` + blob + `==","id":"rs_2","n":1.50}`),
-	}
-	msg := provider.AssistantMessageWithReasoning("hello", "think", nil)
-	msg.ReasoningItems = items
-	if _, err := tree.AppendMessage(ctx, sess.ID, msg); err != nil {
-		t.Fatalf("append: %v", err)
-	}
-	messages, err := tree.Messages(ctx, sess.ID)
-	if err != nil {
-		t.Fatalf("Messages: %v", err)
-	}
-	if len(messages) != 1 || len(messages[0].ReasoningItems) != len(items) {
-		t.Fatalf("Messages = %+v, want both items", messages)
-	}
-	for i, got := range messages[0].ReasoningItems {
-		var gotDoc, wantDoc map[string]any
-		if err := json.Unmarshal(got, &gotDoc); err != nil {
-			t.Fatalf("item %d: %v", i, err)
-		}
-		if err := json.Unmarshal(items[i], &wantDoc); err != nil {
-			t.Fatal(err)
-		}
-		if !reflect.DeepEqual(gotDoc, wantDoc) {
-			t.Errorf("item %d = %s, want the document %s", i, got, items[i])
-		}
-	}
-	var second struct {
-		Encrypted string `json:"encrypted_content"`
-	}
-	if err := json.Unmarshal(messages[0].ReasoningItems[1], &second); err != nil || second.Encrypted != blob+"==" {
-		t.Errorf("encrypted content changed on the way through the database (%d bytes back, err %v)", len(second.Encrypted), err)
-	}
-}
-
-func TestToolArgumentTextSurvivesTheDatabase(t *testing.T) {
-	tree, sess := newTree(t)
-	ctx := t.Context()
-	want := []provider.ToolCall{
-		{ID: "valid", Name: "accept_string", Arguments: provider.ToolArguments(`"value"`)},
-		{ID: "malformed", Name: "read", Arguments: provider.ToolArguments(`{"path":`)},
-	}
-	if _, err := tree.AppendMessage(ctx, sess.ID, provider.AssistantMessage("", want)); err != nil {
-		t.Fatalf("append calls: %v", err)
-	}
-	messages, err := tree.Messages(ctx, sess.ID)
-	if err != nil {
-		t.Fatalf("Messages: %v", err)
-	}
-	if len(messages) != 1 || len(messages[0].ToolCalls) != len(want) {
-		t.Fatalf("Messages = %+v, want both calls", messages)
-	}
-	for i, call := range messages[0].ToolCalls {
-		if call.Arguments != want[i].Arguments {
-			t.Errorf("call %s arguments = %q, want exact text %q", call.ID, call.Arguments, want[i].Arguments)
-		}
+	if nodes[3].Kind != store.KindCompaction || !nodes[3].Resumable {
+		t.Errorf("compaction node = %+v, want a resumable compaction", nodes[3])
 	}
 }

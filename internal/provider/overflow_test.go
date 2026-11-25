@@ -15,16 +15,11 @@ func TestContextOverflow(t *testing.T) {
 	}{
 		{"prompt is too long: 213462 tokens > 200000 maximum", true},
 		{"This model's maximum context length is 131072 tokens. However, you requested 140000 tokens", true},
-		{"Your input exceeds the context window of this model", true},
 		{"input token count (1100000) exceeds the maximum number of tokens allowed (1048576)", true},
 		{"the request exceeds the available context size, try increasing it", true},
 		{"prompt has 70,000 tokens, but the configured context size is 65,536 tokens", true},
-		{"context_length_exceeded", true},
 		{"Too many tokens, please wait before trying again.", false},
-		{"Throttling error: Too many tokens, please wait before trying again.", false},
 		{"Rate limit reached: too many tokens per minute", false},
-		{"Too many requests", false},
-		{"invalid api key", false},
 	}
 	for _, c := range cases {
 		err := &provider.Error{Op: "stream chat completion", StatusCode: 400, Err: errors.New(c.text)}

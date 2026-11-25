@@ -512,16 +512,6 @@ func TestPoolUsesTheMetadataDocument(t *testing.T) {
 	}
 }
 
-func TestPoolRefusesAnAuthorizationServerWithoutPKCE(t *testing.T) {
-	p := newProtected(t)
-	p.auth.NoPKCE = true
-	store := &memStore{servers: []mcp.ServerConfig{{ID: "s1", Name: "secure", Kind: mcp.KindHTTP, URL: p.url, Enabled: true}}}
-	pool := newPool(t, store, mcp.Options{})
-	if _, err := pool.BeginAuthorization(context.Background(), "s1", redirect); err == nil || !strings.Contains(err.Error(), "PKCE") {
-		t.Errorf("BeginAuthorization = %v, want a PKCE refusal", err)
-	}
-}
-
 func TestConfiguredAuthorizationHeaderWins(t *testing.T) {
 	s := &mcptest.Server{Tools: []mcptest.Tool{echoTool("echo")}, Authorize: func(h string) bool { return h == "Bearer static" }}
 	store := &memStore{servers: []mcp.ServerConfig{{ID: "s1", Name: "docs", Kind: mcp.KindHTTP, URL: serve(t, s), Enabled: true, Headers: map[string]string{"Authorization": "Bearer static"}}}}

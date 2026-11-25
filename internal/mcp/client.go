@@ -107,7 +107,7 @@ func ConnectHTTP(ctx context.Context, target HTTPTarget, self Implementation, ha
 	}
 	legacy := c.initialize(ctx)
 	if legacy == nil {
-		ht.becomeLegacy(c.Version())
+		ht.becomeLegacy(c.Info().Version)
 		ht.listen()
 		return c, nil
 	}
@@ -302,13 +302,6 @@ func (c *Client) Info() Info {
 		Instructions: c.instructions,
 		Supported:    slices.Clone(c.supported),
 	}
-}
-
-// Version returns the protocol version the connection speaks.
-func (c *Client) Version() string {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.version
 }
 
 // Close ends the connection. Requests still waiting fail.

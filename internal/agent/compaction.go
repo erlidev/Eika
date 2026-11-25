@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/erlidev/eika/internal/event"
 	"github.com/erlidev/eika/internal/provider"
@@ -12,7 +14,9 @@ import (
 // Compaction follows Pi's: when a conversation outgrows the model's context
 // window, the oldest part is summarized and the summary takes its place,
 // while roughly the newest KeepRecentTokens stay verbatim. What differs is
-// the request that makes the summary; summary.go says how.
+// the request that makes the summary; summary.go says how. The home session
+// cuts at a user-turn boundary instead, keeping a share of the window
+// (KeepRecentShare, runtime.md 11).
 
 // The compaction budgets until the user sets them, which are Pi's.
 const (
@@ -21,6 +25,9 @@ const (
 	// DefaultKeepRecentTokens is roughly how much of the newest
 	// conversation a compaction keeps verbatim.
 	DefaultKeepRecentTokens = 20000
+	// DefaultKeepRecentShare is the share of the window the home session's
+	// cut keeps at most (runtime.md 11).
+	DefaultKeepRecentShare = 0.15
 )
 
 // ErrNothingToCompact reports a conversation with nothing old enough to
@@ -41,6 +48,13 @@ type CompactionSettings struct {
 	// KeepRecentTokens is roughly how much of the newest conversation stays
 	// verbatim. Zero means DefaultKeepRecentTokens.
 	KeepRecentTokens int
+	// KeepRecentShare, when above zero, cuts at a user-turn boundary
+	// instead, as the home session does (runtime.md 11): the oldest user
+	// message from which the newest stored messages fit in this share of
+	// the window, keeping at least the newest whole turn. A turn larger
+	// than the share is split as Pi splits one. A window of unknown size
+	// keeps KeepRecentTokens instead.
+	KeepRecentShare float64
 	// Prompts replace the built-in prompts where they are set.
 	Prompts CompactionPrompts
 	// FallbackEffort is the reasoning effort a summary is asked for again
@@ -48,6 +62,16 @@ type CompactionSettings struct {
 	// effort that turns thinking off, or the lowest the model offers.
 	// Empty means no second attempt.
 	FallbackEffort string
+	// Board, when set, makes the summary the home session's (runtime.md
+	// 11): the [Subagents] board it returns, which code builds from rows when
+	// the summary is assembled, then the [Conversation] section the model
+	// writes and each later compaction updates. Times on the board are in
+	// loc, and asOf is the moment the rows were read, which the compaction
+	// records. An error fails the compaction, which leaves the session as it
+	// was.
+	Board func(ctx context.Context, loc *time.Location) (board string, asOf time.Time, err error)
+	// SummarySpan returns the compacted entry span and compaction count.
+	SummarySpan func(ctx context.Context, kept int) (first, last int64, count int, err error)
 }
 
 // CompactionPrompts are the instructions that ask for a summary. An empty
@@ -78,6 +102,11 @@ type Compaction struct {
 	Reason string `json:"reason"`
 	// Usage is what making the summary cost.
 	Usage provider.Usage `json:"usage"`
+	// BoardAsOf is when the home session's board was read from the rows,
+	// absent for a summary without one. The next board lists the activity
+	// after it, so a change that came between the read and this record being
+	// stored is not taken for old.
+	BoardAsOf *time.Time `json:"board_as_of,omitempty"`
 }
 
 // Compacted returns the context a compaction leaves: its summary, then the
@@ -103,7 +132,11 @@ const (
 // SummaryMessage returns the user message that carries a compaction's
 // summary at the start of the context.
 func SummaryMessage(summary string) provider.Message {
-	m := provider.UserMessage(summaryPrefix + summary + summarySuffix)
+	text := summaryPrefix + summary + summarySuffix
+	if strings.HasPrefix(summary, "<summary ") {
+		text = strings.TrimSuffix(summaryPrefix, "<summary>\n") + summary
+	}
+	m := provider.UserMessage(text)
 	m.Summary = true
 	return m
 }
@@ -120,6 +153,25 @@ func (c CompactionSettings) reserveTokens(window int) int {
 // as reserveTokens is.
 func (c CompactionSettings) keepRecentTokens(window int) int {
 	return scaled(c.KeepRecentTokens, DefaultKeepRecentTokens, window)
+}
+
+// keepBudget is how many tokens of the newest conversation a compaction
+// keeps, in a window of window tokens.
+func (c CompactionSettings) keepBudget(window int) int {
+	if c.KeepRecentShare > 0 && window > 0 {
+		return int(c.KeepRecentShare * float64(window))
+	}
+	return c.keepRecentTokens(window)
+}
+
+// plan finds where a compaction cuts msgs: at a user-turn boundary when
+// the settings keep a share of the window, else where Pi cuts.
+func (c CompactionSettings) plan(msgs []provider.Message, sizes []int, stored, window int) (compactionPlan, bool) {
+	keep := c.keepBudget(window)
+	if c.KeepRecentShare > 0 && window > 0 {
+		return planTurnCut(msgs, sizes, stored, keep)
+	}
+	return planCompaction(msgs, sizes, stored, keep)
 }
 
 // scaled returns setting, or def when it is not set, at most a quarter of a
@@ -216,13 +268,62 @@ func planCompaction(msgs []provider.Message, sizes []int, stored, keep int) (com
 	return p, p.split() || p.first > p.start
 }
 
+// planTurnCut cuts msgs at a user-turn boundary (runtime.md 11): at the
+// oldest user message from which the stored messages fit in keep tokens,
+// and never after the newest one, so at least one whole turn stays. Every
+// user message is a boundary, since a tool result never follows one: a
+// steering message waits for the calls of its turn to be answered. When
+// the newest turn alone is larger than keep, or no user message is left
+// to cut at, the cut is Pi's, which splits the turn.
+func planTurnCut(msgs []provider.Message, sizes []int, stored, keep int) (compactionPlan, bool) {
+	p := compactionPlan{turnStart: -1, stored: stored, first: -1}
+	if len(msgs) > 0 && msgs[0].Summary {
+		p.start = 1
+	}
+	total := 0
+	for i := stored - 1; i >= p.start; i-- {
+		total += sizes[i]
+		if msgs[i].Role != provider.RoleUser {
+			continue
+		}
+		if total > keep {
+			break
+		}
+		p.first = i
+	}
+	if p.first < 0 {
+		return planCompaction(msgs, sizes, stored, keep)
+	}
+	return p, p.first > p.start
+}
+
 // Compactable reports whether Compact would find anything to summarize in
 // s's conversation.
 func (a *Agent) Compactable(s *Session) bool {
 	msgs := s.Conversation.Messages()
 	c := a.base(nil).WithMessages(msgs)
-	_, ok := planCompaction(msgs, c.MessageSizes, len(msgs), a.opts.Compaction.keepRecentTokens(a.opts.ContextWindow))
+	_, ok := a.opts.Compaction.plan(msgs, c.MessageSizes, len(msgs), a.opts.ContextWindow)
 	return ok
+}
+
+// IdleCompactable reports whether the session exceeds the given percentage of its window
+// and has older messages to summarize.
+func (a *Agent) IdleCompactable(ctx context.Context, s *Session, fill int) bool {
+	if a.opts.ContextWindow <= 0 || !a.Compactable(s) {
+		return false
+	}
+	c := a.assemble(s, a.prompt())
+	return exceedsIdleFill(a.predict(ctx, c).Tokens, a.opts.ContextWindow, fill)
+}
+
+func exceedsIdleFill(tokens, window, fill int) bool {
+	return int64(tokens)*100 > int64(window)*int64(fill)
+}
+
+// CompactIdle compacts a session during maintenance.
+func (a *Agent) CompactIdle(ctx context.Context, s *Session) error {
+	_, err := a.compact(ctx, s, newRunID(), a.prompt(), s.Conversation.Len(), event.CompactIdle, "")
+	return err
 }
 
 // Compact summarizes the oldest part of s's conversation now, whatever its
@@ -247,9 +348,9 @@ func (a *Agent) Compact(ctx context.Context, s *Session, instructions string) er
 // messages at the start of the new conversation are stored.
 func (a *Agent) compact(ctx context.Context, s *Session, runID string, prompt []Section, stored int, reason, instructions string) (int, error) {
 	msgs := s.Conversation.Messages()
-	base := a.base(prompt)
+	base := a.sessionBase(s, prompt)
 	sent := base.WithMessages(msgs)
-	plan, ok := planCompaction(msgs, sent.MessageSizes, stored, a.opts.Compaction.keepRecentTokens(a.opts.ContextWindow))
+	plan, ok := a.opts.Compaction.plan(msgs, sent.MessageSizes, stored, a.opts.ContextWindow)
 	if !ok {
 		return stored, ErrNothingToCompact
 	}
@@ -274,13 +375,46 @@ func (a *Agent) compact(ctx context.Context, s *Session, runID string, prompt []
 	if err != nil {
 		return failed(err)
 	}
-	record.Summary = summary
 	record.Kept = stored - plan.first
+	if board := a.opts.Compaction.Board; board != nil {
+		loc := a.currentLocation()
+		text, asOf, err := board(ctx, loc)
+		if err != nil {
+			return failed(fmt.Errorf("build subagent board: %w", err))
+		}
+		summary = homeSummary(asOf, loc, text, summary)
+		if span := a.opts.Compaction.SummarySpan; span != nil {
+			first, last, count, err := span(ctx, record.Kept)
+			if err != nil {
+				return failed(fmt.Errorf("read summary span: %w", err))
+			}
+			summary = fmt.Sprintf("<summary as_of=\"%s\" entries=\"#%d-#%d\" compactions=\"%d\">\n%s\n\nhistory_search and history_read recover anything compacted\n</summary>", asOf.In(loc).Format("2006-01-02 15:04"), first, last, count, summary)
+		}
+		asOf = asOf.UTC()
+		record.BoardAsOf = &asOf
+	}
+	if err := ctx.Err(); err != nil {
+		return failed(err)
+	}
+	record.Summary = summary
 	next := append(Compacted(msgs[:stored], record), msgs[stored:]...)
-	record.TokensAfter = a.predict(ctx, base.WithMessages(next)).Tokens
-	if a.opts.Store != nil {
-		if err := a.opts.Store.AppendCompaction(ctx, s.ID, record); err != nil {
+	if a.opts.RefreshSnapshot != nil {
+		// The context after is the replacement snapshot's, whose preamble,
+		// prompt and tools may differ in size from the ones before.
+		snap, err := a.opts.RefreshSnapshot(ctx, s.ID, func(snap Snapshot) Compaction {
+			record.TokensAfter = a.predict(ctx, a.snapshotBase(snap).WithMessages(next)).Tokens
+			return record
+		})
+		if err != nil {
 			return failed(fmt.Errorf("store compaction: %w", err))
+		}
+		a.useSnapshot(s, snap)
+	} else {
+		record.TokensAfter = a.predict(ctx, base.WithMessages(next)).Tokens
+		if a.opts.Store != nil {
+			if err := a.opts.Store.AppendCompaction(ctx, s.ID, runID, record); err != nil {
+				return failed(fmt.Errorf("store compaction: %w", err))
+			}
 		}
 	}
 	s.Conversation.Replace(next)

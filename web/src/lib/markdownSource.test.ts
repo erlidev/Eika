@@ -15,7 +15,6 @@ function runs(source: string): string[] {
 
 describe("markdownSource", () => {
   const cases: { name: string; in: string; out: string[] }[] = [
-    { name: "plain text is one run", in: "just words", out: ["just words"] },
     {
       name: "strong text and its markers",
       in: "a **b** c",

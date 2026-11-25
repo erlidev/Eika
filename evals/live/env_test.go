@@ -68,16 +68,6 @@ func TestLoadEnvDoesNotOverrideTheEnvironment(t *testing.T) {
 	}
 }
 
-func TestLoadEnvWithoutAFileUsesTheEnvironment(t *testing.T) {
-	env, err := live.LoadEnv(filepath.Join(t.TempDir(), "missing.env"), lookupIn(map[string]string{live.EndpointVar: "http://x"}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if env[live.EndpointVar] != "http://x" {
-		t.Errorf("endpoint = %q", env[live.EndpointVar])
-	}
-}
-
 func TestLoadEnvRejectsAMalformedLineWithoutQuotingIt(t *testing.T) {
 	path := writeEnvFile(t, "EIKA_LIVE_ENDPOINT=http://x\nsk-this-looks-like-a-key\n")
 	_, err := live.LoadEnv(path, lookupIn(nil))

@@ -71,7 +71,7 @@ export function ModelPicker({
       {
         id,
         name: suggestModelName(id, provider.name, takenNames),
-        ...suggestLimits(id, info),
+        ...suggestLimits(id, info, provider.capabilities.window),
         kind: "chat",
         image_input: info?.image_input ?? false,
       },
@@ -190,7 +190,8 @@ export function ModelPicker({
               const checked = already || chosen.some((c) => c.id === info.id);
               const inputId = `model-${provider.id}-${info.id}`;
               return (
-                <li key={info.id} className="flex items-center gap-3 px-3 py-1.5">
+                <li key={info.id} className="model-option flex items-center gap-3 px-3 py-1.5">
+                  <label htmlFor={inputId} aria-hidden="true" className="model-option-hit" />
                   <Checkbox
                     id={inputId}
                     checked={checked}

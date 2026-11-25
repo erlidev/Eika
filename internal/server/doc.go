@@ -1,8 +1,7 @@
 // Package server exposes the Eika harness over HTTP.
 //
 // It owns the whole HTTP surface: the JSON API for the list of computers,
-// sessions, runs, questions, providers, models, profiles, a session's
-// configuration and the context of its model requests, MCP servers, and
+// sessions, runs, questions, providers, models, the context of model requests, MCP servers, and
 // settings;
 // password sign-in and bearer token authentication; the WebSocket event
 // stream; and, when configured, the built frontend. Nothing else in internal/ imports server.
@@ -26,13 +25,8 @@
 // that started it and ends when it finishes, when it is aborted, or when
 // the harness shuts down.
 //
-// What a run sends is resolved in configuration.go, the one place the rule
-// lives: the model a run request names, the session's overrides, its
-// profile, the model row, and the defaults, with the layer each value came
-// from. A tool choice is resolved against the registry and the MCP pool by
-// toolChosen in tools.go. The run manager, the context preview, and the
-// profile and session configuration routes (profiles.go) all use it, and
-// every model call a run makes is recorded in model_calls (calls.go).
+// Run configuration comes from agent definitions and model classes in
+// run_config.go. Each model call is recorded in model_calls (calls.go).
 //
 // The home computer's sandbox, its limits and egress, is checked in
 // sandbox.go when the settings are saved and applied to its container by

@@ -1,15 +1,27 @@
 {
   "routes": {
+    "DELETE /api/agents/{name}": {
+      "status": 204
+    },
+    "DELETE /api/blocked-hosts/{host}": {
+      "status": 204
+    },
+    "DELETE /api/instructions": {
+      "status": 204
+    },
     "DELETE /api/mcp/servers/{id}": {
       "status": 204
     },
     "DELETE /api/mcp/servers/{id}/authorization": {
       "status": 204
     },
+    "DELETE /api/memories/{name}": {
+      "status": 204
+    },
     "DELETE /api/models/{id}": {
       "status": 204
     },
-    "DELETE /api/profiles/{id}": {
+    "DELETE /api/projects/{id}/instructions": {
       "status": 204
     },
     "DELETE /api/providers/{id}": {
@@ -17,6 +29,130 @@
     },
     "DELETE /api/sessions/{id}": {
       "status": 204
+    },
+    "DELETE /api/skills/{name}": {
+      "status": 204
+    },
+    "DELETE /api/trusted-sources/{host}": {
+      "status": 204
+    },
+    "GET /api/agents": {
+      "status": 200,
+      "response": {
+        "object": {
+          "agents": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "builtin": {
+                    "object": {
+                      "class": "string",
+                      "compaction": {
+                        "object": {
+                          "summary": "string",
+                          "turn_prefix": "string",
+                          "update": "string"
+                        }
+                      },
+                      "description": "string",
+                      "max_turns": "number",
+                      "name": "string",
+                      "prompt": "string",
+                      "tools": {
+                        "nullable": {
+                          "array": "string"
+                        }
+                      }
+                    }
+                  },
+                  "class": "string",
+                  "compaction": {
+                    "object": {
+                      "summary": "string",
+                      "turn_prefix": "string",
+                      "update": "string"
+                    }
+                  },
+                  "description": "string",
+                  "max_turns": "number",
+                  "name": "string",
+                  "overrides": {
+                    "object": {
+                      "class": {
+                        "nullable": "string"
+                      },
+                      "prompt": {
+                        "nullable": "string"
+                      }
+                    }
+                  },
+                  "prompt": "string",
+                  "tools": {
+                    "nullable": {
+                      "array": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "GET /api/agents/{name}": {
+      "status": 200,
+      "response": {
+        "object": {
+          "builtin": {
+            "object": {
+              "class": "string",
+              "compaction": {
+                "object": {
+                  "summary": "string",
+                  "turn_prefix": "string",
+                  "update": "string"
+                }
+              },
+              "description": "string",
+              "max_turns": "number",
+              "name": "string",
+              "prompt": "string",
+              "tools": {
+                "nullable": {
+                  "array": "string"
+                }
+              }
+            }
+          },
+          "class": "string",
+          "compaction": {
+            "object": {
+              "summary": "string",
+              "turn_prefix": "string",
+              "update": "string"
+            }
+          },
+          "description": "string",
+          "max_turns": "number",
+          "name": "string",
+          "overrides": {
+            "object": {
+              "class": {
+                "nullable": "string"
+              },
+              "prompt": {
+                "nullable": "string"
+              }
+            }
+          },
+          "prompt": "string",
+          "tools": {
+            "nullable": {
+              "array": "string"
+            }
+          }
+        }
+      }
     },
     "GET /api/auth/status": {
       "status": 200,
@@ -26,6 +162,18 @@
         }
       },
       "public": true
+    },
+    "GET /api/blocked-hosts": {
+      "status": 200,
+      "response": {
+        "object": {
+          "hosts": {
+            "nullable": {
+              "array": "string"
+            }
+          }
+        }
+      }
     },
     "GET /api/computers": {
       "status": 200,
@@ -77,6 +225,28 @@
     "GET /api/events": {
       "websocket": true
     },
+    "GET /api/guard": {
+      "status": 200,
+      "response": {
+        "object": {
+          "status": "string"
+        }
+      }
+    },
+    "GET /api/halt": {
+      "status": 200,
+      "response": {
+        "object": {
+          "at": "string",
+          "halted": "boolean",
+          "reason": "string"
+        },
+        "optional": [
+          "at",
+          "reason"
+        ]
+      }
+    },
     "GET /api/healthz": {
       "status": 200,
       "response": {
@@ -85,6 +255,319 @@
         }
       },
       "public": true
+    },
+    "GET /api/home": {
+      "status": 200,
+      "response": {
+        "object": {
+          "head": {
+            "object": {
+              "channel": "string",
+              "compaction": {
+                "object": {
+                  "board_as_of": "string",
+                  "kept": "number",
+                  "reason": "string",
+                  "summary": "string",
+                  "tokens_after": "number",
+                  "tokens_before": "number",
+                  "usage": {
+                    "object": {
+                      "cached_tokens": {
+                        "nullable": "number"
+                      },
+                      "input_tokens": {
+                        "nullable": "number"
+                      },
+                      "output_tokens": {
+                        "nullable": "number"
+                      },
+                      "prefilled_tokens": {
+                        "nullable": "number"
+                      },
+                      "reasoning_tokens": {
+                        "nullable": "number"
+                      },
+                      "total_tokens": {
+                        "nullable": "number"
+                      }
+                    }
+                  }
+                },
+                "optional": [
+                  "board_as_of"
+                ]
+              },
+              "created_at": "string",
+              "id": "string",
+              "kind": "string",
+              "message": {
+                "object": {
+                  "content": "string",
+                  "context": "string",
+                  "images": {
+                    "array": {
+                      "object": {
+                        "data": {
+                          "nullable": "string"
+                        },
+                        "height": "number",
+                        "media_type": "string",
+                        "width": "number"
+                      }
+                    }
+                  },
+                  "is_error": "boolean",
+                  "metrics": {
+                    "object": {
+                      "context": {
+                        "object": {
+                          "cached_tokens": {
+                            "nullable": "number"
+                          },
+                          "input_tokens": {
+                            "nullable": "number"
+                          },
+                          "output_tokens": {
+                            "nullable": "number"
+                          },
+                          "prefilled_tokens": {
+                            "nullable": "number"
+                          },
+                          "reasoning_tokens": {
+                            "nullable": "number"
+                          },
+                          "total_tokens": {
+                            "nullable": "number"
+                          }
+                        }
+                      },
+                      "context_window": "number",
+                      "generation_ms": "number",
+                      "run_id": "string",
+                      "timings": {
+                        "object": {
+                          "decode_ms": "number",
+                          "decode_tokens": "number",
+                          "prompt_ms": "number",
+                          "prompt_tokens": "number",
+                          "source": "string"
+                        },
+                        "optional": [
+                          "decode_ms",
+                          "decode_tokens",
+                          "prompt_ms",
+                          "prompt_tokens",
+                          "source"
+                        ]
+                      },
+                      "usage": {
+                        "object": {
+                          "cached_tokens": {
+                            "nullable": "number"
+                          },
+                          "input_tokens": {
+                            "nullable": "number"
+                          },
+                          "output_tokens": {
+                            "nullable": "number"
+                          },
+                          "prefilled_tokens": {
+                            "nullable": "number"
+                          },
+                          "reasoning_tokens": {
+                            "nullable": "number"
+                          },
+                          "total_tokens": {
+                            "nullable": "number"
+                          }
+                        }
+                      }
+                    },
+                    "optional": [
+                      "timings"
+                    ]
+                  },
+                  "notices": {
+                    "array": "string"
+                  },
+                  "reasoning": "string",
+                  "reasoning_items": {
+                    "array": "any"
+                  },
+                  "removed": "number",
+                  "role": "string",
+                  "summary": "boolean",
+                  "tool_call_id": "string",
+                  "tool_calls": {
+                    "array": {
+                      "object": {
+                        "arguments": "any",
+                        "arguments_malformed": "boolean",
+                        "arguments_text": "string",
+                        "id": "string",
+                        "name": "string",
+                        "wire_id": "string"
+                      },
+                      "optional": [
+                        "arguments_malformed",
+                        "arguments_text",
+                        "wire_id"
+                      ]
+                    }
+                  }
+                },
+                "optional": [
+                  "content",
+                  "context",
+                  "images",
+                  "is_error",
+                  "metrics",
+                  "notices",
+                  "reasoning",
+                  "reasoning_items",
+                  "removed",
+                  "summary",
+                  "tool_call_id",
+                  "tool_calls"
+                ]
+              },
+              "parent_id": "string",
+              "question": {
+                "object": {
+                  "agent": "string",
+                  "allow_free_text": "boolean",
+                  "name": "string",
+                  "options": {
+                    "array": "string"
+                  },
+                  "question": "string",
+                  "question_id": "string"
+                },
+                "optional": [
+                  "options"
+                ]
+              },
+              "run_id": "string",
+              "seq": "number",
+              "text": "string"
+            },
+            "optional": [
+              "channel",
+              "compaction",
+              "parent_id",
+              "question",
+              "run_id",
+              "text"
+            ]
+          },
+          "session": {
+            "object": {
+              "agent": "string",
+              "archived": "boolean",
+              "brief": "string",
+              "computer_id": "string",
+              "created_at": "string",
+              "head_entry_id": "string",
+              "id": "string",
+              "kind": "string",
+              "last_active_at": "string",
+              "name": "string",
+              "owner": "string",
+              "parent_session_id": "string",
+              "pinned": "boolean",
+              "project_id": "string",
+              "result": "string",
+              "state": "string",
+              "title": "string",
+              "tools": {
+                "nullable": {
+                  "array": "string"
+                }
+              },
+              "updated_at": "string",
+              "waiting_reason": "string"
+            },
+            "optional": [
+              "agent",
+              "brief",
+              "computer_id",
+              "head_entry_id",
+              "name",
+              "parent_session_id",
+              "project_id",
+              "result",
+              "waiting_reason"
+            ]
+          }
+        },
+        "optional": [
+          "head"
+        ]
+      }
+    },
+    "GET /api/inbox/count": {
+      "status": 200,
+      "response": {
+        "object": {
+          "pending": "number"
+        }
+      }
+    },
+    "GET /api/inbox/memories": {
+      "status": 200,
+      "response": {
+        "object": {
+          "memories": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "archive_reason": "string",
+                  "body": "string",
+                  "content_sha": "string",
+                  "created": "string",
+                  "description": "string",
+                  "expires": "string",
+                  "name": "string",
+                  "pinned": "boolean",
+                  "screen": {
+                    "object": {
+                      "max_score": "number",
+                      "spans": {
+                        "nullable": {
+                          "array": {
+                            "object": {
+                              "end": "number",
+                              "field": "string",
+                              "score": "number",
+                              "start": "number",
+                              "text": "string"
+                            }
+                          }
+                        }
+                      },
+                      "unscanned": "boolean"
+                    }
+                  },
+                  "source": "string",
+                  "state": "string",
+                  "type": "string",
+                  "updated": "string"
+                },
+                "optional": [
+                  "archive_reason",
+                  "screen"
+                ]
+              }
+            }
+          },
+          "next_cursor": "string",
+          "pending": "number"
+        },
+        "optional": [
+          "next_cursor"
+        ]
+      }
     },
     "GET /api/inference": {
       "status": 200,
@@ -163,6 +646,15 @@
               }
             }
           }
+        }
+      }
+    },
+    "GET /api/instructions": {
+      "status": 200,
+      "response": {
+        "object": {
+          "about_me": "string",
+          "rules": "string"
         }
       }
     },
@@ -507,6 +999,82 @@
         ]
       }
     },
+    "GET /api/memories": {
+      "status": 200,
+      "response": {
+        "object": {
+          "memories": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "content_sha": "string",
+                  "description": "string",
+                  "expires": "string",
+                  "name": "string",
+                  "pinned": "boolean",
+                  "snippet": "string",
+                  "state": "string",
+                  "type": "string",
+                  "updated": "string"
+                },
+                "optional": [
+                  "content_sha",
+                  "expires",
+                  "snippet",
+                  "updated"
+                ]
+              }
+            }
+          },
+          "next_cursor": "string"
+        },
+        "optional": [
+          "next_cursor"
+        ]
+      }
+    },
+    "GET /api/memories/{name}": {
+      "status": 200,
+      "response": {
+        "object": {
+          "archive_reason": "string",
+          "body": "string",
+          "content_sha": "string",
+          "created": "string",
+          "description": "string",
+          "expires": "string",
+          "name": "string",
+          "pinned": "boolean",
+          "screen": {
+            "object": {
+              "max_score": "number",
+              "spans": {
+                "nullable": {
+                  "array": {
+                    "object": {
+                      "end": "number",
+                      "field": "string",
+                      "score": "number",
+                      "start": "number",
+                      "text": "string"
+                    }
+                  }
+                }
+              },
+              "unscanned": "boolean"
+            }
+          },
+          "source": "string",
+          "state": "string",
+          "type": "string",
+          "updated": "string"
+        },
+        "optional": [
+          "archive_reason",
+          "screen"
+        ]
+      }
+    },
     "GET /api/models": {
       "status": 200,
       "response": {
@@ -550,185 +1118,51 @@
         ]
       }
     },
-    "GET /api/profiles": {
+    "GET /api/projects": {
       "status": 200,
       "response": {
         "object": {
-          "default": "string",
-          "profiles": {
+          "projects": {
             "nullable": {
               "array": {
                 "object": {
-                  "chat_prompt": {
-                    "nullable": "string"
-                  },
                   "created_at": "string",
                   "description": "string",
+                  "directory": "string",
                   "id": "string",
-                  "inherited": {
-                    "object": {
-                      "chat_prompt": "string",
-                      "dropped_effort": "string",
-                      "instructions": "string",
-                      "model": "string",
-                      "model_id": "string",
-                      "preserve_thinking": "boolean",
-                      "profile_id": "string",
-                      "profile_name": "string",
-                      "sampling": {
-                        "object": {
-                          "frequency_penalty": "number",
-                          "max_output": "number",
-                          "min_p": "number",
-                          "presence_penalty": "number",
-                          "reasoning_effort": "string",
-                          "seed": "number",
-                          "stop": {
-                            "array": "string"
-                          },
-                          "temperature": "number",
-                          "top_k": "number",
-                          "top_p": "number"
-                        },
-                        "optional": [
-                          "frequency_penalty",
-                          "max_output",
-                          "min_p",
-                          "presence_penalty",
-                          "reasoning_effort",
-                          "seed",
-                          "stop",
-                          "temperature",
-                          "top_k",
-                          "top_p"
-                        ]
-                      },
-                      "sources": {
-                        "nullable": {
-                          "map": "string"
-                        }
-                      },
-                      "tools": {
-                        "nullable": {
-                          "array": "string"
-                        }
-                      }
-                    },
-                    "optional": [
-                      "dropped_effort"
-                    ]
-                  },
-                  "instructions": {
-                    "nullable": "string"
-                  },
-                  "model_id": "string",
                   "name": "string",
-                  "preserve_thinking": {
-                    "nullable": "boolean"
-                  },
-                  "sampling": {
-                    "object": {
-                      "frequency_penalty": "number",
-                      "max_output": "number",
-                      "min_p": "number",
-                      "presence_penalty": "number",
-                      "reasoning_effort": "string",
-                      "seed": "number",
-                      "stop": {
-                        "array": "string"
-                      },
-                      "temperature": "number",
-                      "top_k": "number",
-                      "top_p": "number"
-                    },
-                    "optional": [
-                      "frequency_penalty",
-                      "max_output",
-                      "min_p",
-                      "presence_penalty",
-                      "reasoning_effort",
-                      "seed",
-                      "stop",
-                      "temperature",
-                      "top_k",
-                      "top_p"
-                    ]
-                  },
-                  "tools": {
-                    "nullable": {
-                      "array": "string"
-                    }
-                  },
+                  "slug": "string",
+                  "status": "string",
                   "updated_at": "string"
-                },
-                "optional": [
-                  "model_id"
-                ]
+                }
               }
-            }
-          },
-          "prompts": {
-            "object": {
-              "chat": "string"
             }
           }
         }
       }
     },
-    "GET /api/profiles/inherited": {
+    "GET /api/projects/{id}": {
       "status": 200,
       "response": {
         "object": {
-          "chat_prompt": "string",
-          "dropped_effort": "string",
+          "created_at": "string",
+          "description": "string",
+          "directory": "string",
+          "id": "string",
+          "name": "string",
+          "slug": "string",
+          "status": "string",
+          "updated_at": "string"
+        }
+      }
+    },
+    "GET /api/projects/{id}/instructions": {
+      "status": 200,
+      "response": {
+        "object": {
           "instructions": "string",
-          "model": "string",
-          "model_id": "string",
-          "preserve_thinking": "boolean",
-          "profile_id": "string",
-          "profile_name": "string",
-          "sampling": {
-            "object": {
-              "frequency_penalty": "number",
-              "max_output": "number",
-              "min_p": "number",
-              "presence_penalty": "number",
-              "reasoning_effort": "string",
-              "seed": "number",
-              "stop": {
-                "array": "string"
-              },
-              "temperature": "number",
-              "top_k": "number",
-              "top_p": "number"
-            },
-            "optional": [
-              "frequency_penalty",
-              "max_output",
-              "min_p",
-              "presence_penalty",
-              "reasoning_effort",
-              "seed",
-              "stop",
-              "temperature",
-              "top_k",
-              "top_p"
-            ]
-          },
-          "sources": {
-            "nullable": {
-              "map": "string"
-            }
-          },
-          "tools": {
-            "nullable": {
-              "array": "string"
-            }
-          }
-        },
-        "optional": [
-          "dropped_effort"
-        ]
+          "version": "number"
+        }
       }
     },
     "GET /api/providers": {
@@ -914,27 +1348,41 @@
             "nullable": {
               "array": {
                 "object": {
+                  "agent": "string",
                   "archived": "boolean",
+                  "brief": "string",
                   "computer_id": "string",
                   "created_at": "string",
                   "head_entry_id": "string",
                   "id": "string",
                   "kind": "string",
-                  "overridden": "boolean",
+                  "last_active_at": "string",
+                  "name": "string",
+                  "owner": "string",
+                  "parent_session_id": "string",
                   "pinned": "boolean",
-                  "profile_id": "string",
+                  "project_id": "string",
+                  "result": "string",
+                  "state": "string",
                   "title": "string",
                   "tools": {
                     "nullable": {
                       "array": "string"
                     }
                   },
-                  "updated_at": "string"
+                  "updated_at": "string",
+                  "waiting_reason": "string"
                 },
                 "optional": [
+                  "agent",
+                  "brief",
                   "computer_id",
                   "head_entry_id",
-                  "profile_id"
+                  "name",
+                  "parent_session_id",
+                  "project_id",
+                  "result",
+                  "waiting_reason"
                 ]
               }
             }
@@ -948,8 +1396,10 @@
         "object": {
           "head": {
             "object": {
+              "channel": "string",
               "compaction": {
                 "object": {
+                  "board_as_of": "string",
                   "kept": "number",
                   "reason": "string",
                   "summary": "string",
@@ -977,7 +1427,10 @@
                       }
                     }
                   }
-                }
+                },
+                "optional": [
+                  "board_as_of"
+                ]
               },
               "created_at": "string",
               "id": "string",
@@ -1069,10 +1522,14 @@
                       "timings"
                     ]
                   },
+                  "notices": {
+                    "array": "string"
+                  },
                   "reasoning": "string",
                   "reasoning_items": {
                     "array": "any"
                   },
+                  "removed": "number",
                   "role": "string",
                   "summary": "boolean",
                   "tool_call_id": "string",
@@ -1100,44 +1557,81 @@
                   "images",
                   "is_error",
                   "metrics",
+                  "notices",
                   "reasoning",
                   "reasoning_items",
+                  "removed",
                   "summary",
                   "tool_call_id",
                   "tool_calls"
                 ]
               },
               "parent_id": "string",
-              "seq": "number"
+              "question": {
+                "object": {
+                  "agent": "string",
+                  "allow_free_text": "boolean",
+                  "name": "string",
+                  "options": {
+                    "array": "string"
+                  },
+                  "question": "string",
+                  "question_id": "string"
+                },
+                "optional": [
+                  "options"
+                ]
+              },
+              "run_id": "string",
+              "seq": "number",
+              "text": "string"
             },
             "optional": [
+              "channel",
               "compaction",
-              "parent_id"
+              "parent_id",
+              "question",
+              "run_id",
+              "text"
             ]
           },
           "session": {
             "object": {
+              "agent": "string",
               "archived": "boolean",
+              "brief": "string",
               "computer_id": "string",
               "created_at": "string",
               "head_entry_id": "string",
               "id": "string",
               "kind": "string",
-              "overridden": "boolean",
+              "last_active_at": "string",
+              "name": "string",
+              "owner": "string",
+              "parent_session_id": "string",
               "pinned": "boolean",
-              "profile_id": "string",
+              "project_id": "string",
+              "result": "string",
+              "state": "string",
               "title": "string",
               "tools": {
                 "nullable": {
                   "array": "string"
                 }
               },
-              "updated_at": "string"
+              "updated_at": "string",
+              "waiting_reason": "string"
             },
             "optional": [
+              "agent",
+              "brief",
               "computer_id",
               "head_entry_id",
-              "profile_id"
+              "name",
+              "parent_session_id",
+              "project_id",
+              "result",
+              "waiting_reason"
             ]
           }
         },
@@ -1451,10 +1945,14 @@
                       "timings"
                     ]
                   },
+                  "notices": {
+                    "array": "string"
+                  },
                   "reasoning": "string",
                   "reasoning_items": {
                     "array": "any"
                   },
+                  "removed": "number",
                   "role": "string",
                   "summary": "boolean",
                   "tool_call_id": "string",
@@ -1482,8 +1980,10 @@
                   "images",
                   "is_error",
                   "metrics",
+                  "notices",
                   "reasoning",
                   "reasoning_items",
+                  "removed",
                   "summary",
                   "tool_call_id",
                   "tool_calls"
@@ -1571,174 +2071,6 @@
           "call",
           "dropped_effort",
           "prediction"
-        ]
-      }
-    },
-    "GET /api/sessions/{id}/configuration": {
-      "status": 200,
-      "response": {
-        "object": {
-          "inherited": {
-            "object": {
-              "chat_prompt": "string",
-              "dropped_effort": "string",
-              "instructions": "string",
-              "model": "string",
-              "model_id": "string",
-              "preserve_thinking": "boolean",
-              "profile_id": "string",
-              "profile_name": "string",
-              "sampling": {
-                "object": {
-                  "frequency_penalty": "number",
-                  "max_output": "number",
-                  "min_p": "number",
-                  "presence_penalty": "number",
-                  "reasoning_effort": "string",
-                  "seed": "number",
-                  "stop": {
-                    "array": "string"
-                  },
-                  "temperature": "number",
-                  "top_k": "number",
-                  "top_p": "number"
-                },
-                "optional": [
-                  "frequency_penalty",
-                  "max_output",
-                  "min_p",
-                  "presence_penalty",
-                  "reasoning_effort",
-                  "seed",
-                  "stop",
-                  "temperature",
-                  "top_k",
-                  "top_p"
-                ]
-              },
-              "sources": {
-                "nullable": {
-                  "map": "string"
-                }
-              },
-              "tools": {
-                "nullable": {
-                  "array": "string"
-                }
-              }
-            },
-            "optional": [
-              "dropped_effort"
-            ]
-          },
-          "overrides": {
-            "object": {
-              "chat_prompt": {
-                "nullable": "string"
-              },
-              "instructions": {
-                "nullable": "string"
-              },
-              "model_id": "string",
-              "preserve_thinking": {
-                "nullable": "boolean"
-              },
-              "sampling": {
-                "object": {
-                  "frequency_penalty": "number",
-                  "max_output": "number",
-                  "min_p": "number",
-                  "presence_penalty": "number",
-                  "reasoning_effort": "string",
-                  "seed": "number",
-                  "stop": {
-                    "array": "string"
-                  },
-                  "temperature": "number",
-                  "top_k": "number",
-                  "top_p": "number"
-                },
-                "optional": [
-                  "frequency_penalty",
-                  "max_output",
-                  "min_p",
-                  "presence_penalty",
-                  "reasoning_effort",
-                  "seed",
-                  "stop",
-                  "temperature",
-                  "top_k",
-                  "top_p"
-                ]
-              }
-            },
-            "optional": [
-              "model_id"
-            ]
-          },
-          "profile_id": "string",
-          "resolved": {
-            "object": {
-              "chat_prompt": "string",
-              "dropped_effort": "string",
-              "instructions": "string",
-              "model": "string",
-              "model_id": "string",
-              "preserve_thinking": "boolean",
-              "profile_id": "string",
-              "profile_name": "string",
-              "sampling": {
-                "object": {
-                  "frequency_penalty": "number",
-                  "max_output": "number",
-                  "min_p": "number",
-                  "presence_penalty": "number",
-                  "reasoning_effort": "string",
-                  "seed": "number",
-                  "stop": {
-                    "array": "string"
-                  },
-                  "temperature": "number",
-                  "top_k": "number",
-                  "top_p": "number"
-                },
-                "optional": [
-                  "frequency_penalty",
-                  "max_output",
-                  "min_p",
-                  "presence_penalty",
-                  "reasoning_effort",
-                  "seed",
-                  "stop",
-                  "temperature",
-                  "top_k",
-                  "top_p"
-                ]
-              },
-              "sources": {
-                "nullable": {
-                  "map": "string"
-                }
-              },
-              "tools": {
-                "nullable": {
-                  "array": "string"
-                }
-              }
-            },
-            "optional": [
-              "dropped_effort"
-            ]
-          },
-          "session_id": "string",
-          "tools": {
-            "nullable": {
-              "array": "string"
-            }
-          }
-        },
-        "optional": [
-          "profile_id"
         ]
       }
     },
@@ -1968,10 +2300,14 @@
                       "timings"
                     ]
                   },
+                  "notices": {
+                    "array": "string"
+                  },
                   "reasoning": "string",
                   "reasoning_items": {
                     "array": "any"
                   },
+                  "removed": "number",
                   "role": "string",
                   "summary": "boolean",
                   "tool_call_id": "string",
@@ -1999,8 +2335,10 @@
                   "images",
                   "is_error",
                   "metrics",
+                  "notices",
                   "reasoning",
                   "reasoning_items",
+                  "removed",
                   "summary",
                   "tool_call_id",
                   "tool_calls"
@@ -2091,36 +2429,7 @@
         ]
       }
     },
-    "GET /api/sessions/{id}/outline": {
-      "status": 200,
-      "response": {
-        "object": {
-          "head_entry_id": "string",
-          "nodes": {
-            "nullable": {
-              "array": {
-                "object": {
-                  "created_at": "string",
-                  "id": "string",
-                  "kind": "string",
-                  "parent_id": "string",
-                  "preview": "string",
-                  "resumable": "boolean"
-                },
-                "optional": [
-                  "parent_id"
-                ]
-              }
-            }
-          },
-          "session_id": "string"
-        },
-        "optional": [
-          "head_entry_id"
-        ]
-      }
-    },
-    "GET /api/sessions/{id}/path": {
+    "GET /api/sessions/{id}/entries": {
       "status": 200,
       "response": {
         "object": {
@@ -2128,8 +2437,10 @@
             "nullable": {
               "array": {
                 "object": {
+                  "channel": "string",
                   "compaction": {
                     "object": {
+                      "board_as_of": "string",
                       "kept": "number",
                       "reason": "string",
                       "summary": "string",
@@ -2157,7 +2468,10 @@
                           }
                         }
                       }
-                    }
+                    },
+                    "optional": [
+                      "board_as_of"
+                    ]
                   },
                   "created_at": "string",
                   "id": "string",
@@ -2249,10 +2563,14 @@
                           "timings"
                         ]
                       },
+                      "notices": {
+                        "array": "string"
+                      },
                       "reasoning": "string",
                       "reasoning_items": {
                         "array": "any"
                       },
+                      "removed": "number",
                       "role": "string",
                       "summary": "boolean",
                       "tool_call_id": "string",
@@ -2280,19 +2598,288 @@
                       "images",
                       "is_error",
                       "metrics",
+                      "notices",
                       "reasoning",
                       "reasoning_items",
+                      "removed",
                       "summary",
                       "tool_call_id",
                       "tool_calls"
                     ]
                   },
                   "parent_id": "string",
-                  "seq": "number"
+                  "question": {
+                    "object": {
+                      "agent": "string",
+                      "allow_free_text": "boolean",
+                      "name": "string",
+                      "options": {
+                        "array": "string"
+                      },
+                      "question": "string",
+                      "question_id": "string"
+                    },
+                    "optional": [
+                      "options"
+                    ]
+                  },
+                  "run_id": "string",
+                  "seq": "number",
+                  "text": "string"
                 },
                 "optional": [
+                  "channel",
                   "compaction",
+                  "parent_id",
+                  "question",
+                  "run_id",
+                  "text"
+                ]
+              }
+            }
+          },
+          "next_before": "string",
+          "session_id": "string"
+        },
+        "optional": [
+          "next_before"
+        ]
+      }
+    },
+    "GET /api/sessions/{id}/outline": {
+      "status": 200,
+      "response": {
+        "object": {
+          "head_entry_id": "string",
+          "nodes": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "created_at": "string",
+                  "id": "string",
+                  "kind": "string",
+                  "parent_id": "string",
+                  "preview": "string",
+                  "resumable": "boolean"
+                },
+                "optional": [
                   "parent_id"
+                ]
+              }
+            }
+          },
+          "session_id": "string"
+        },
+        "optional": [
+          "head_entry_id"
+        ]
+      }
+    },
+    "GET /api/sessions/{id}/path": {
+      "status": 200,
+      "response": {
+        "object": {
+          "entries": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "channel": "string",
+                  "compaction": {
+                    "object": {
+                      "board_as_of": "string",
+                      "kept": "number",
+                      "reason": "string",
+                      "summary": "string",
+                      "tokens_after": "number",
+                      "tokens_before": "number",
+                      "usage": {
+                        "object": {
+                          "cached_tokens": {
+                            "nullable": "number"
+                          },
+                          "input_tokens": {
+                            "nullable": "number"
+                          },
+                          "output_tokens": {
+                            "nullable": "number"
+                          },
+                          "prefilled_tokens": {
+                            "nullable": "number"
+                          },
+                          "reasoning_tokens": {
+                            "nullable": "number"
+                          },
+                          "total_tokens": {
+                            "nullable": "number"
+                          }
+                        }
+                      }
+                    },
+                    "optional": [
+                      "board_as_of"
+                    ]
+                  },
+                  "created_at": "string",
+                  "id": "string",
+                  "kind": "string",
+                  "message": {
+                    "object": {
+                      "content": "string",
+                      "context": "string",
+                      "images": {
+                        "array": {
+                          "object": {
+                            "data": {
+                              "nullable": "string"
+                            },
+                            "height": "number",
+                            "media_type": "string",
+                            "width": "number"
+                          }
+                        }
+                      },
+                      "is_error": "boolean",
+                      "metrics": {
+                        "object": {
+                          "context": {
+                            "object": {
+                              "cached_tokens": {
+                                "nullable": "number"
+                              },
+                              "input_tokens": {
+                                "nullable": "number"
+                              },
+                              "output_tokens": {
+                                "nullable": "number"
+                              },
+                              "prefilled_tokens": {
+                                "nullable": "number"
+                              },
+                              "reasoning_tokens": {
+                                "nullable": "number"
+                              },
+                              "total_tokens": {
+                                "nullable": "number"
+                              }
+                            }
+                          },
+                          "context_window": "number",
+                          "generation_ms": "number",
+                          "run_id": "string",
+                          "timings": {
+                            "object": {
+                              "decode_ms": "number",
+                              "decode_tokens": "number",
+                              "prompt_ms": "number",
+                              "prompt_tokens": "number",
+                              "source": "string"
+                            },
+                            "optional": [
+                              "decode_ms",
+                              "decode_tokens",
+                              "prompt_ms",
+                              "prompt_tokens",
+                              "source"
+                            ]
+                          },
+                          "usage": {
+                            "object": {
+                              "cached_tokens": {
+                                "nullable": "number"
+                              },
+                              "input_tokens": {
+                                "nullable": "number"
+                              },
+                              "output_tokens": {
+                                "nullable": "number"
+                              },
+                              "prefilled_tokens": {
+                                "nullable": "number"
+                              },
+                              "reasoning_tokens": {
+                                "nullable": "number"
+                              },
+                              "total_tokens": {
+                                "nullable": "number"
+                              }
+                            }
+                          }
+                        },
+                        "optional": [
+                          "timings"
+                        ]
+                      },
+                      "notices": {
+                        "array": "string"
+                      },
+                      "reasoning": "string",
+                      "reasoning_items": {
+                        "array": "any"
+                      },
+                      "removed": "number",
+                      "role": "string",
+                      "summary": "boolean",
+                      "tool_call_id": "string",
+                      "tool_calls": {
+                        "array": {
+                          "object": {
+                            "arguments": "any",
+                            "arguments_malformed": "boolean",
+                            "arguments_text": "string",
+                            "id": "string",
+                            "name": "string",
+                            "wire_id": "string"
+                          },
+                          "optional": [
+                            "arguments_malformed",
+                            "arguments_text",
+                            "wire_id"
+                          ]
+                        }
+                      }
+                    },
+                    "optional": [
+                      "content",
+                      "context",
+                      "images",
+                      "is_error",
+                      "metrics",
+                      "notices",
+                      "reasoning",
+                      "reasoning_items",
+                      "removed",
+                      "summary",
+                      "tool_call_id",
+                      "tool_calls"
+                    ]
+                  },
+                  "parent_id": "string",
+                  "question": {
+                    "object": {
+                      "agent": "string",
+                      "allow_free_text": "boolean",
+                      "name": "string",
+                      "options": {
+                        "array": "string"
+                      },
+                      "question": "string",
+                      "question_id": "string"
+                    },
+                    "optional": [
+                      "options"
+                    ]
+                  },
+                  "run_id": "string",
+                  "seq": "number",
+                  "text": "string"
+                },
+                "optional": [
+                  "channel",
+                  "compaction",
+                  "parent_id",
+                  "question",
+                  "run_id",
+                  "text"
                 ]
               }
             }
@@ -2386,10 +2973,14 @@
                       "timings"
                     ]
                   },
+                  "notices": {
+                    "array": "string"
+                  },
                   "reasoning": "string",
                   "reasoning_items": {
                     "array": "any"
                   },
+                  "removed": "number",
                   "role": "string",
                   "summary": "boolean",
                   "tool_call_id": "string",
@@ -2417,8 +3008,10 @@
                   "images",
                   "is_error",
                   "metrics",
+                  "notices",
                   "reasoning",
                   "reasoning_items",
+                  "removed",
                   "summary",
                   "tool_call_id",
                   "tool_calls"
@@ -2556,6 +3149,8 @@
           "defaults": {
             "object": {
               "aging_seconds": "number",
+              "compact_idle_fill": "number",
+              "compact_idle_minutes": "number",
               "compaction": {
                 "object": {
                   "auto": "boolean",
@@ -2572,6 +3167,7 @@
               },
               "computer_idle_minutes": "number",
               "maintenance_idle_seconds": "number",
+              "memory_screen_threshold": "number",
               "preempt_running": "boolean",
               "sandbox_egress": {
                 "object": {
@@ -2591,6 +3187,8 @@
                   "pids": "number"
                 }
               },
+              "screen_required": "boolean",
+              "screen_threshold": "number",
               "search_limits": {
                 "nullable": {
                   "map": {
@@ -2609,7 +3207,8 @@
                 "nullable": {
                   "array": "string"
                 }
-              }
+              },
+              "subagent_max_running": "number"
             }
           },
           "settings": {
@@ -2618,6 +3217,89 @@
             }
           },
           "titles_model": "string"
+        }
+      }
+    },
+    "GET /api/skills": {
+      "status": 200,
+      "response": {
+        "object": {
+          "skills": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "broken": "string",
+                  "description": "string",
+                  "enabled": "boolean",
+                  "file_count": "number",
+                  "installed_at": "string",
+                  "name": "string",
+                  "sha": "string",
+                  "span_count": "number",
+                  "unscanned": "boolean",
+                  "warning_count": "number"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "GET /api/skills/{name}": {
+      "status": 200,
+      "response": {
+        "object": {
+          "allowed_tools": "string",
+          "body": "string",
+          "broken": "string",
+          "compatibility": "string",
+          "description": "string",
+          "enabled": "boolean",
+          "files": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "path": "string",
+                  "size": "number"
+                }
+              }
+            }
+          },
+          "installed_at": "string",
+          "license": "string",
+          "metadata": {
+            "nullable": {
+              "map": "string"
+            }
+          },
+          "name": "string",
+          "screen": {
+            "nullable": {
+              "object": {
+                "max_score": "number",
+                "spans": {
+                  "nullable": {
+                    "array": {
+                      "object": {
+                        "end": "number",
+                        "field": "string",
+                        "score": "number",
+                        "start": "number",
+                        "text": "string"
+                      }
+                    }
+                  }
+                },
+                "unscanned": "boolean"
+              }
+            }
+          },
+          "sha": "string",
+          "warnings": {
+            "nullable": {
+              "array": "string"
+            }
+          }
         }
       }
     },
@@ -2672,6 +3354,62 @@
               }
             }
           }
+        }
+      }
+    },
+    "GET /api/trusted-sources": {
+      "status": 200,
+      "response": {
+        "object": {
+          "hosts": {
+            "nullable": {
+              "array": "string"
+            }
+          }
+        }
+      }
+    },
+    "GET /api/withheld": {
+      "status": 200,
+      "response": {
+        "object": {
+          "next_before": "string",
+          "withheld": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "at": "string",
+                  "call_key": "string",
+                  "id": "string",
+                  "run_id": "string",
+                  "score": "number",
+                  "session_id": "string",
+                  "source": "string",
+                  "source_name": "string",
+                  "text": "string"
+                }
+              }
+            }
+          }
+        },
+        "optional": [
+          "next_before"
+        ]
+      }
+    },
+    "GET /api/withheld/{id}": {
+      "status": 200,
+      "response": {
+        "object": {
+          "at": "string",
+          "call_key": "string",
+          "id": "string",
+          "run_id": "string",
+          "score": "number",
+          "session_id": "string",
+          "source": "string",
+          "source_name": "string",
+          "text": "string"
         }
       }
     },
@@ -2744,6 +3482,57 @@
         ]
       }
     },
+    "PATCH /api/memories/{name}": {
+      "status": 200,
+      "request": {
+        "object": {
+          "body": "string",
+          "content_sha": "string",
+          "description": "string",
+          "expires": "string",
+          "type": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "archive_reason": "string",
+          "body": "string",
+          "content_sha": "string",
+          "created": "string",
+          "description": "string",
+          "expires": "string",
+          "name": "string",
+          "pinned": "boolean",
+          "screen": {
+            "object": {
+              "max_score": "number",
+              "spans": {
+                "nullable": {
+                  "array": {
+                    "object": {
+                      "end": "number",
+                      "field": "string",
+                      "score": "number",
+                      "start": "number",
+                      "text": "string"
+                    }
+                  }
+                }
+              },
+              "unscanned": "boolean"
+            }
+          },
+          "source": "string",
+          "state": "string",
+          "type": "string",
+          "updated": "string"
+        },
+        "optional": [
+          "archive_reason",
+          "screen"
+        ]
+      }
+    },
     "PATCH /api/models/{id}": {
       "status": 200,
       "request": {
@@ -2788,6 +3577,29 @@
           "probed_window",
           "reasoning_effort"
         ]
+      }
+    },
+    "PATCH /api/projects/{id}": {
+      "status": 200,
+      "request": {
+        "object": {
+          "description": "string",
+          "directory": "string",
+          "name": "string",
+          "status": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "created_at": "string",
+          "description": "string",
+          "directory": "string",
+          "id": "string",
+          "name": "string",
+          "slug": "string",
+          "status": "string",
+          "updated_at": "string"
+        }
       }
     },
     "PATCH /api/providers/{id}": {
@@ -2902,27 +3714,41 @@
       },
       "response": {
         "object": {
+          "agent": "string",
           "archived": "boolean",
+          "brief": "string",
           "computer_id": "string",
           "created_at": "string",
           "head_entry_id": "string",
           "id": "string",
           "kind": "string",
-          "overridden": "boolean",
+          "last_active_at": "string",
+          "name": "string",
+          "owner": "string",
+          "parent_session_id": "string",
           "pinned": "boolean",
-          "profile_id": "string",
+          "project_id": "string",
+          "result": "string",
+          "state": "string",
           "title": "string",
           "tools": {
             "nullable": {
               "array": "string"
             }
           },
-          "updated_at": "string"
+          "updated_at": "string",
+          "waiting_reason": "string"
         },
         "optional": [
+          "agent",
+          "brief",
           "computer_id",
           "head_entry_id",
-          "profile_id"
+          "name",
+          "parent_session_id",
+          "project_id",
+          "result",
+          "waiting_reason"
         ]
       }
     },
@@ -2959,6 +3785,14 @@
       },
       "public": true
     },
+    "POST /api/blocked-hosts": {
+      "status": 204,
+      "request": {
+        "object": {
+          "host": "string"
+        }
+      }
+    },
     "POST /api/elicitations/{id}/answer": {
       "status": 204,
       "request": {
@@ -2966,6 +3800,138 @@
           "action": "string",
           "content": "any"
         }
+      }
+    },
+    "POST /api/halt": {
+      "status": 200,
+      "request": {
+        "object": {
+          "reason": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "at": "string",
+          "halted": "boolean",
+          "reason": "string"
+        },
+        "optional": [
+          "at",
+          "reason"
+        ]
+      }
+    },
+    "POST /api/halt/resume": {
+      "status": 200,
+      "response": {
+        "object": {
+          "at": "string",
+          "halted": "boolean",
+          "reason": "string"
+        },
+        "optional": [
+          "at",
+          "reason"
+        ]
+      }
+    },
+    "POST /api/inbox/memories/{name}/accept": {
+      "status": 200,
+      "request": {
+        "object": {
+          "body": "string",
+          "content_sha": "string",
+          "description": "string",
+          "expires": "string",
+          "type": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "archive_reason": "string",
+          "body": "string",
+          "content_sha": "string",
+          "created": "string",
+          "description": "string",
+          "expires": "string",
+          "name": "string",
+          "pinned": "boolean",
+          "screen": {
+            "object": {
+              "max_score": "number",
+              "spans": {
+                "nullable": {
+                  "array": {
+                    "object": {
+                      "end": "number",
+                      "field": "string",
+                      "score": "number",
+                      "start": "number",
+                      "text": "string"
+                    }
+                  }
+                }
+              },
+              "unscanned": "boolean"
+            }
+          },
+          "source": "string",
+          "state": "string",
+          "type": "string",
+          "updated": "string"
+        },
+        "optional": [
+          "archive_reason",
+          "screen"
+        ]
+      }
+    },
+    "POST /api/inbox/memories/{name}/reject": {
+      "status": 200,
+      "request": {
+        "object": {
+          "content_sha": "string",
+          "reason": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "archive_reason": "string",
+          "body": "string",
+          "content_sha": "string",
+          "created": "string",
+          "description": "string",
+          "expires": "string",
+          "name": "string",
+          "pinned": "boolean",
+          "screen": {
+            "object": {
+              "max_score": "number",
+              "spans": {
+                "nullable": {
+                  "array": {
+                    "object": {
+                      "end": "number",
+                      "field": "string",
+                      "score": "number",
+                      "start": "number",
+                      "text": "string"
+                    }
+                  }
+                }
+              },
+              "unscanned": "boolean"
+            }
+          },
+          "source": "string",
+          "state": "string",
+          "type": "string",
+          "updated": "string"
+        },
+        "optional": [
+          "archive_reason",
+          "screen"
+        ]
       }
     },
     "POST /api/mcp/oauth/callback": {
@@ -3451,6 +4417,148 @@
         }
       }
     },
+    "POST /api/memories/{name}/archive": {
+      "status": 200,
+      "request": {
+        "object": {
+          "content_sha": "string",
+          "reason": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "archive_reason": "string",
+          "body": "string",
+          "content_sha": "string",
+          "created": "string",
+          "description": "string",
+          "expires": "string",
+          "name": "string",
+          "pinned": "boolean",
+          "screen": {
+            "object": {
+              "max_score": "number",
+              "spans": {
+                "nullable": {
+                  "array": {
+                    "object": {
+                      "end": "number",
+                      "field": "string",
+                      "score": "number",
+                      "start": "number",
+                      "text": "string"
+                    }
+                  }
+                }
+              },
+              "unscanned": "boolean"
+            }
+          },
+          "source": "string",
+          "state": "string",
+          "type": "string",
+          "updated": "string"
+        },
+        "optional": [
+          "archive_reason",
+          "screen"
+        ]
+      }
+    },
+    "POST /api/memories/{name}/pin": {
+      "status": 200,
+      "request": {
+        "object": {
+          "content_sha": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "archive_reason": "string",
+          "body": "string",
+          "content_sha": "string",
+          "created": "string",
+          "description": "string",
+          "expires": "string",
+          "name": "string",
+          "pinned": "boolean",
+          "screen": {
+            "object": {
+              "max_score": "number",
+              "spans": {
+                "nullable": {
+                  "array": {
+                    "object": {
+                      "end": "number",
+                      "field": "string",
+                      "score": "number",
+                      "start": "number",
+                      "text": "string"
+                    }
+                  }
+                }
+              },
+              "unscanned": "boolean"
+            }
+          },
+          "source": "string",
+          "state": "string",
+          "type": "string",
+          "updated": "string"
+        },
+        "optional": [
+          "archive_reason",
+          "screen"
+        ]
+      }
+    },
+    "POST /api/memories/{name}/unpin": {
+      "status": 200,
+      "request": {
+        "object": {
+          "content_sha": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "archive_reason": "string",
+          "body": "string",
+          "content_sha": "string",
+          "created": "string",
+          "description": "string",
+          "expires": "string",
+          "name": "string",
+          "pinned": "boolean",
+          "screen": {
+            "object": {
+              "max_score": "number",
+              "spans": {
+                "nullable": {
+                  "array": {
+                    "object": {
+                      "end": "number",
+                      "field": "string",
+                      "score": "number",
+                      "start": "number",
+                      "text": "string"
+                    }
+                  }
+                }
+              },
+              "unscanned": "boolean"
+            }
+          },
+          "source": "string",
+          "state": "string",
+          "type": "string",
+          "updated": "string"
+        },
+        "optional": [
+          "archive_reason",
+          "screen"
+        ]
+      }
+    },
     "POST /api/models": {
       "status": 201,
       "request": {
@@ -3520,144 +4628,31 @@
         }
       }
     },
-    "POST /api/profiles": {
+    "POST /api/notifications/test": {
+      "status": 204
+    },
+    "POST /api/projects": {
       "status": 201,
       "request": {
         "object": {
-          "chat_prompt": "string",
           "description": "string",
-          "instructions": "string",
-          "model_id": "string",
+          "directory": "string",
           "name": "string",
-          "preserve_thinking": "boolean",
-          "sampling": {
-            "object": {
-              "frequency_penalty": "number",
-              "max_output": "number",
-              "min_p": "number",
-              "presence_penalty": "number",
-              "reasoning_effort": "string",
-              "seed": "number",
-              "stop": {
-                "array": "string"
-              },
-              "temperature": "number",
-              "top_k": "number",
-              "top_p": "number"
-            }
-          },
-          "tools": {
-            "array": "string"
-          }
+          "slug": "string",
+          "status": "string"
         }
       },
       "response": {
         "object": {
-          "chat_prompt": {
-            "nullable": "string"
-          },
           "created_at": "string",
           "description": "string",
+          "directory": "string",
           "id": "string",
-          "inherited": {
-            "object": {
-              "chat_prompt": "string",
-              "dropped_effort": "string",
-              "instructions": "string",
-              "model": "string",
-              "model_id": "string",
-              "preserve_thinking": "boolean",
-              "profile_id": "string",
-              "profile_name": "string",
-              "sampling": {
-                "object": {
-                  "frequency_penalty": "number",
-                  "max_output": "number",
-                  "min_p": "number",
-                  "presence_penalty": "number",
-                  "reasoning_effort": "string",
-                  "seed": "number",
-                  "stop": {
-                    "array": "string"
-                  },
-                  "temperature": "number",
-                  "top_k": "number",
-                  "top_p": "number"
-                },
-                "optional": [
-                  "frequency_penalty",
-                  "max_output",
-                  "min_p",
-                  "presence_penalty",
-                  "reasoning_effort",
-                  "seed",
-                  "stop",
-                  "temperature",
-                  "top_k",
-                  "top_p"
-                ]
-              },
-              "sources": {
-                "nullable": {
-                  "map": "string"
-                }
-              },
-              "tools": {
-                "nullable": {
-                  "array": "string"
-                }
-              }
-            },
-            "optional": [
-              "dropped_effort"
-            ]
-          },
-          "instructions": {
-            "nullable": "string"
-          },
-          "model_id": "string",
           "name": "string",
-          "preserve_thinking": {
-            "nullable": "boolean"
-          },
-          "sampling": {
-            "object": {
-              "frequency_penalty": "number",
-              "max_output": "number",
-              "min_p": "number",
-              "presence_penalty": "number",
-              "reasoning_effort": "string",
-              "seed": "number",
-              "stop": {
-                "array": "string"
-              },
-              "temperature": "number",
-              "top_k": "number",
-              "top_p": "number"
-            },
-            "optional": [
-              "frequency_penalty",
-              "max_output",
-              "min_p",
-              "presence_penalty",
-              "reasoning_effort",
-              "seed",
-              "stop",
-              "temperature",
-              "top_k",
-              "top_p"
-            ]
-          },
-          "tools": {
-            "nullable": {
-              "array": "string"
-            }
-          },
+          "slug": "string",
+          "status": "string",
           "updated_at": "string"
-        },
-        "optional": [
-          "model_id"
-        ]
+        }
       }
     },
     "POST /api/providers": {
@@ -4014,38 +5009,45 @@
         }
       }
     },
-    "POST /api/sessions": {
-      "status": 201,
-      "request": {
-        "object": {
-          "chat": "boolean",
-          "computer_id": "string",
-          "title": "string"
-        }
-      },
+    "POST /api/sessions/{id}/cancel": {
+      "status": 200,
       "response": {
         "object": {
+          "agent": "string",
           "archived": "boolean",
+          "brief": "string",
           "computer_id": "string",
           "created_at": "string",
           "head_entry_id": "string",
           "id": "string",
           "kind": "string",
-          "overridden": "boolean",
+          "last_active_at": "string",
+          "name": "string",
+          "owner": "string",
+          "parent_session_id": "string",
           "pinned": "boolean",
-          "profile_id": "string",
+          "project_id": "string",
+          "result": "string",
+          "state": "string",
           "title": "string",
           "tools": {
             "nullable": {
               "array": "string"
             }
           },
-          "updated_at": "string"
+          "updated_at": "string",
+          "waiting_reason": "string"
         },
         "optional": [
+          "agent",
+          "brief",
           "computer_id",
           "head_entry_id",
-          "profile_id"
+          "name",
+          "parent_session_id",
+          "project_id",
+          "result",
+          "waiting_reason"
         ]
       }
     },
@@ -4081,27 +5083,41 @@
       },
       "response": {
         "object": {
+          "agent": "string",
           "archived": "boolean",
+          "brief": "string",
           "computer_id": "string",
           "created_at": "string",
           "head_entry_id": "string",
           "id": "string",
           "kind": "string",
-          "overridden": "boolean",
+          "last_active_at": "string",
+          "name": "string",
+          "owner": "string",
+          "parent_session_id": "string",
           "pinned": "boolean",
-          "profile_id": "string",
+          "project_id": "string",
+          "result": "string",
+          "state": "string",
           "title": "string",
           "tools": {
             "nullable": {
               "array": "string"
             }
           },
-          "updated_at": "string"
+          "updated_at": "string",
+          "waiting_reason": "string"
         },
         "optional": [
+          "agent",
+          "brief",
           "computer_id",
           "head_entry_id",
-          "profile_id"
+          "name",
+          "parent_session_id",
+          "project_id",
+          "result",
+          "waiting_reason"
         ]
       }
     },
@@ -4136,6 +5152,257 @@
         ]
       }
     },
+    "POST /api/skills": {
+      "status": 201,
+      "response": {
+        "object": {
+          "skill": {
+            "object": {
+              "allowed_tools": "string",
+              "body": "string",
+              "broken": "string",
+              "compatibility": "string",
+              "description": "string",
+              "enabled": "boolean",
+              "files": {
+                "nullable": {
+                  "array": {
+                    "object": {
+                      "path": "string",
+                      "size": "number"
+                    }
+                  }
+                }
+              },
+              "installed_at": "string",
+              "license": "string",
+              "metadata": {
+                "nullable": {
+                  "map": "string"
+                }
+              },
+              "name": "string",
+              "screen": {
+                "nullable": {
+                  "object": {
+                    "max_score": "number",
+                    "spans": {
+                      "nullable": {
+                        "array": {
+                          "object": {
+                            "end": "number",
+                            "field": "string",
+                            "score": "number",
+                            "start": "number",
+                            "text": "string"
+                          }
+                        }
+                      }
+                    },
+                    "unscanned": "boolean"
+                  }
+                }
+              },
+              "sha": "string",
+              "warnings": {
+                "nullable": {
+                  "array": "string"
+                }
+              }
+            }
+          },
+          "unchanged": "boolean"
+        }
+      }
+    },
+    "POST /api/skills/{name}/disable": {
+      "status": 200,
+      "response": {
+        "object": {
+          "allowed_tools": "string",
+          "body": "string",
+          "broken": "string",
+          "compatibility": "string",
+          "description": "string",
+          "enabled": "boolean",
+          "files": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "path": "string",
+                  "size": "number"
+                }
+              }
+            }
+          },
+          "installed_at": "string",
+          "license": "string",
+          "metadata": {
+            "nullable": {
+              "map": "string"
+            }
+          },
+          "name": "string",
+          "screen": {
+            "nullable": {
+              "object": {
+                "max_score": "number",
+                "spans": {
+                  "nullable": {
+                    "array": {
+                      "object": {
+                        "end": "number",
+                        "field": "string",
+                        "score": "number",
+                        "start": "number",
+                        "text": "string"
+                      }
+                    }
+                  }
+                },
+                "unscanned": "boolean"
+              }
+            }
+          },
+          "sha": "string",
+          "warnings": {
+            "nullable": {
+              "array": "string"
+            }
+          }
+        }
+      }
+    },
+    "POST /api/skills/{name}/enable": {
+      "status": 200,
+      "response": {
+        "object": {
+          "allowed_tools": "string",
+          "body": "string",
+          "broken": "string",
+          "compatibility": "string",
+          "description": "string",
+          "enabled": "boolean",
+          "files": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "path": "string",
+                  "size": "number"
+                }
+              }
+            }
+          },
+          "installed_at": "string",
+          "license": "string",
+          "metadata": {
+            "nullable": {
+              "map": "string"
+            }
+          },
+          "name": "string",
+          "screen": {
+            "nullable": {
+              "object": {
+                "max_score": "number",
+                "spans": {
+                  "nullable": {
+                    "array": {
+                      "object": {
+                        "end": "number",
+                        "field": "string",
+                        "score": "number",
+                        "start": "number",
+                        "text": "string"
+                      }
+                    }
+                  }
+                },
+                "unscanned": "boolean"
+              }
+            }
+          },
+          "sha": "string",
+          "warnings": {
+            "nullable": {
+              "array": "string"
+            }
+          }
+        }
+      }
+    },
+    "POST /api/trusted-sources": {
+      "status": 204,
+      "request": {
+        "object": {
+          "host": "string"
+        }
+      }
+    },
+    "POST /api/withheld/{id}/trust": {
+      "status": 204
+    },
+    "PUT /api/agents/{name}": {
+      "status": 200,
+      "request": {
+        "object": {
+          "class": "string",
+          "prompt": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "builtin": {
+            "object": {
+              "class": "string",
+              "compaction": {
+                "object": {
+                  "summary": "string",
+                  "turn_prefix": "string",
+                  "update": "string"
+                }
+              },
+              "description": "string",
+              "max_turns": "number",
+              "name": "string",
+              "prompt": "string",
+              "tools": {
+                "nullable": {
+                  "array": "string"
+                }
+              }
+            }
+          },
+          "class": "string",
+          "compaction": {
+            "object": {
+              "summary": "string",
+              "turn_prefix": "string",
+              "update": "string"
+            }
+          },
+          "description": "string",
+          "max_turns": "number",
+          "name": "string",
+          "overrides": {
+            "object": {
+              "class": {
+                "nullable": "string"
+              },
+              "prompt": {
+                "nullable": "string"
+              }
+            }
+          },
+          "prompt": "string",
+          "tools": {
+            "nullable": {
+              "array": "string"
+            }
+          }
+        }
+      }
+    },
     "PUT /api/auth/password": {
       "status": 200,
       "request": {
@@ -4151,144 +5418,34 @@
         }
       }
     },
-    "PUT /api/profiles/{id}": {
+    "PUT /api/instructions": {
       "status": 200,
       "request": {
         "object": {
-          "chat_prompt": "string",
-          "description": "string",
-          "instructions": "string",
-          "model_id": "string",
-          "name": "string",
-          "preserve_thinking": "boolean",
-          "sampling": {
-            "object": {
-              "frequency_penalty": "number",
-              "max_output": "number",
-              "min_p": "number",
-              "presence_penalty": "number",
-              "reasoning_effort": "string",
-              "seed": "number",
-              "stop": {
-                "array": "string"
-              },
-              "temperature": "number",
-              "top_k": "number",
-              "top_p": "number"
-            }
-          },
-          "tools": {
-            "array": "string"
-          }
+          "about_me": "string",
+          "rules": "string"
         }
       },
       "response": {
         "object": {
-          "chat_prompt": {
-            "nullable": "string"
-          },
-          "created_at": "string",
-          "description": "string",
-          "id": "string",
-          "inherited": {
-            "object": {
-              "chat_prompt": "string",
-              "dropped_effort": "string",
-              "instructions": "string",
-              "model": "string",
-              "model_id": "string",
-              "preserve_thinking": "boolean",
-              "profile_id": "string",
-              "profile_name": "string",
-              "sampling": {
-                "object": {
-                  "frequency_penalty": "number",
-                  "max_output": "number",
-                  "min_p": "number",
-                  "presence_penalty": "number",
-                  "reasoning_effort": "string",
-                  "seed": "number",
-                  "stop": {
-                    "array": "string"
-                  },
-                  "temperature": "number",
-                  "top_k": "number",
-                  "top_p": "number"
-                },
-                "optional": [
-                  "frequency_penalty",
-                  "max_output",
-                  "min_p",
-                  "presence_penalty",
-                  "reasoning_effort",
-                  "seed",
-                  "stop",
-                  "temperature",
-                  "top_k",
-                  "top_p"
-                ]
-              },
-              "sources": {
-                "nullable": {
-                  "map": "string"
-                }
-              },
-              "tools": {
-                "nullable": {
-                  "array": "string"
-                }
-              }
-            },
-            "optional": [
-              "dropped_effort"
-            ]
-          },
-          "instructions": {
-            "nullable": "string"
-          },
-          "model_id": "string",
-          "name": "string",
-          "preserve_thinking": {
-            "nullable": "boolean"
-          },
-          "sampling": {
-            "object": {
-              "frequency_penalty": "number",
-              "max_output": "number",
-              "min_p": "number",
-              "presence_penalty": "number",
-              "reasoning_effort": "string",
-              "seed": "number",
-              "stop": {
-                "array": "string"
-              },
-              "temperature": "number",
-              "top_k": "number",
-              "top_p": "number"
-            },
-            "optional": [
-              "frequency_penalty",
-              "max_output",
-              "min_p",
-              "presence_penalty",
-              "reasoning_effort",
-              "seed",
-              "stop",
-              "temperature",
-              "top_k",
-              "top_p"
-            ]
-          },
-          "tools": {
-            "nullable": {
-              "array": "string"
-            }
-          },
-          "updated_at": "string"
-        },
-        "optional": [
-          "model_id"
-        ]
+          "about_me": "string",
+          "rules": "string"
+        }
+      }
+    },
+    "PUT /api/projects/{id}/instructions": {
+      "status": 200,
+      "request": {
+        "object": {
+          "instructions": "string",
+          "version": "number"
+        }
+      },
+      "response": {
+        "object": {
+          "instructions": "string",
+          "version": "number"
+        }
       }
     },
     "PUT /api/search/keys/{name}": {
@@ -4317,404 +5474,6 @@
             }
           }
         }
-      }
-    },
-    "PUT /api/sessions/{id}/overrides": {
-      "status": 200,
-      "request": {
-        "object": {
-          "chat_prompt": "string",
-          "instructions": "string",
-          "model_id": "string",
-          "preserve_thinking": "boolean",
-          "sampling": {
-            "object": {
-              "frequency_penalty": "number",
-              "max_output": "number",
-              "min_p": "number",
-              "presence_penalty": "number",
-              "reasoning_effort": "string",
-              "seed": "number",
-              "stop": {
-                "array": "string"
-              },
-              "temperature": "number",
-              "top_k": "number",
-              "top_p": "number"
-            }
-          }
-        }
-      },
-      "response": {
-        "object": {
-          "inherited": {
-            "object": {
-              "chat_prompt": "string",
-              "dropped_effort": "string",
-              "instructions": "string",
-              "model": "string",
-              "model_id": "string",
-              "preserve_thinking": "boolean",
-              "profile_id": "string",
-              "profile_name": "string",
-              "sampling": {
-                "object": {
-                  "frequency_penalty": "number",
-                  "max_output": "number",
-                  "min_p": "number",
-                  "presence_penalty": "number",
-                  "reasoning_effort": "string",
-                  "seed": "number",
-                  "stop": {
-                    "array": "string"
-                  },
-                  "temperature": "number",
-                  "top_k": "number",
-                  "top_p": "number"
-                },
-                "optional": [
-                  "frequency_penalty",
-                  "max_output",
-                  "min_p",
-                  "presence_penalty",
-                  "reasoning_effort",
-                  "seed",
-                  "stop",
-                  "temperature",
-                  "top_k",
-                  "top_p"
-                ]
-              },
-              "sources": {
-                "nullable": {
-                  "map": "string"
-                }
-              },
-              "tools": {
-                "nullable": {
-                  "array": "string"
-                }
-              }
-            },
-            "optional": [
-              "dropped_effort"
-            ]
-          },
-          "overrides": {
-            "object": {
-              "chat_prompt": {
-                "nullable": "string"
-              },
-              "instructions": {
-                "nullable": "string"
-              },
-              "model_id": "string",
-              "preserve_thinking": {
-                "nullable": "boolean"
-              },
-              "sampling": {
-                "object": {
-                  "frequency_penalty": "number",
-                  "max_output": "number",
-                  "min_p": "number",
-                  "presence_penalty": "number",
-                  "reasoning_effort": "string",
-                  "seed": "number",
-                  "stop": {
-                    "array": "string"
-                  },
-                  "temperature": "number",
-                  "top_k": "number",
-                  "top_p": "number"
-                },
-                "optional": [
-                  "frequency_penalty",
-                  "max_output",
-                  "min_p",
-                  "presence_penalty",
-                  "reasoning_effort",
-                  "seed",
-                  "stop",
-                  "temperature",
-                  "top_k",
-                  "top_p"
-                ]
-              }
-            },
-            "optional": [
-              "model_id"
-            ]
-          },
-          "profile_id": "string",
-          "resolved": {
-            "object": {
-              "chat_prompt": "string",
-              "dropped_effort": "string",
-              "instructions": "string",
-              "model": "string",
-              "model_id": "string",
-              "preserve_thinking": "boolean",
-              "profile_id": "string",
-              "profile_name": "string",
-              "sampling": {
-                "object": {
-                  "frequency_penalty": "number",
-                  "max_output": "number",
-                  "min_p": "number",
-                  "presence_penalty": "number",
-                  "reasoning_effort": "string",
-                  "seed": "number",
-                  "stop": {
-                    "array": "string"
-                  },
-                  "temperature": "number",
-                  "top_k": "number",
-                  "top_p": "number"
-                },
-                "optional": [
-                  "frequency_penalty",
-                  "max_output",
-                  "min_p",
-                  "presence_penalty",
-                  "reasoning_effort",
-                  "seed",
-                  "stop",
-                  "temperature",
-                  "top_k",
-                  "top_p"
-                ]
-              },
-              "sources": {
-                "nullable": {
-                  "map": "string"
-                }
-              },
-              "tools": {
-                "nullable": {
-                  "array": "string"
-                }
-              }
-            },
-            "optional": [
-              "dropped_effort"
-            ]
-          },
-          "session_id": "string",
-          "tools": {
-            "nullable": {
-              "array": "string"
-            }
-          }
-        },
-        "optional": [
-          "profile_id"
-        ]
-      }
-    },
-    "PUT /api/sessions/{id}/profile": {
-      "status": 200,
-      "request": {
-        "object": {
-          "profile_id": "string"
-        }
-      },
-      "response": {
-        "object": {
-          "inherited": {
-            "object": {
-              "chat_prompt": "string",
-              "dropped_effort": "string",
-              "instructions": "string",
-              "model": "string",
-              "model_id": "string",
-              "preserve_thinking": "boolean",
-              "profile_id": "string",
-              "profile_name": "string",
-              "sampling": {
-                "object": {
-                  "frequency_penalty": "number",
-                  "max_output": "number",
-                  "min_p": "number",
-                  "presence_penalty": "number",
-                  "reasoning_effort": "string",
-                  "seed": "number",
-                  "stop": {
-                    "array": "string"
-                  },
-                  "temperature": "number",
-                  "top_k": "number",
-                  "top_p": "number"
-                },
-                "optional": [
-                  "frequency_penalty",
-                  "max_output",
-                  "min_p",
-                  "presence_penalty",
-                  "reasoning_effort",
-                  "seed",
-                  "stop",
-                  "temperature",
-                  "top_k",
-                  "top_p"
-                ]
-              },
-              "sources": {
-                "nullable": {
-                  "map": "string"
-                }
-              },
-              "tools": {
-                "nullable": {
-                  "array": "string"
-                }
-              }
-            },
-            "optional": [
-              "dropped_effort"
-            ]
-          },
-          "overrides": {
-            "object": {
-              "chat_prompt": {
-                "nullable": "string"
-              },
-              "instructions": {
-                "nullable": "string"
-              },
-              "model_id": "string",
-              "preserve_thinking": {
-                "nullable": "boolean"
-              },
-              "sampling": {
-                "object": {
-                  "frequency_penalty": "number",
-                  "max_output": "number",
-                  "min_p": "number",
-                  "presence_penalty": "number",
-                  "reasoning_effort": "string",
-                  "seed": "number",
-                  "stop": {
-                    "array": "string"
-                  },
-                  "temperature": "number",
-                  "top_k": "number",
-                  "top_p": "number"
-                },
-                "optional": [
-                  "frequency_penalty",
-                  "max_output",
-                  "min_p",
-                  "presence_penalty",
-                  "reasoning_effort",
-                  "seed",
-                  "stop",
-                  "temperature",
-                  "top_k",
-                  "top_p"
-                ]
-              }
-            },
-            "optional": [
-              "model_id"
-            ]
-          },
-          "profile_id": "string",
-          "resolved": {
-            "object": {
-              "chat_prompt": "string",
-              "dropped_effort": "string",
-              "instructions": "string",
-              "model": "string",
-              "model_id": "string",
-              "preserve_thinking": "boolean",
-              "profile_id": "string",
-              "profile_name": "string",
-              "sampling": {
-                "object": {
-                  "frequency_penalty": "number",
-                  "max_output": "number",
-                  "min_p": "number",
-                  "presence_penalty": "number",
-                  "reasoning_effort": "string",
-                  "seed": "number",
-                  "stop": {
-                    "array": "string"
-                  },
-                  "temperature": "number",
-                  "top_k": "number",
-                  "top_p": "number"
-                },
-                "optional": [
-                  "frequency_penalty",
-                  "max_output",
-                  "min_p",
-                  "presence_penalty",
-                  "reasoning_effort",
-                  "seed",
-                  "stop",
-                  "temperature",
-                  "top_k",
-                  "top_p"
-                ]
-              },
-              "sources": {
-                "nullable": {
-                  "map": "string"
-                }
-              },
-              "tools": {
-                "nullable": {
-                  "array": "string"
-                }
-              }
-            },
-            "optional": [
-              "dropped_effort"
-            ]
-          },
-          "session_id": "string",
-          "tools": {
-            "nullable": {
-              "array": "string"
-            }
-          }
-        },
-        "optional": [
-          "profile_id"
-        ]
-      }
-    },
-    "PUT /api/sessions/{id}/tools": {
-      "status": 200,
-      "request": {
-        "object": {
-          "tools": "any"
-        }
-      },
-      "response": {
-        "object": {
-          "archived": "boolean",
-          "computer_id": "string",
-          "created_at": "string",
-          "head_entry_id": "string",
-          "id": "string",
-          "kind": "string",
-          "overridden": "boolean",
-          "pinned": "boolean",
-          "profile_id": "string",
-          "title": "string",
-          "tools": {
-            "nullable": {
-              "array": "string"
-            }
-          },
-          "updated_at": "string"
-        },
-        "optional": [
-          "computer_id",
-          "head_entry_id",
-          "profile_id"
-        ]
       }
     },
     "PUT /api/settings": {
@@ -4746,6 +5505,8 @@
           "defaults": {
             "object": {
               "aging_seconds": "number",
+              "compact_idle_fill": "number",
+              "compact_idle_minutes": "number",
               "compaction": {
                 "object": {
                   "auto": "boolean",
@@ -4762,6 +5523,7 @@
               },
               "computer_idle_minutes": "number",
               "maintenance_idle_seconds": "number",
+              "memory_screen_threshold": "number",
               "preempt_running": "boolean",
               "sandbox_egress": {
                 "object": {
@@ -4781,6 +5543,8 @@
                   "pids": "number"
                 }
               },
+              "screen_required": "boolean",
+              "screen_threshold": "number",
               "search_limits": {
                 "nullable": {
                   "map": {
@@ -4799,7 +5563,8 @@
                 "nullable": {
                   "array": "string"
                 }
-              }
+              },
+              "subagent_max_running": "number"
             }
           },
           "settings": {
@@ -4888,6 +5653,22 @@
         "state": "string"
       }
     },
+    "halt.state": {
+      "object": {
+        "at": "string",
+        "halted": "boolean",
+        "reason": "string"
+      },
+      "optional": [
+        "at",
+        "reason"
+      ]
+    },
+    "inbox.count": {
+      "object": {
+        "pending": "number"
+      }
+    },
     "mcp.elicitation": {
       "object": {
         "call_id": "string",
@@ -4914,6 +5695,15 @@
       },
       "optional": [
         "error"
+      ]
+    },
+    "memory.changed": {
+      "object": {
+        "name": "string",
+        "state": "string"
+      },
+      "optional": [
+        "state"
       ]
     },
     "message.delta": {
@@ -4958,15 +5748,19 @@
     },
     "session.message": {
       "object": {
+        "channel": "string",
         "created_at": "string",
         "entry_id": "string",
         "kind": "string",
         "message": "any",
         "parent_id": "string",
+        "run_id": "string",
         "session_id": "string"
       },
       "optional": [
-        "parent_id"
+        "channel",
+        "parent_id",
+        "run_id"
       ]
     },
     "session.title": {
@@ -4982,11 +5776,19 @@
     "session.updated": {
       "object": {
         "computer_id": "string",
+        "report_id": "string",
         "session_id": "string"
       },
       "optional": [
-        "computer_id"
+        "computer_id",
+        "report_id"
       ]
+    },
+    "skills.changed": {
+      "object": {
+        "change": "string",
+        "name": "string"
+      }
     },
     "tool.call": {
       "object": {
@@ -5015,10 +5817,12 @@
         "duration_ms": "number",
         "is_error": "boolean",
         "name": "string",
+        "removed": "number",
         "run_id": "string"
       },
       "optional": [
-        "details"
+        "details",
+        "removed"
       ]
     },
     "turn.end": {

@@ -29,35 +29,6 @@ func TestOnlyOneComputerIsHome(t *testing.T) {
 	}
 }
 
-func TestEnsureHomeComputerFindsOrInsertsTheOne(t *testing.T) {
-	st := storetest.Open(t)
-	ctx := t.Context()
-
-	first, created, err := st.EnsureHomeComputer(ctx, store.Computer{
-		ID: "first", Name: "home", Image: "img", State: "creating",
-		Sandbox: store.ComputerSandbox{PIDs: 4096},
-	})
-	if err != nil || !created {
-		t.Fatalf("first ensure = %+v, created %v, %v; want it inserted", first, created, err)
-	}
-	if !first.Home || first.ID != "first" || first.Name != "home" || first.Sandbox.PIDs != 4096 {
-		t.Errorf("first = %+v, want the row that was offered, marked home", first)
-	}
-
-	again, created, err := st.EnsureHomeComputer(ctx, store.Computer{ID: "second", Name: "other", State: "creating"})
-	if err != nil || created {
-		t.Fatalf("second ensure = %+v, created %v, %v; want the first row, not inserted", again, created, err)
-	}
-	if again.ID != "first" {
-		t.Errorf("second ensure returned %q, want first", again.ID)
-	}
-
-	all, err := st.Computers(ctx)
-	if err != nil || len(all) != 1 {
-		t.Errorf("computers = %+v, %v; want the home computer alone", all, err)
-	}
-}
-
 func TestEnsureHomeComputerRacingInsertsOnce(t *testing.T) {
 	st := storetest.Open(t)
 
@@ -85,5 +56,40 @@ func TestEnsureHomeComputerRacingInsertsOnce(t *testing.T) {
 	wg.Wait()
 	if len(ids) != 1 || inserts != 1 {
 		t.Errorf("racing ensures saw %d ids and inserted %d rows, want 1 and 1", len(ids), inserts)
+	}
+}
+
+func TestEnsureHomeSessionRacingAndRestart(t *testing.T) {
+	st := storetest.Open(t)
+	var wg sync.WaitGroup
+	ids := make(chan string, 16)
+	for range 16 {
+		wg.Go(func() {
+			home, err := st.EnsureHomeSession(t.Context())
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			ids <- home.ID
+		})
+	}
+	wg.Wait()
+	close(ids)
+	var id string
+	for got := range ids {
+		if id == "" {
+			id = got
+		}
+		if got != id {
+			t.Fatalf("home IDs differ: %s and %s", id, got)
+		}
+	}
+	home, err := st.HomeSession(t.Context(), store.LocalOwner, "home")
+	if err != nil || home.ID != id || home.Agent != "eika" {
+		t.Fatalf("home = %+v, %v", home, err)
+	}
+	again, err := st.EnsureHomeSession(t.Context())
+	if err != nil || again.ID != id {
+		t.Fatalf("again = %+v, %v", again, err)
 	}
 }

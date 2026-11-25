@@ -1,9 +1,10 @@
+import { wireSession } from "../world.ts";
 /** Runs, queues, and questions. */
 
-import type { MessageImage, Run } from "../../../src/api/types.ts";
+import type { MessageImage, Run, Session } from "../../../src/api/types.ts";
 import { fail, ok, str } from "./context.ts";
 import type { RouteContext } from "./context.ts";
-import { sessionConfiguration } from "../profiles.ts";
+import { agentModel, knownAgent } from "../modelContext.ts";
 import { pathOf } from "../world.ts";
 
 /**
@@ -34,6 +35,24 @@ function mockImage(upload: unknown): MessageImage | undefined {
     return { media_type: "image/jpeg", data, width: 0, height: 0 };
   }
   return undefined;
+}
+
+/** subagentRefusal is the harness's answer to a message or compaction for a subagent. */
+function subagentRefusal(name: string | undefined) {
+  return fail(409, "conflict", `subagent ${name ?? ""} takes messages from Eika only`);
+}
+
+/** cancelled records a subagent cancelled and tells every client, as the lifecycle service does. */
+function cancelled(ctx: RouteContext, child: Session): void {
+  child.state = "cancelled";
+  Reflect.deleteProperty(child, "waiting_reason");
+  child.last_active_at = ctx.now();
+  ctx.emit(
+    ctx.event("session.updated", "global", {
+      session_id: child.id,
+      ...(child.computer_id === undefined ? {} : { computer_id: child.computer_id }),
+    }),
+  );
 }
 
 export function runRoutes(ctx: RouteContext): void {
@@ -79,9 +98,16 @@ export function runRoutes(ctx: RouteContext): void {
       }
       images.push(image);
     }
+    if (session.kind === "subagent") return subagentRefusal(session.name);
+    if (w.halt.halted && (!body.mode || body.mode === "run"))
+      return fail(409, "conflict", "Eika is halted: resume it to start a run");
     // The model a run uses is the one the request names, else the
     // session's; a running one keeps the model it started with.
-    const modelName = str(body.model) || sessionConfiguration(w, session).resolved.model || "";
+    if (!knownAgent(session) && (!body.mode || body.mode === "run"))
+      return fail(400, "invalid_request", `unknown agent "${session.agent ?? ""}"`);
+    if (str(body.model) !== "" && (!body.mode || body.mode === "run"))
+      return fail(400, "invalid_request", "agent sessions use model classes; model must be empty");
+    const modelName = agentModel(w, session)?.name ?? "";
     const model = w.models.find((m) => m.name === modelName);
     if (images.length > 0 && model?.image_input !== true) {
       return fail(
@@ -99,7 +125,7 @@ export function runRoutes(ctx: RouteContext): void {
       return ok(w.runs[active], 202);
     }
     if (active) return fail(409, "conflict", "a run is already going");
-    if (w.models.length === 0) return fail(409, "conflict", "no model is configured");
+    if (!agentModel(w, session)) return fail(409, "conflict", "no model is configured");
     const run: Run = {
       id: ctx.nextId("run"),
       session_id: session.id,
@@ -115,8 +141,13 @@ export function runRoutes(ctx: RouteContext): void {
   on("POST", "/api/sessions/{id}/compact", ({ params, body }) => {
     const session = find(w.sessions, params[0], "session");
     if ("status" in session) return session;
+    if (session.kind === "subagent") return subagentRefusal(session.name);
     if (w.activeRuns[session.id]) return fail(409, "conflict", "a run is already going");
-    if (w.models.length === 0) return fail(409, "conflict", "no model is configured");
+    if (!knownAgent(session))
+      return fail(400, "invalid_request", `unknown agent "${session.agent ?? ""}"`);
+    if (str(body.model) !== "")
+      return fail(400, "invalid_request", "agent sessions use model classes; model must be empty");
+    if (!agentModel(w, session)) return fail(409, "conflict", "no model is configured");
     // The harness keeps about 20,000 tokens; the mock keeps two messages, so
     // a context of two or fewer beside its summary has nothing to summarize.
     const path = pathOf(w, session);
@@ -141,11 +172,28 @@ export function runRoutes(ctx: RouteContext): void {
     void ctx.compact(session, run, str(body.instructions));
     return ok(run, 202);
   });
+  on("POST", "/api/sessions/{id}/cancel", ({ params }) => {
+    const child = find(w.sessions, params[0], "session");
+    if ("status" in child) return child;
+    if (child.kind !== "subagent") {
+      return fail(409, "conflict", `session ${child.id} is not a subagent`);
+    }
+    // A subagent with nothing to stop keeps its state.
+    if (child.state !== "running" && child.state !== "waiting") return ok(wireSession(child));
+    const active = w.activeRuns[child.id];
+    const run = active === undefined ? undefined : w.runs[active];
+    if (run) ctx.finish(run, "aborted");
+    cancelled(ctx, child);
+    return ok(wireSession(child));
+  });
   on("POST", "/api/runs/{id}/abort", ({ params }) => {
     const run = w.runs[params[0] ?? ""];
     if (!run) return fail(404, "not_found", "run not found");
     if (run.state !== "running") return fail(409, "conflict", "run already finished");
     ctx.finish(run, "aborted");
+    // Aborting a subagent's run records the subagent cancelled; it stays resumable.
+    const child = w.sessions.find((s) => s.id === run.session_id && s.kind === "subagent");
+    if (child) cancelled(ctx, child);
     return ok(run);
   });
   on("POST", "/api/questions/{id}/answer", ({ params, body }) => {

@@ -116,6 +116,8 @@ type ToolResult struct {
 	IsError    bool            `json:"is_error"`
 	Details    json.RawMessage `json:"details,omitempty"`
 	DurationMS int64           `json:"duration_ms"`
+	// Removed counts the windows ingest removed from Content, absent when none.
+	Removed int `json:"removed,omitempty"`
 }
 
 // TurnProgress is the payload of a turn.progress event: the usage a provider
@@ -173,6 +175,8 @@ type Usage = provider.Usage
 const (
 	// CompactManual is a compaction the user asked for.
 	CompactManual = "manual"
+	// CompactIdle is a maintenance compaction.
+	CompactIdle = "idle"
 	// CompactThreshold is a compaction before a model call whose request
 	// would leave less of the window free than the reserve.
 	CompactThreshold = "threshold"
@@ -185,7 +189,7 @@ const (
 // of the conversation is being summarized.
 type CompactionStart struct {
 	RunID string `json:"run_id"`
-	// Reason is manual, threshold, or overflow.
+	// Reason is manual, idle, threshold, or overflow.
 	Reason string `json:"reason"`
 	// TokensBefore is the estimated size of the context being compacted.
 	TokensBefore int `json:"tokens_before"`
@@ -276,12 +280,14 @@ type SessionTitle struct {
 }
 
 // SessionUpdated is the payload of a session.updated event, on the global
-// topic: the user changed a session's title, pin, or archive. Every sidebar
-// lists every session, so the event goes to all of them.
+// topic: a session's metadata or lifecycle state changed. Clients refetch
+// the session to read the stored values.
 type SessionUpdated struct {
 	SessionID string `json:"session_id"`
 	// ComputerID is the session's computer, absent for a chat.
 	ComputerID string `json:"computer_id,omitempty"`
+	// ReportID identifies a completed subagent report, when this update announces one.
+	ReportID string `json:"report_id,omitempty"`
 }
 
 // SessionMessage is the payload of a session.message event: one entry of a
@@ -289,11 +295,14 @@ type SessionUpdated struct {
 // connects late sees the conversation it missed in the same stream as the
 // live events.
 type SessionMessage struct {
+	// Channel names the source or destination of a home message, when set.
+	Channel   string `json:"channel,omitempty"`
 	SessionID string `json:"session_id"`
 	EntryID   string `json:"entry_id"`
+	RunID     string `json:"run_id,omitempty"`
 	ParentID  string `json:"parent_id,omitempty"`
 	// Kind is the entry kind: user, assistant, tool_call, tool_result,
-	// system, or event.
+	// system, event, compaction, preamble or notice.
 	Kind      string    `json:"kind"`
 	CreatedAt time.Time `json:"created_at"`
 	// Message is the entry's stored payload: a provider message for the
@@ -314,4 +323,37 @@ type RunError struct {
 	RunID     string `json:"run_id"`
 	Message   string `json:"message"`
 	Retryable bool   `json:"retryable"`
+}
+
+// HaltState is the payload of a halt.state event, published on the global
+// topic when Eika is halted or resumed. Halted is the state now; At and Reason
+// are set only while it is halted.
+type HaltState struct {
+	Halted bool       `json:"halted"`
+	At     *time.Time `json:"at,omitempty"`
+	Reason string     `json:"reason,omitempty"`
+}
+
+// MemoryChanged is the payload of a memory.changed event, on the inbox topic:
+// a memory was durably written, changed (by the agent, the user or a repair)
+// or removed. Clients refetch it. State is its state now, empty when it was
+// purged.
+type MemoryChanged struct {
+	Name  string `json:"name"`
+	State string `json:"state,omitempty"`
+}
+
+// InboxCount is the payload of an inbox.count event, on the inbox topic: how
+// many memories are pending now. It follows every memory.changed.
+type InboxCount struct {
+	Pending int `json:"pending"`
+}
+
+// SkillsChanged is the payload of a skills.changed event, on the skills topic:
+// a skill was durably installed (or reinstalled, which returns it to disabled),
+// enabled, disabled or deleted. Clients refetch; no skill text is carried.
+// Change is "installed", "enabled", "disabled" or "deleted".
+type SkillsChanged struct {
+	Name   string `json:"name"`
+	Change string `json:"change"`
 }

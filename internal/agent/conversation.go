@@ -65,8 +65,20 @@ func (c *Conversation) Len() int {
 
 // Session is the conversation an agent run operates on, inside one computer.
 type Session struct {
-	ID           string
-	ComputerID   string
+	ID         string
+	ComputerID string
+	// Preamble is the text of the session's stored snapshot.
+	Preamble string
+	// Memory is the memory section the preamble ends with, if it has one.
+	Memory MemorySnapshot
+	// Prompt and Tools are the base prompt and the tool names the snapshot
+	// holds beside its preamble: the agent definition as it was when the
+	// snapshot was taken, which the server builds each run from. Prompt is
+	// nil when the snapshot holds no definition: it predates them, or the
+	// session has none.
+	Prompt *string
+	Tools  []string
+	// Conversation is the conversation on the session's current branch.
 	Conversation *Conversation
 }
 
@@ -78,8 +90,8 @@ func NewSession(id, computerID string) *Session {
 // Store persists the messages a run produces. session.Store implements it
 // against the database.
 type Store interface {
-	Append(ctx context.Context, sessionID string, m provider.Message) error
+	Append(ctx context.Context, sessionID, runID string, m provider.Message) error
 	// AppendCompaction records a compaction after the messages already
 	// appended, which it replaces from then on.
-	AppendCompaction(ctx context.Context, sessionID string, c Compaction) error
+	AppendCompaction(ctx context.Context, sessionID, runID string, c Compaction) error
 }

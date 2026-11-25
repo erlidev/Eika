@@ -1,25 +1,18 @@
 package computer
 
 import (
+	"bytes"
+	"context"
+	"io"
+	"log/slog"
+	"net/http/httptest"
 	"slices"
 	"testing"
-)
 
-func TestCreateResourcesSetsOnlyTheLimitsGiven(t *testing.T) {
-	none := createResources(Limits{PIDs: -1})
-	if none.NanoCPUs != 0 || none.Memory != 0 || none.MemorySwap != 0 || none.PidsLimit != nil {
-		t.Errorf("no limits = %+v, want none set", none)
-	}
-	all := createResources(Limits{CPUs: 1.5, MemoryBytes: 1 << 30, PIDs: 512})
-	if all.NanoCPUs != 1_500_000_000 || all.Memory != 1<<30 || all.PidsLimit == nil || *all.PidsLimit != 512 {
-		t.Errorf("limits = %+v, want 1.5 cores, 1 GiB, and 512 processes", all)
-	}
-	// No swap beyond the memory limit, so the limit is what the processes
-	// can hold.
-	if all.MemorySwap != all.Memory {
-		t.Errorf("memory+swap = %d, want the memory limit %d", all.MemorySwap, all.Memory)
-	}
-}
+	"github.com/erlidev/eika/internal/eikad"
+	"github.com/erlidev/eika/internal/executor"
+	"github.com/erlidev/eika/internal/executor/sandbox"
+)
 
 func TestEnvironmentPointsAProxiedComputerAtTheProxy(t *testing.T) {
 	h := &Host{opts: Options{EgressProxyURL: "http://eika:3128"}}
@@ -38,5 +31,30 @@ func TestEnvironmentPointsAProxiedComputerAtTheProxy(t *testing.T) {
 	cx.Proxied = false
 	if env := h.environment(cx); env != nil {
 		t.Errorf("an open computer's environment = %v, want none", env)
+	}
+}
+
+func TestPlantedEntriesReachTheComputersCommands(t *testing.T) {
+	d, err := eikad.New(eikad.Options{Root: t.TempDir(), Token: "tok"}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(d.Handler())
+	t.Cleanup(srv.Close)
+	h := &Host{opts: Options{Plant: func(context.Context, string) []string { return []string{"OPENAI_API_KEY=sk-proj-fake"} }}}
+	cx := Computer{ID: "cx1", Address: srv.URL, Token: "tok"}
+	if err := h.setEnvironment(t.Context(), cx); err != nil {
+		t.Fatal(err)
+	}
+	c, err := sandbox.New(sandbox.Options{BaseURL: srv.URL, Token: "tok", Root: d.Root()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if _, err := c.Exec(t.Context(), executor.ExecSpec{Command: `printf %s "$OPENAI_API_KEY"`, Shell: true, Stdout: &out}); err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != "sk-proj-fake" {
+		t.Errorf("OPENAI_API_KEY = %q, want the planted value", out.String())
 	}
 }

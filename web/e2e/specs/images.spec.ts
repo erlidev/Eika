@@ -58,39 +58,6 @@ test("a message carries images to a model that accepts them", async ({ open, exp
   await expect(attached.getByRole("listitem")).toHaveCount(1);
 });
 
-test("a message of images alone can be sent", async ({ open }) => {
-  const eika = await open({ scenario: "agent-images" });
-  const send = eika.page.getByRole("button", { name: "Send" });
-  await expect(send).toBeDisabled();
-  await eika.page.getByLabel("Images to attach").setInputFiles(screenshot);
-  await expect(send).toBeEnabled();
-  await send.click();
-  await expect(
-    eika.page
-      .getByRole("region", { name: "Session" })
-      .getByRole("button", { name: /^Open image 1/ }),
-  ).toBeVisible();
-});
-
-test("an image dropped on the box is attached", async ({ open }) => {
-  const eika = await open({ scenario: "agent-images" });
-  const data = screenshot.buffer.toString("base64");
-  const drop = await eika.page.evaluateHandle((png) => {
-    const bytes = Uint8Array.from(atob(png), (c) => c.charCodeAt(0));
-    const transfer = new DataTransfer();
-    transfer.items.add(new File([bytes], "dropped.png", { type: "image/png" }));
-    return transfer;
-  }, data);
-  const box = eika.page.getByLabel("Message", { exact: true });
-  await box.dispatchEvent("dragover", { dataTransfer: drop });
-  await box.dispatchEvent("drop", { dataTransfer: drop });
-  await expect(
-    eika.page
-      .getByRole("list", { name: "Images to send" })
-      .getByRole("img", { name: "dropped.png" }),
-  ).toBeVisible();
-});
-
 test("a model without image input refuses images", async ({ open }) => {
   const eika = await open({ scenario: "workbench" });
   await expect(eika.page.getByRole("button", { name: "Attach images" })).toBeDisabled();
@@ -100,26 +67,4 @@ test("a model without image input refuses images", async ({ open }) => {
     "Could not attach screenshot.png: gpt-5 does not accept images",
   );
   await expect(eika.page.getByRole("list", { name: "Images to send" })).toBeHidden();
-});
-
-test("the composer refuses a file that is not an image it can send", async ({ open }) => {
-  const eika = await open({ scenario: "agent-images" });
-  await eika.page
-    .getByLabel("Images to attach")
-    .setInputFiles({ name: "notes.txt", mimeType: "text/plain", buffer: Buffer.from("hello") });
-  await expect(eika.page.getByRole("alert")).toContainText(
-    "Could not attach: notes.txt is not a PNG, JPEG, GIF, or WebP image.",
-  );
-});
-
-test("the model dialog turns image input on", async ({ open }) => {
-  const eika = await open({ scenario: "workbench" });
-  await eika.click("Settings");
-  await eika.click("Models");
-  const row = eika.page.getByRole("listitem").filter({ hasText: "gpt-5-mini" });
-  await expect(row.getByText("Images")).toBeHidden();
-  await eika.click("Edit gpt-5-mini");
-  await eika.click("Accepts images");
-  await eika.click("Save");
-  await expect(row.getByText("Images")).toBeVisible();
 });

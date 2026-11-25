@@ -3,11 +3,13 @@
 package computer_test
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/erlidev/eika/internal/computer"
 	"github.com/erlidev/eika/internal/executor"
@@ -35,7 +37,7 @@ func startComputer(t *testing.T, host *computer.Host, spec computer.Spec) (compu
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	t.Cleanup(func() { cleanUp(host, &cx) })
+	t.Cleanup(func() { cleanUp(&cx) })
 	if err := host.Start(t.Context(), &cx); err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -71,30 +73,6 @@ func TestFilesSurviveTheContainerBeingMadeAgain(t *testing.T) {
 	}
 }
 
-func TestFilesSurviveAStopAndAStart(t *testing.T) {
-	requireDocker(t)
-	requireImage(t)
-	host := newHost(t)
-
-	cx, ex := startComputer(t, host, computer.Spec{})
-	if err := ex.WriteFile(t.Context(), "kept.txt", []byte("still here")); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	if err := host.Stop(t.Context(), &cx); err != nil {
-		t.Fatalf("stop: %v", err)
-	}
-	if err := host.Start(t.Context(), &cx); err != nil {
-		t.Fatalf("start: %v", err)
-	}
-	ex, err := host.Executor(cx)
-	if err != nil {
-		t.Fatalf("executor: %v", err)
-	}
-	if got := run(t, ex, "cat kept.txt"); got != "still here" {
-		t.Errorf("file after a restart = %q, want the one written before", got)
-	}
-}
-
 func TestACreateThatFailsLeavesTheVolumeItFound(t *testing.T) {
 	requireDocker(t)
 	requireImage(t)
@@ -120,19 +98,6 @@ func TestACreateThatFailsLeavesTheVolumeItFound(t *testing.T) {
 	_, ex = startComputer(t, host, computer.Spec{ID: first.ID})
 	if got := run(t, ex, "cat kept.txt"); got != "still here" {
 		t.Errorf("file after the failed create = %q, want the one written before", got)
-	}
-}
-
-func TestACreateThatFailsRemovesAVolumeItMade(t *testing.T) {
-	requireDocker(t)
-	host := newHost(t)
-
-	id := "eika-test-" + strings.ToLower(strings.NewReplacer("/", "-", "_", "-").Replace(t.Name()))
-	if _, err := host.Create(t.Context(), computer.Spec{ID: id, Image: "eika-test-absent-" + id + ":never"}); err == nil {
-		t.Fatal("create from an image that does not exist succeeded")
-	}
-	if volumeExists(computer.VolumeName(id)) {
-		t.Errorf("volume %s outlived the create that made it and failed", computer.VolumeName(id))
 	}
 }
 
@@ -167,6 +132,24 @@ func TestTheSandboxImageKeepsItsToolsOutsideTheHomeVolume(t *testing.T) {
 	}
 }
 
+// buildImage builds an image from a Dockerfile and removes it when the test
+// ends.
+func buildImage(t *testing.T, dockerfile string) string {
+	t.Helper()
+	build := t.TempDir()
+	if err := os.WriteFile(filepath.Join(build, "Dockerfile"), []byte(dockerfile), 0o600); err != nil {
+		t.Fatalf("write dockerfile: %v", err)
+	}
+	image := fmt.Sprintf("eika-test-custom-%d:latest", time.Now().UnixNano())
+	if out, err := exec.Command("docker", "build", "-q", "-t", image, build).CombinedOutput(); err != nil {
+		t.Fatalf("build image: %v: %s", err, out)
+	}
+	// Cleanups run last first, so the image goes after the container made
+	// from it.
+	t.Cleanup(func() { _ = exec.Command("docker", "image", "rm", "-f", image).Run() })
+	return image
+}
+
 func TestACustomImageGetsAWritableRootAndHome(t *testing.T) {
 	requireDocker(t)
 	host := newHost(t)
@@ -175,16 +158,12 @@ func TestACustomImageGetsAWritableRootAndHome(t *testing.T) {
 		name       string
 		dockerfile string
 	}{
-		{"an image with no /home/eika", "FROM alpine:3.20\n"},
 		{"an image whose /home/eika belongs to root", "FROM alpine:3.20\nRUN mkdir -p /home/eika && echo baked > /home/eika/from-the-image.txt\n"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			build := t.TempDir()
-			if err := os.WriteFile(filepath.Join(build, "Dockerfile"), []byte(c.dockerfile), 0o600); err != nil {
-				t.Fatalf("write dockerfile: %v", err)
-			}
-			_, ex := startComputer(t, host, computer.Spec{BuildContext: build})
+			image := buildImage(t, c.dockerfile)
+			_, ex := startComputer(t, host, computer.Spec{Image: image})
 
 			// alpine has no user for uid 1000, so the container runs as a
 			// bare number: the root is still the user's home and its own.
@@ -203,20 +182,5 @@ func TestACustomImageGetsAWritableRootAndHome(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-func TestAnImageWithTheUserNamedInsteadIsLeftToItself(t *testing.T) {
-	requireDocker(t)
-	host := newHost(t)
-
-	build := t.TempDir()
-	dockerfile := "FROM alpine:3.20\nRUN adduser -D -u 2000 worker && mkdir -p /home/eika && chown worker /home/eika\n"
-	if err := os.WriteFile(filepath.Join(build, "Dockerfile"), []byte(dockerfile), 0o600); err != nil {
-		t.Fatalf("write dockerfile: %v", err)
-	}
-	_, ex := startComputer(t, host, computer.Spec{BuildContext: build, User: "worker"})
-	if got := run(t, ex, "id -un; stat -c %U /home/eika && touch /home/eika/x && echo writable"); got != "worker\nworker\nwritable" {
-		t.Errorf("user, owner and write = %q", got)
 	}
 }

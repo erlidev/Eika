@@ -3,6 +3,8 @@ package store
 import (
 	"context"
 	"encoding/json"
+
+	"github.com/erlidev/eika/internal/sentry"
 )
 
 // Setting is one persisted value the user can change at runtime, such as the
@@ -31,19 +33,36 @@ func (s *Store) Setting(ctx context.Context, key string) (Setting, error) {
 const setSettingQuery = `INSERT INTO settings (key, value) VALUES ($1, $2)
 	ON CONFLICT (key) DO UPDATE SET value = excluded.value`
 
-// SetSetting writes a setting, replacing any value the key already has.
-func (s *Store) SetSetting(ctx context.Context, key string, value json.RawMessage) error {
-	if _, err := s.pool.Exec(ctx, setSettingQuery, key, []byte(value)); err != nil {
-		return wrap("write setting "+key, err)
-	}
-	return nil
-}
-
 // SetSettings writes several settings in one transaction: either every key
 // takes its new value or, when one write fails, none does.
 func (s *Store) SetSettings(ctx context.Context, values map[string]json.RawMessage) error {
 	return s.tx(ctx, func(q querier) error {
+		_, required := values["screen_required"]
+		_, threshold := values["screen_threshold"]
+		_, memoryThreshold := values["memory_screen_threshold"]
+		_, egress := values["sandbox_egress"]
+		if required || threshold || memoryThreshold || egress {
+			if _, err := q.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('eika security settings'))`); err != nil {
+				return wrap("lock security settings", err)
+			}
+		}
 		for key, value := range values {
+			if key == "screen_required" || key == "screen_threshold" || key == "memory_screen_threshold" || key == "sandbox_egress" {
+				var changed bool
+				err := q.QueryRow(ctx, `SELECT COALESCE((SELECT value IS DISTINCT FROM $2::jsonb FROM settings WHERE key = $1), true)`, key, []byte(value)).Scan(&changed)
+				if err != nil {
+					return wrap("compare setting "+key, err)
+				}
+				if changed {
+					detail, err := json.Marshal(map[string]json.RawMessage{"value": value})
+					if err != nil {
+						return wrap("encode setting audit", err)
+					}
+					if err := appendAudit(ctx, q, sentry.AuditEntry{Event: "setting", Name: key, Detail: detail}); err != nil {
+						return err
+					}
+				}
+			}
 			if _, err := q.Exec(ctx, setSettingQuery, key, []byte(value)); err != nil {
 				return wrap("write setting "+key, err)
 			}

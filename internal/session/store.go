@@ -11,7 +11,8 @@ import (
 // appended at the session's head. It is the production implementation of
 // agent.Store.
 type Store struct {
-	tree *Tree
+	tree    *Tree
+	channel string
 }
 
 // NewStore returns a store that appends to tree.
@@ -19,20 +20,32 @@ func NewStore(tree *Tree) *Store {
 	return &Store{tree: tree}
 }
 
+// SetChannel records the channel of user and assistant messages.
+func (s *Store) SetChannel(channel string) { s.channel = channel }
+
 // Append records one message of a run.
-func (s *Store) Append(ctx context.Context, sessionID string, m provider.Message) error {
-	if _, err := s.tree.AppendMessage(ctx, sessionID, m); err != nil {
+func (s *Store) Append(ctx context.Context, sessionID, runID string, m provider.Message) error {
+	e, err := MessageEntry(m)
+	if err != nil {
+		return err
+	}
+	e.RunID = runID
+	if m.Role == provider.RoleUser || m.Role == provider.RoleAssistant {
+		e.Channel = s.channel
+	}
+	if _, err := s.tree.Append(ctx, sessionID, e); err != nil {
 		return err
 	}
 	return nil
 }
 
 // AppendCompaction records a compaction of a run.
-func (s *Store) AppendCompaction(ctx context.Context, sessionID string, c agent.Compaction) error {
+func (s *Store) AppendCompaction(ctx context.Context, sessionID, runID string, c agent.Compaction) error {
 	e, err := CompactionEntry(c)
 	if err != nil {
 		return err
 	}
+	e.RunID = runID
 	_, err = s.tree.Append(ctx, sessionID, e)
 	return err
 }
@@ -46,19 +59,27 @@ func (s *Store) Load(ctx context.Context, sessionID string) (*agent.Session, err
 	if err != nil {
 		return nil, err
 	}
-	messages, err := s.tree.Messages(ctx, sessionID)
+	path, err := s.tree.Path(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	messages, err := Messages(path)
+	if err != nil {
+		return nil, err
+	}
+	snap, err := SnapshotOf(path)
 	if err != nil {
 		return nil, err
 	}
 	return &agent.Session{
 		ID:           sess.ID,
+		Preamble:     snap.Text,
+		Memory:       snap.Memory,
+		Prompt:       snap.Prompt,
+		Tools:        snap.Tools,
 		ComputerID:   sess.ComputerID,
 		Conversation: agent.NewConversation(messages...),
 	}, nil
 }
-
-// Tree returns the tree the store appends to, so that a caller that has one
-// has the other.
-func (s *Store) Tree() *Tree { return s.tree }
 
 var _ agent.Store = (*Store)(nil)

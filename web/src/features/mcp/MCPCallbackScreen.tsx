@@ -1,7 +1,7 @@
 /**
  * The page an OAuth authorization server sends the browser back to after
  * the user signed in to an MCP server. It hands what came back to the
- * harness, which redeems the code, and then returns to the workbench on the
+ * harness, which redeems the code, and then returns to the app on the
  * server's settings. No harness route opens for the redirect: the page posts
  * to the authenticated API, so the sign-in token stays in the browser.
  */
@@ -19,7 +19,7 @@ import { failureText } from "@/lib/failure";
 export type MCPCallbackScreenProps = {
   /** search is the page's query string, as the authorization server wrote it. */
   search: string;
-  /** onDone returns to the workbench, on the server that was authorized when there is one. */
+  /** onDone returns to the app, on the server that was authorized when there is one. */
   onDone: (serverId?: string) => void;
 };
 

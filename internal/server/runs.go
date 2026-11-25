@@ -58,6 +58,10 @@ func (s *Server) handlePostMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	message := provider.Message{Role: provider.RoleUser, Content: text, Images: images}
 	id := r.PathValue("id")
+	if err := s.refuseSubagent(r.Context(), id); err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	var run store.Run
 	if mode == modeRun {
 		run, err = s.runs.start(r.Context(), id, message, req.Model)

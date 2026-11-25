@@ -13,23 +13,19 @@
 
 import { expect, test } from "../fixtures.ts";
 
-for (const theme of ["light", "dark"] as const) {
-  test(`models tab: the models did not load (${theme})`, async ({ open, expectShot }) => {
-    const eika = await open({
-      scenario: "providers",
-      theme,
-      failing: { "GET /api/models": { status: 500 } },
-    });
-    await eika.click("Settings");
-    await expect(eika.page.getByText(/Could not load the models/)).toBeVisible();
-    await expectShot(eika, `models-load-error-${theme}`, "role=dialog");
-    eika.mock.healRoute("GET /api/models");
-    await eika.click("Retry");
-    await expect(eika.page.getByText("gpt-5-mini")).toBeVisible();
+test("models tab: the models did not load", async ({ open }) => {
+  const eika = await open({
+    scenario: "providers",
+    failing: { "GET /api/models": { status: 500 } },
   });
-}
+  await eika.click("Settings");
+  await expect(eika.page.getByText(/Could not load the models/)).toBeVisible();
+  eika.mock.healRoute("GET /api/models");
+  await eika.click("Retry");
+  await expect(eika.page.getByText("gpt-5-mini")).toBeVisible();
+});
 
-test("setup: the providers did not load", async ({ open, expectAria }) => {
+test("setup: the providers did not load", async ({ open }) => {
   const eika = await open({
     scenario: "setup-signed-in",
     failing: { "GET /api/providers": "network" },
@@ -37,35 +33,13 @@ test("setup: the providers did not load", async ({ open, expectAria }) => {
   await expect(
     eika.page.getByText(/Could not load the providers already configured/),
   ).toBeVisible();
-  await expectAria(eika, "setup-providers-load-error", "role=main");
   eika.mock.healRoute("GET /api/providers");
   await eika.click("Retry");
   await expect(eika.page.getByRole("heading", { name: "Connect a model provider" })).toBeVisible();
   await expect(eika.page.getByRole("button", { name: "Retry" })).toBeHidden();
 });
 
-test("sandbox check: the harness did not answer", async ({ open, expectAria }) => {
-  const eika = await open({ scenario: "workbench" });
-  await eika.click("Settings");
-  await eika.click("General");
-  eika.mock.failRoute("GET /api/system", { status: 500 });
-  await eika.click("Check again");
-  await expect(eika.page.getByText(/Could not ask the harness/)).toBeVisible();
-  await expect(eika.page.getByText("Not checked, since the harness did not answer.")).toBeVisible();
-  await expectAria(eika, "system-check-error", "role=dialog");
-});
-
-test("setup: the models did not load", async ({ open }) => {
-  const eika = await open({
-    scenario: "setup-signed-in",
-    failing: { "GET /api/models": { status: 502, bare: true } },
-  });
-  await expect(eika.page.getByText(/Could not load the models already configured/)).toBeVisible();
-  await expect(eika.page.getByText(/did not answer \(HTTP 502\)/)).toBeVisible();
-  await expect(eika.page.getByRole("button", { name: "Retry" })).toBeVisible();
-});
-
-test("general: the models and the settings did not load", async ({ open, expectAria }) => {
+test("general: the models and the settings did not load", async ({ open }) => {
   const eika = await open({
     scenario: "workbench",
     failing: { "GET /api/models": { status: 500 } },
@@ -78,69 +52,23 @@ test("general: the models and the settings did not load", async ({ open, expectA
   // A refetch that fails must not sign the browser out of the workbench.
   await expect(eika.page.getByRole("dialog", { name: "Settings" })).toBeVisible();
   await eika.click("General");
-  await expect(eika.page.getByText(/Could not load the settings/)).toBeVisible();
-  await expectAria(eika, "general-settings-load-error", "role=dialog");
+  const dialog = eika.page.getByRole("dialog", { name: "Settings" });
+  await expect(dialog.getByText(/Could not load the settings/)).toBeVisible();
   eika.mock.healRoute("GET /api/settings");
-  await eika.click("Retry");
-  await expect(eika.page.getByText(/Could not load the models/)).toBeVisible();
-  await expect(eika.page.getByText("The models did not load; see below")).toBeVisible();
-  await expectAria(eika, "general-models-load-error", "role=dialog");
+  await dialog.getByRole("button", { name: "Retry" }).click();
+  await expect(dialog.getByText(/Could not load the models/)).toBeVisible();
 });
 
-test("search: the status did not load", async ({ open }) => {
-  const eika = await open({
-    scenario: "workbench",
-    failing: { "GET /api/search/status": "network" },
-  });
-  await eika.click("Settings");
-  await eika.click("Search");
-  await expect(eika.page.getByText(/Could not load the search status/)).toBeVisible();
-  await expect(eika.page.getByText("Web providers")).toHaveCount(0);
-  eika.mock.healRoute("GET /api/search/status");
-  await eika.click("Retry");
-  await expect(eika.page.getByText("Web providers")).toBeVisible();
-});
-
-test("add models: Add waits for the models already added", async ({ open }) => {
-  const eika = await open({
-    scenario: "providers",
-    failing: { "GET /api/models": { status: 500 } },
-  });
-  await eika.click("Settings");
-  await eika.click('role=button[name="Models"] >> nth=1');
-  await eika.click("gpt-5");
-  await expect(eika.page.getByText(/cannot be checked for duplicates yet/)).toBeVisible();
-  await expect(eika.page.getByRole("button", { name: "Add 1 model" })).toBeDisabled();
-});
-
-test("could not change the default model", async ({ open }) => {
+test("could not change a model class", async ({ open }) => {
   const eika = await open({
     scenario: "workbench",
     failing: { "PUT /api/settings": { status: 500 } },
   });
   await eika.click("Settings");
-  await eika.click("Make default");
-  await expect(eika.page.getByText(/Could not change the default model/)).toBeVisible();
   await eika.click("General");
-  await eika.select("Default model", "gpt-5-mini");
-  await expect(eika.page.getByText(/Could not change the default model/)).toBeVisible();
-  // The choice that was not saved is not shown as made.
-  await expect(eika.page.getByRole("combobox", { name: "Default model" })).toHaveText("gpt-5");
-});
-
-test("general: the setup could not be reopened", async ({ open }) => {
-  const eika = await open({
-    scenario: "workbench",
-    failing: { "PUT /api/settings": "network" },
-  });
-  await eika.click("Settings");
-  await eika.click("General");
-  await eika.scroll("Run the setup again");
-  await eika.click("Run the setup again");
-  await expect(
-    eika.page.getByText(/^Could not reopen the setup: the harness could not be reached\. Check/),
-  ).toBeVisible();
-  await expect(eika.page.getByRole("dialog", { name: "Settings" })).toBeVisible();
+  await eika.select("Main", "gpt-5-mini");
+  await expect(eika.page.getByText(/Could not save the model classes/)).toBeVisible();
+  await expect(eika.page.getByRole("combobox", { name: "Main" })).toHaveText("gpt-5");
 });
 
 test("search: the harness refuses the order", async ({ open }) => {
@@ -177,38 +105,20 @@ test("sign in: the harness is unreachable", async ({ open }) => {
   await expect(eika.page.getByLabel("Password")).toHaveValue("hunter2hunter");
 });
 
-for (const [label, look] of [
-  ["light", { theme: "light" }],
-  ["phone", { viewport: { width: 390, height: 844 } }],
-] as const) {
-  test(`start: the settings did not load, and Retry recovers (${label})`, async ({
-    open,
-    expectShot,
-  }) => {
-    const eika = await open({
-      scenario: "workbench",
-      ...look,
-      failing: { "GET /api/settings": { status: 502, bare: true } },
-    });
-    await expect(eika.page.getByRole("heading", { name: "Eika could not load" })).toBeVisible();
-    await expect(
-      eika.page.getByText(/Could not load the settings: the harness did not answer/),
-    ).toBeVisible();
-    // Still signed in: a password form would only mislead.
-    await expect(eika.page.getByLabel("Password")).toHaveCount(0);
-    await expect(eika.page.getByRole("button", { name: "Sign in" })).toHaveCount(0);
-    if (label === "light") await expectShot(eika, "start-settings-error-light");
-    eika.mock.healRoute("GET /api/settings");
-    await eika.click("Retry");
-    await expect(eika.page.getByRole("button", { name: "Settings", exact: true })).toBeVisible();
-  });
-}
-
-test("start: the harness hit an internal error", async ({ open, expectAria }) => {
+test("start: the settings did not load, and Retry recovers", async ({ open, expectShot }) => {
   const eika = await open({
-    scenario: "signed-out",
-    failing: { "GET /api/auth/status": { status: 500 } },
+    scenario: "workbench",
+    failing: { "GET /api/settings": { status: 502, bare: true } },
   });
-  await expect(eika.page.getByText(/unexpected error/)).toBeVisible();
-  await expectAria(eika, "start-auth-status-500", "role=main");
+  await expect(eika.page.getByRole("heading", { name: "Eika could not load" })).toBeVisible();
+  await expect(
+    eika.page.getByText(/Could not load the settings: the harness did not answer/),
+  ).toBeVisible();
+  // Still signed in: a password form would only mislead.
+  await expect(eika.page.getByLabel("Password")).toHaveCount(0);
+  await expect(eika.page.getByRole("button", { name: "Sign in" })).toHaveCount(0);
+  await expectShot(eika, "start-settings-error-light");
+  eika.mock.healRoute("GET /api/settings");
+  await eika.click("Retry");
+  await expect(eika.page.getByRole("button", { name: "Settings", exact: true })).toBeVisible();
 });

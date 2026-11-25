@@ -29,42 +29,6 @@ func (a *api) probeWindow(t *testing.T, window int) {
 	}
 }
 
-func TestThePredictionRouteSizesTheNextRequestAgainstTheEffectiveWindow(t *testing.T) {
-	a := newAPI(t)
-	chat := a.newChat(t, "prediction")
-	a.probeWindow(t, 20000)
-
-	type predictionWire struct {
-		Model         string `json:"model"`
-		Tokens        int    `json:"tokens"`
-		Method        string `json:"method"`
-		ContextWindow int    `json:"context_window"`
-	}
-	got := decodeBody[predictionWire](t, request(t, a.Server, "GET", "/api/sessions/"+chat.ID+"/prediction", nil), 200)
-	if got.Model != "test-model" || got.Method != "estimated" || got.Tokens <= 0 || got.ContextWindow != 20000 {
-		t.Errorf("prediction = %+v, want an estimate for test-model against the effective 20000", got)
-	}
-
-	// It is the size the preview of the same request reports.
-	preview := decodeBody[contextWire](t, request(t, a.Server, "GET", "/api/sessions/"+chat.ID+"/context", nil), 200)
-	if preview.Prediction == nil || preview.Prediction.Tokens != got.Tokens || preview.Prediction.Method != got.Method {
-		t.Errorf("preview prediction = %+v, want the route's %+v", preview.Prediction, got)
-	}
-
-	// Asking never disturbs a run: the call it makes is predicted and measured
-	// as any other.
-	a.script(providertest.Text("done"))
-	a.postMessage(t, chat.ID, "hello", "", 202)
-	a.waitIdle(t, chat.ID)
-	records := decodeBody[callsWire](t, request(t, a.Server, "GET", "/api/sessions/"+chat.ID+"/calls", nil), 200)
-	if len(records.Calls) != 1 || records.Calls[0].PredictedPromptTokens == nil {
-		t.Fatalf("calls = %+v, want one that was predicted", records.Calls)
-	}
-
-	refused(t, request(t, a.Server, "GET", "/api/sessions/"+chat.ID+"/prediction?model=typo", nil), 400)
-	refused(t, request(t, a.Server, "GET", "/api/sessions/missing/prediction", nil), 404)
-}
-
 func TestARunIsJudgedAgainstWhatTheEndpointHoldsPerRequest(t *testing.T) {
 	a := newAPI(t)
 	model := decodeBody[modelsWire](t, request(t, a.Server, "GET", "/api/models", nil), 200).Models[0]
@@ -90,7 +54,7 @@ func TestARunIsJudgedAgainstWhatTheEndpointHoldsPerRequest(t *testing.T) {
 		t.Errorf("updated model effective window = %d, want 20000", updated.EffectiveWindow)
 	}
 
-	chat := a.newChat(t, "window")
+	chat := a.newSession(t, "")
 	preview := decodeBody[contextWire](t, request(t, a.Server, "GET", "/api/sessions/"+chat.ID+"/context", nil), 200)
 	if preview.ContextWindow != 20000 {
 		t.Errorf("preview window = %d, want the effective 20000", preview.ContextWindow)

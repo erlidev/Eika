@@ -127,15 +127,23 @@ func (h *Host) moveTo(ctx context.Context, cx Computer, target string) error {
 // processes need: the egress proxy for a proxied computer, nothing for one
 // with a route of its own.
 func (h *Host) setEnvironment(ctx context.Context, cx Computer) error {
-	c, err := sandbox.New(sandbox.Options{BaseURL: cx.Address, Token: cx.Token, Root: Root})
+	c, err := sandbox.New(sandbox.Options{BaseURL: cx.Address, Token: cx.Token, Root: RootOf(cx)})
 	if err != nil {
 		return err
 	}
-	if err := c.SetEnvironment(ctx, h.environment(cx)); err != nil {
+	env := h.environment(cx)
+	if h.opts.Plant != nil {
+		env = append(env, h.opts.Plant(ctx, cx.ID)...)
+	}
+	if err := c.SetEnvironment(ctx, env); err != nil {
 		return fmt.Errorf("set the environment of computer %s: %w", cx.ID, err)
 	}
 	return nil
 }
+
+// Refresh gives a running computer's daemon its environment again, which is
+// how a change to what is planted reaches a computer that is already up.
+func (h *Host) Refresh(ctx context.Context, cx Computer) error { return h.setEnvironment(ctx, cx) }
 
 // environment is what a computer's processes inherit from the daemon. A
 // proxied computer reaches the internet through the egress proxy, which

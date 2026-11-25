@@ -4,13 +4,9 @@
  * link from a part to the setting behind it.
  */
 
-import { Pencil } from "lucide-react";
-
-import type { ModelContext, SessionConfiguration } from "@/api/types";
-import { Button } from "@/components/ui/button";
+import type { ModelContext } from "@/api/types";
 import { percent, segmentColors, tilde, windowUse } from "@/features/context/segments";
-import type { EditTarget, Segment, SegmentKind } from "@/features/context/segments";
-import { useConfigEditor } from "@/features/profiles/store";
+import type { Segment, SegmentKind } from "@/features/context/segments";
 import { formatTokens } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -142,55 +138,5 @@ export function PartsBar({ parts, total, onOpen, className }: PartsBarProps) {
           );
         })}
     </div>
-  );
-}
-
-export type EditLinkProps = {
-  sessionId: string;
-  config: SessionConfiguration | undefined;
-  target: EditTarget;
-  /** onOpen runs before the editor opens: the inspector closes, so the editor is not under it. */
-  onOpen: () => void;
-  /** what names the setting for a screen reader: "the temperature". */
-  what: string;
-  /** compact draws only the pencil. */
-  compact?: boolean;
-};
-
-/**
- * EditLink opens the editor of the layer a value comes from, on the tab that
- * holds it: the profile's when the profile sets it, else the session's, where
- * it can be set over what it falls through to.
- */
-export function EditLink({
-  sessionId,
-  config,
-  target,
-  onOpen,
-  what,
-  compact = false,
-}: EditLinkProps) {
-  const editSession = useConfigEditor((s) => s.editSession);
-  const editProfile = useConfigEditor((s) => s.editProfile);
-  if (config === undefined) return null;
-  const resolved = config.resolved;
-  const inProfile = resolved.sources?.[target.key] === "profile";
-  const label = inProfile ? `Edit in ${resolved.profile_name}` : "Edit for this session";
-  return (
-    <Button
-      type="button"
-      size={compact ? "icon-xs" : "xs"}
-      variant="ghost"
-      title={compact ? label : undefined}
-      aria-label={`${label}: ${what}`}
-      onClick={() => {
-        onOpen();
-        if (inProfile) editProfile(resolved.profile_id, target.section);
-        else editSession(sessionId, target.section);
-      }}
-    >
-      <Pencil aria-hidden />
-      {!compact && label}
-    </Button>
   );
 }

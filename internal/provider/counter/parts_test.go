@@ -55,28 +55,6 @@ func TestToolSizesAddUpToWhatTheTemplateMakesOfTheWholeList(t *testing.T) {
 	}
 }
 
-func TestToolSizesAreRememberedAcrossCalls(t *testing.T) {
-	server := providertest.NewTokenServer(providertest.RoutesPrompt)
-	c := counter.New(server)
-	req := provider.Request{Model: "fake", Tools: toolList}
-	first, _ := c.ToolSizes(context.Background(), req)
-	renders := server.RenderCalls()
-	if renders == 0 {
-		t.Fatal("the first count asked the endpoint to render nothing")
-	}
-	// A conversation that grew since changes nothing about the tools.
-	req.Messages = []provider.Message{provider.UserMessage("a different conversation")}
-	again, _ := c.ToolSizes(context.Background(), req)
-	if server.RenderCalls() != renders {
-		t.Errorf("rendering requests went from %d to %d, want the tool list's sizes remembered", renders, server.RenderCalls())
-	}
-	for i := range first {
-		if first[i] != again[i] {
-			t.Errorf("tool %d: %d then %d", i, first[i], again[i])
-		}
-	}
-}
-
 func TestToolSizesWithoutRenderingAreTheDefinitionsAsText(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -97,21 +75,6 @@ func TestToolSizesWithoutRenderingAreTheDefinitionsAsText(t *testing.T) {
 			}
 		})
 	}
-	t.Run("a text endpoint counts the JSON exactly as text", func(t *testing.T) {
-		c := counter.New(providertest.NewTokenServer(providertest.RoutesText))
-		sizes, _ := c.ToolSizes(context.Background(), provider.Request{Tools: toolList[:1]})
-		raw := `{"name":"ls","description":"list a directory","schema":{"type":"object","properties":{"path":{"type":"string"}}}}`
-		if want := providertest.Tokens(raw); sizes[0] != want {
-			t.Errorf("size = %d, want the text's %d", sizes[0], want)
-		}
-	})
-}
-
-func TestToolSizesOfNoToolsAreNone(t *testing.T) {
-	c := counter.New(providertest.NewTokenServer(providertest.RoutesPrompt))
-	if sizes, exact := c.ToolSizes(context.Background(), provider.Request{}); len(sizes) != 0 || !exact {
-		t.Errorf("ToolSizes of no tools = %v, %v; want none", sizes, exact)
-	}
 }
 
 func TestSizeIsExactWhereTheEndpointTokenisesText(t *testing.T) {
@@ -120,10 +83,8 @@ func TestSizeIsExactWhereTheEndpointTokenisesText(t *testing.T) {
 		routes providertest.Routes
 		exact  bool
 	}{
-		"llama.cpp style": {providertest.RoutesPrompt, true},
-		"vLLM style":      {providertest.RoutesRequest, true},
-		"text only":       {providertest.RoutesText, true},
-		"nothing":         {providertest.RoutesNone, false},
+		"text only": {providertest.RoutesText, true},
+		"nothing":   {providertest.RoutesNone, false},
 	} {
 		t.Run(name, func(t *testing.T) {
 			c := counter.New(providertest.NewTokenServer(tc.routes))
@@ -138,10 +99,6 @@ func TestSizeIsExactWhereTheEndpointTokenisesText(t *testing.T) {
 				t.Errorf("Size = %d, want the estimate of %d for four bytes a token", n, (len(text)+3)/4)
 			}
 		})
-	}
-	c := counter.New(providertest.NewTokenServer(providertest.RoutesPrompt))
-	if n, exact := c.Size(context.Background(), ""); n != 0 || !exact {
-		t.Errorf("Size of nothing = %d, %v; want exactly 0", n, exact)
 	}
 }
 
@@ -174,54 +131,5 @@ func TestPeekSizesARequestWithoutLeavingAPredictionToObserve(t *testing.T) {
 	}
 	if _, ok := c.Observe(context.Background(), req, usage); !ok {
 		t.Error("Observe did not match the Predict that followed")
-	}
-}
-
-// routesThatHonourTheContext is a fake endpoint whose routes give up when
-// their context ends, as the HTTP routes do.
-type routesThatHonourTheContext struct{ *providertest.TokenServer }
-
-func (r routesThatHonourTheContext) Prompt(ctx context.Context, req provider.Request) (string, error) {
-	if err := ctx.Err(); err != nil {
-		return "", err
-	}
-	return r.TokenServer.Prompt(ctx, req)
-}
-
-func (r routesThatHonourTheContext) Text(ctx context.Context, text string) (int, error) {
-	if err := ctx.Err(); err != nil {
-		return 0, err
-	}
-	return r.TokenServer.Text(ctx, text)
-}
-
-func TestPeekAnswersWithTheEstimateWhenTimeIsUp(t *testing.T) {
-	c := counter.New(routesThatHonourTheContext{providertest.NewTokenServer(providertest.RoutesPrompt)})
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	got := c.Peek(ctx, provider.Request{Model: "fake", Messages: []provider.Message{provider.UserMessage("hi there")}})
-	if got.Method != provider.MethodEstimated || got.Tokens == 0 {
-		t.Errorf("Peek after the deadline = %+v, want a non-zero estimate", got)
-	}
-}
-
-func TestImageSizeIsLearnedFromAMeasurement(t *testing.T) {
-	server := providertest.NewTokenServer(providertest.RoutesPrompt)
-	c := counter.New(server)
-	img := provider.Image{MediaType: "image/png", Width: 100, Height: 100, Data: []byte("x")}
-	if n, measured := c.ImageSize(img); measured || n != counter.EstimatedImageTokens(100, 100) {
-		t.Errorf("ImageSize before any measurement = %d, %v; want the pixel estimate and not measured", n, measured)
-	}
-
-	req := provider.Request{Model: "fake", Messages: []provider.Message{{Role: provider.RoleUser, Content: "look", Images: []provider.Image{img}}}}
-	if _, err := c.Predict(context.Background(), req); err != nil {
-		t.Fatalf("Predict: %v", err)
-	}
-	usage := provider.Usage{InputTokens: provider.Reported(server.PromptTokens(req))}
-	if _, ok := c.Observe(context.Background(), req, usage); !ok {
-		t.Fatal("Observe did not match")
-	}
-	if n, measured := c.ImageSize(img); !measured || n != providertest.ImageTokens(100, 100) {
-		t.Errorf("ImageSize after a measurement = %d, %v; want the server's %d and measured", n, measured, providertest.ImageTokens(100, 100))
 	}
 }

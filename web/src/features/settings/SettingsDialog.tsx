@@ -1,12 +1,12 @@
 /**
- * The settings: models and providers, profiles, the harness-wide choices,
+ * The settings: models and providers, agents, the user's instructions, the harness-wide choices,
  * compaction, the computer's limits and network, web search,
  * MCP servers, the account, and how the app looks. Everything but the appearance is stored
  * in the harness. Its open state is `store.ts`, so anything can open it on a
  * tab.
  *
  * The dialog is one fixed size whatever tab is showing, and each tab scrolls
- * inside it: six tabs of very different lengths would otherwise resize the
+ * inside it: thirteen tabs of very different lengths would otherwise resize the
  * window under the pointer every time one was picked.
  */
 
@@ -31,15 +31,18 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MCPSettings } from "@/features/mcp";
-import { ProfilesSettings } from "@/features/profiles";
+import { AgentsSettings } from "@/features/agents";
 import { ModelsPanel } from "@/features/providers";
 import { useTranscriptPreferences } from "@/features/session";
-import type { ComposerMode, ReasoningDisplay } from "@/features/session";
+import type { ComposerInput, ComposerMode, ReasoningDisplay } from "@/features/session";
 import { AccountSettings } from "@/features/settings/AccountSettings";
 import { CompactionSettings } from "@/features/settings/CompactionSettings";
 import { ComputerSettings } from "@/features/settings/ComputerSettings";
+import { DeveloperSettings } from "@/features/settings/DeveloperSettings";
+import { NotificationsSettings } from "@/features/settings/NotificationsSettings";
 import { GeneralSettings } from "@/features/settings/GeneralSettings";
-import { settingKeys, useSaveSettings } from "@/features/settings/queries";
+import { InstructionsSettings } from "@/features/settings/InstructionsSettings";
+import { SecuritySettings } from "@/features/settings/SecuritySettings";
 import { SearchSettings } from "@/features/settings/SearchSettings";
 import { useSettingsDialog } from "@/features/settings/store";
 import type { SettingsTab } from "@/features/settings/store";
@@ -51,14 +54,18 @@ const sideNavWidth = 640;
 
 const tabs: readonly { value: SettingsTab; label: string }[] = [
   { value: "models", label: "Models" },
-  { value: "profiles", label: "Profiles" },
+  { value: "agents", label: "Agents" },
+  { value: "instructions", label: "Instructions" },
   { value: "general", label: "General" },
   { value: "compaction", label: "Compaction" },
   { value: "computer", label: "Computer" },
   { value: "search", label: "Search" },
   { value: "mcp", label: "MCP" },
+  { value: "security", label: "Security" },
+  { value: "notifications", label: "Notifications" },
   { value: "account", label: "Account" },
   { value: "appearance", label: "Appearance" },
+  { value: "developer", label: "Developer" },
 ];
 
 const themeLabels: Record<Theme, string> = {
@@ -72,7 +79,6 @@ export function SettingsDialog() {
   const tab = useSettingsDialog((s) => s.tab);
   const setOpen = useSettingsDialog((s) => s.setOpen);
   const setTab = useSettingsDialog((s) => s.setTab);
-  const save = useSaveSettings();
   // A phone has no room for a column of tab names beside the panel, so there
   // the list goes back above it. It is the same list either way.
   const narrow = useNarrow(sideNavWidth);
@@ -117,15 +123,13 @@ export function SettingsDialog() {
           </TabsList>
           <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4">
             <TabsContent value="models">
-              <ModelsPanel
-                onDefaultChange={(name) => {
-                  save.mutate({ [settingKeys.defaultModel]: name });
-                }}
-                defaultError={save.isError ? save.error : undefined}
-              />
+              <ModelsPanel />
             </TabsContent>
-            <TabsContent value="profiles">
-              <ProfilesSettings />
+            <TabsContent value="agents">
+              <AgentsSettings />
+            </TabsContent>
+            <TabsContent value="instructions">
+              <InstructionsSettings />
             </TabsContent>
             <TabsContent value="general">
               <GeneralSettings />
@@ -142,8 +146,17 @@ export function SettingsDialog() {
             <TabsContent value="mcp">
               <MCPSettings />
             </TabsContent>
+            <TabsContent value="security">
+              <SecuritySettings />
+            </TabsContent>
+            <TabsContent value="notifications">
+              <NotificationsSettings />
+            </TabsContent>
             <TabsContent value="account">
               <AccountSettings />
+            </TabsContent>
+            <TabsContent value="developer">
+              <DeveloperSettings />
             </TabsContent>
             <TabsContent value="appearance">
               <AppearanceSettings />
@@ -161,11 +174,34 @@ function AppearanceSettings() {
   const setReasoning = useTranscriptPreferences((s) => s.setReasoning);
   const speed = useTranscriptPreferences((s) => s.speed);
   const setSpeed = useTranscriptPreferences((s) => s.setSpeed);
+  const input = useTranscriptPreferences((s) => s.input);
+  const setInput = useTranscriptPreferences((s) => s.setInput);
   const composer = useTranscriptPreferences((s) => s.composer);
   const setComposer = useTranscriptPreferences((s) => s.setComposer);
   return (
     <div className="space-y-6">
       <ThemeSelect />
+      <div className="space-y-2 rounded-md border p-3">
+        <Label htmlFor="composer-input">Message input</Label>
+        <p className="text-muted-foreground text-xs">
+          Choose touch or keyboard input, or follow the primary pointer.
+        </p>
+        <Select
+          value={input}
+          onValueChange={(value: ComposerInput) => {
+            setInput(value);
+          }}
+        >
+          <SelectTrigger id="composer-input" className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="auto">Follow the pointer</SelectItem>
+            <SelectItem value="touch">Touch</SelectItem>
+            <SelectItem value="keyboard">Keyboard</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
       <div className="flex items-start justify-between gap-4 rounded-md border p-3">
         <div className="space-y-0.5">
           <Label htmlFor="reasoning-display" className="text-sm">
@@ -204,10 +240,10 @@ function AppearanceSettings() {
             Edit messages as markdown
           </Label>
           <p className="text-muted-foreground text-xs">
-            On, the message box behaves like an editor: Enter starts a new line and carries a list
-            or quotation on, Tab and Shift+Tab nest a list item or indent code, typing ``` closes
-            the code block, and Ctrl+Enter sends. Off, Enter sends and Shift+Enter starts a new
-            line.
+            For keyboard input, the message box behaves like an editor: Enter starts a new line and
+            carries a list or quotation on, Tab and Shift+Tab nest a list item or indent code,
+            typing ``` closes the code block, and Ctrl+Enter sends. Off, Enter sends and Shift+Enter
+            starts a new line.
           </p>
         </div>
         <Switch

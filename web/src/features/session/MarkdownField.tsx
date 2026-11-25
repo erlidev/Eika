@@ -30,6 +30,7 @@ import { cn } from "@/lib/utils";
 export type MarkdownFieldProps = Omit<React.ComponentProps<"textarea">, "value"> & {
   value: string;
   mode: ComposerMode;
+  touch?: boolean;
   /** onSend is called for the key that sends in this mode. */
   onSend: () => void;
 };
@@ -85,6 +86,7 @@ function apply(box: HTMLTextAreaElement, edit: TextEdit) {
 export function MarkdownField({
   value,
   mode,
+  touch = false,
   onSend,
   className,
   disabled,
@@ -97,7 +99,10 @@ export function MarkdownField({
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // An input method ends its composition with Enter. Acting on it would
     // swallow the word the user was still typing.
-    if (e.nativeEvent.isComposing) return;
+    // WebKit can end composition before the confirming keydown.
+    // https://bugs.webkit.org/show_bug.cgi?id=165004
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- WebKit reports the confirming key through keyCode.
+    if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229 || touch) return;
     const el = e.currentTarget;
     const { value: text, selectionStart: start, selectionEnd: end } = el;
     let edit: TextEdit | null = null;
@@ -121,6 +126,18 @@ export function MarkdownField({
     e.preventDefault();
     apply(el, edit);
   };
+
+  if (touch) {
+    return (
+      <Textarea
+        {...props}
+        value={value}
+        disabled={disabled}
+        className={className}
+        onKeyDown={onKeyDown}
+      />
+    );
+  }
 
   return (
     <div className="relative">

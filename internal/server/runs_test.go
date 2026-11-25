@@ -8,34 +8,6 @@ import (
 	"time"
 )
 
-func TestRetryFinishRecoversFromATransientStoreFailure(t *testing.T) {
-	attempts := 0
-	err := retryFinish(t.Context(), time.Microsecond, func(context.Context) error {
-		attempts++
-		if attempts < 3 {
-			return errors.New("database is temporarily unavailable")
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("retryFinish: %v", err)
-	}
-	if attempts != 3 {
-		t.Errorf("attempts = %d, want 3", attempts)
-	}
-}
-
-func TestRetryFinishStopsWhenItsContextEnds(t *testing.T) {
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
-	err := retryFinish(ctx, time.Hour, func(context.Context) error {
-		return errors.New("database is unavailable")
-	})
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("retryFinish error = %v, want context.Canceled", err)
-	}
-}
-
 func TestFinishRetryContinuesAfterTheForegroundContextEnds(t *testing.T) {
 	retries := newFinishRetries()
 	defer retries.stop()

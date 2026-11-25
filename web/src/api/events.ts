@@ -26,6 +26,10 @@ export type EventType =
   | "session.message"
   | "compaction.start"
   | "compaction.end"
+  | "halt.state"
+  | "memory.changed"
+  | "inbox.count"
+  | "skills.changed"
   | "bus.dropped";
 
 /** EikaEvent is the envelope every streamed event uses. */
@@ -88,6 +92,8 @@ export type ToolResult = {
   is_error: boolean;
   details?: unknown;
   duration_ms: number;
+  /** removed counts the windows ingest removed from content, absent when none. */
+  removed?: number;
 };
 
 /**
@@ -213,34 +219,38 @@ export type SessionTitle = {
   title: string;
 };
 
-/** SessionUpdated is the payload of a session.updated event: a session was renamed, pinned, or archived. */
+/** SessionUpdated is the payload of a session.updated event: a session changed or a run finished. */
 export type SessionUpdated = {
   session_id: string;
+  /** report_id identifies a completed subagent report, when this update announces one. */
+  report_id?: string;
   /** computer_id is absent for a chat. */
   computer_id?: string;
 };
 
 /** EntryKind is what one session entry holds. */
 export type EntryKind =
-  "user" | "assistant" | "tool_call" | "tool_result" | "system" | "event" | "compaction";
+  "user" | "assistant" | "tool_result" | "compaction" | "preamble" | "notice" | (string & {});
 
 /** SessionMessage is the payload of a session.message event, which a replay sends. */
 export type SessionMessage = {
+  run_id?: string;
+  channel?: string;
   session_id: string;
   entry_id: string;
   parent_id?: string;
   kind: EntryKind;
-  commit?: string;
   created_at: string;
   message: unknown;
 };
 
 /**
  * CompactionReason is why a conversation was compacted: the user asked, the
- * next request would have left less of the window free than the reserve, or
+ * maintenance ran while idle, the next request would have left less of the
+ * window free than the reserve, or
  * the endpoint refused a request as larger than its window.
  */
-export type CompactionReason = "manual" | "threshold" | "overflow";
+export type CompactionReason = "manual" | "idle" | "threshold" | "overflow";
 
 /**
  * CompactionStart is the payload of a compaction.start event: the oldest part
@@ -251,6 +261,38 @@ export type CompactionStart = {
   reason: CompactionReason;
   /** tokens_before is the estimated size of the context being compacted. */
   tokens_before: number;
+};
+
+/** HaltState is the payload of a halt.state event, published on global. */
+export type HaltState = {
+  halted: boolean;
+  at?: string;
+  reason?: string;
+};
+
+/**
+ * MemoryChanged is the payload of a memory.changed event, on topic inbox: a
+ * memory was written, changed or removed. Refetch it. state is empty when it
+ * was purged.
+ */
+export type MemoryChanged = {
+  name: string;
+  state?: string;
+};
+
+/** InboxCount is the payload of an inbox.count event, on topic inbox: how many memories are pending now. */
+export type InboxCountChanged = {
+  pending: number;
+};
+
+/**
+ * SkillsChanged is the payload of a skills.changed event, on topic skills: a
+ * skill was installed (or reinstalled, which returns it to disabled), enabled,
+ * disabled or deleted. Refetch the list and the skill shown.
+ */
+export type SkillsChanged = {
+  name: string;
+  change: "installed" | "enabled" | "disabled" | "deleted";
 };
 
 /**
@@ -303,6 +345,10 @@ export type EventPayloads = {
   "session.message": SessionMessage;
   "compaction.start": CompactionStart;
   "compaction.end": CompactionEnd;
+  "halt.state": HaltState;
+  "memory.changed": MemoryChanged;
+  "inbox.count": InboxCountChanged;
+  "skills.changed": SkillsChanged;
   "bus.dropped": BusDropped;
 };
 
@@ -327,6 +373,12 @@ export type StreamRequest =
 
 /** globalTopic is the topic of events that belong to no computer or session. */
 export const globalTopic = "global";
+
+/** inboxTopic is the topic of memory.changed and inbox.count. */
+export const inboxTopic = "inbox";
+
+/** skillsTopic is the topic of skills.changed. */
+export const skillsTopic = "skills";
 
 /** computerTopic names the topic carrying one computer's events. */
 export function computerTopic(id: string): string {
@@ -359,6 +411,10 @@ export const eventTypes: readonly EventType[] = [
   "session.message",
   "compaction.start",
   "compaction.end",
+  "halt.state",
+  "memory.changed",
+  "inbox.count",
+  "skills.changed",
   "bus.dropped",
 ];
 

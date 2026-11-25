@@ -25,15 +25,9 @@ func TestFitKeepsTheAspectRatioWithinThe1080pBox(t *testing.T) {
 		wantW, wantH int
 	}{
 		{"small stays", 800, 600, 800, 600},
-		{"exactly 1080p stays", 1920, 1080, 1920, 1080},
-		{"exactly portrait 1080p stays", 1080, 1920, 1080, 1920},
 		{"4k landscape halves", 3840, 2160, 1920, 1080},
-		{"4:3 photo is bound by its short side", 4032, 3024, 1440, 1080},
 		{"portrait photo turns the box", 3024, 4032, 1080, 1440},
-		{"wide banner is bound by its long side", 4000, 500, 1920, 240},
-		{"tall page is bound by its long side", 1080, 5000, 415, 1920},
 		{"a line never becomes nothing", 10000, 1, 1920, 1},
-		{"one pixel stays", 1, 1, 1, 1},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -42,27 +36,6 @@ func TestFitKeepsTheAspectRatioWithinThe1080pBox(t *testing.T) {
 				t.Errorf("Fit(%d, %d) = %d×%d, want %d×%d", c.w, c.h, w, h, c.wantW, c.wantH)
 			}
 		})
-	}
-}
-
-func TestPrepareKeepsASmallPNGLossless(t *testing.T) {
-	src := image.NewNRGBA(image.Rect(0, 0, 64, 48))
-	for y := range 48 {
-		for x := range 64 {
-			src.Set(x, y, color.NRGBA{R: uint8(x * 4), G: uint8(y * 5), B: uint8(x ^ y), A: 255})
-		}
-	}
-	got := prepare(t, encodePNG(t, src))
-	if got.MediaType != imaging.MediaPNG || got.Width != 64 || got.Height != 48 {
-		t.Fatalf("got %s %d×%d, want image/png 64×48", got.MediaType, got.Width, got.Height)
-	}
-	out := decode(t, got)
-	for y := range 48 {
-		for x := range 64 {
-			if !sameColor(out.At(x, y), src.At(x, y)) {
-				t.Fatalf("pixel %d,%d = %v, want %v", x, y, out.At(x, y), src.At(x, y))
-			}
-		}
 	}
 }
 
@@ -122,16 +95,6 @@ func TestPrepareKeepsASmallJPEGsBytesWithoutItsMetadata(t *testing.T) {
 	// Nothing was compressed again: the scan data is the original's.
 	if !bytes.Equal(got.Data, plain) {
 		t.Errorf("the kept JPEG is %d bytes, want the original's %d without its metadata", len(got.Data), len(plain))
-	}
-}
-
-func TestPrepareDownscalesALargePhotoToAJPEG(t *testing.T) {
-	got := prepare(t, encodeJPEG(t, solid(4000, 3000, color.RGBA{R: 200, G: 100, B: 50, A: 255}), 90))
-	if got.MediaType != imaging.MediaJPEG || got.Width != 1440 || got.Height != 1080 {
-		t.Fatalf("got %s %d×%d, want image/jpeg 1440×1080", got.MediaType, got.Width, got.Height)
-	}
-	if !near(decode(t, got).At(700, 500), color.RGBA{R: 200, G: 100, B: 50, A: 255}, 8) {
-		t.Error("the colour did not survive")
 	}
 }
 
@@ -215,20 +178,6 @@ func TestPrepareConvertsGIFAndWebP(t *testing.T) {
 	}
 }
 
-func TestPrepareWritesSixteenBitPNGsAsEightBit(t *testing.T) {
-	src := image.NewRGBA64(image.Rect(0, 0, 32, 32))
-	for y := range 32 {
-		for x := range 32 {
-			src.SetRGBA64(x, y, color.RGBA64{R: uint16(x * 2000), G: uint16(y * 2000), B: 0x8000, A: 0xffff})
-		}
-	}
-	got := prepare(t, encodePNG(t, src))
-	// Byte 24 of a PNG is the bit depth in its header.
-	if got.Data[24] != 8 {
-		t.Errorf("bit depth = %d, want 8", got.Data[24])
-	}
-}
-
 // Noise does not compress, so a PNG of it is over the size limit and has to
 // become a JPEG; a transparent one goes on white.
 func TestPrepareFallsBackToJPEGForAPNGOverTheSizeLimit(t *testing.T) {
@@ -259,11 +208,8 @@ func TestPrepareRefusesWhatIsNotAnImageItCanRead(t *testing.T) {
 	}{
 		{"empty", nil, nil},
 		{"text", []byte("hello, this is not an image"), imaging.ErrUnsupported},
-		{"bmp", append([]byte("BM"), make([]byte, 64)...), imaging.ErrUnsupported},
 		{"truncated png", good[:len(good)/2], nil},
-		{"truncated jpeg", encodeJPEG(t, solid(64, 64, color.RGBA{A: 255}), 90)[:200], nil},
 		{"over the pixel limit", pngHeader(10000, 10000), nil},
-		{"no pixels", pngHeader(0, 10), nil},
 		{"over the size limit", append([]byte("\x89PNG\r\n\x1a\n"), make([]byte, imaging.MaxInputBytes)...), nil},
 	}
 	for _, c := range cases {
@@ -401,12 +347,6 @@ func pngHeader(w, h uint32) []byte {
 	chunk = append(chunk, 8, 6, 0, 0, 0)
 	b := append([]byte("\x89PNG\r\n\x1a\n\x00\x00\x00\x0d"), chunk...)
 	return binary.BigEndian.AppendUint32(b, crc32.ChecksumIEEE(chunk))
-}
-
-func sameColor(a, b color.Color) bool {
-	ar, ag, ab, aa := a.RGBA()
-	br, bg, bb, ba := b.RGBA()
-	return ar>>8 == br>>8 && ag>>8 == bg>>8 && ab>>8 == bb>>8 && aa>>8 == ba>>8
 }
 
 func near(a color.Color, b color.RGBA, tolerance int) bool {

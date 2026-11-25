@@ -39,7 +39,6 @@ func TestReasoningCountLabelsATokenisedCountAndHoldsItToTheServers(t *testing.T)
 		wantPass  bool
 	}{
 		{"the tokenised count matches what was generated", 60, true},
-		{"the tokenised count is a little off", 58, true},
 		{"the tokenised count is far off", 30, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

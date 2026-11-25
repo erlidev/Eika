@@ -1,30 +1,16 @@
-/** Server state for the list of chats. */
+/** Server state about sessions as a set: the home computer, renaming, pinning, and archiving one, and keeping every cached session current. */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
 import type { UseMutationResult, UseQueryResult } from "@tanstack/react-query";
 
 import { globalTopic, payloadOf } from "@/api/events";
 import { queryKeys } from "@/api/keys";
-import {
-  createSession,
-  deleteSession,
-  listChats,
-  listComputers,
-  listComputerSessions,
-  updateSession,
-} from "@/api/routes";
-import type { Computer, CreateSession, Session, UpdateSession } from "@/api/types";
+import { eventStream } from "@/api/stream";
+import { listComputers, updateSession } from "@/api/routes";
+import type { Computer, Session, UpdateSession } from "@/api/types";
 import { useStreamSubscription } from "@/api/useStream";
-
-/**
- * useChats lists the chats: the sessions with no computer.
- */
-export function useChats(): UseQueryResult<Session[]> {
-  return useQuery({
-    queryKey: queryKeys.chats(),
-    queryFn: ({ signal }) => listChats(signal),
-  });
-}
 
 /**
  * useHomeComputer reads the home computer, which the harness makes on its
@@ -39,24 +25,6 @@ export function useHomeComputer(): UseQueryResult<Computer | undefined> {
     queryKey: queryKeys.computers(),
     queryFn: async ({ signal }) => (await listComputers(signal)).find((cx) => cx.home) ?? null,
     select: (home) => home ?? undefined,
-  });
-}
-
-/** useHomeSessions lists the sessions that run on the home computer; none without it. */
-export function useHomeSessions(homeId: string | undefined): UseQueryResult<Session[]> {
-  return useQuery({
-    queryKey: queryKeys.computerSessions(homeId ?? ""),
-    queryFn: ({ signal }) => listComputerSessions(homeId ?? "", signal),
-    enabled: homeId !== undefined,
-  });
-}
-
-/** useCreateSession opens a chat, or a session on a computer. */
-export function useCreateSession(): UseMutationResult<Session, Error, CreateSession> {
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: createSession,
-    onSuccess: () => client.invalidateQueries({ queryKey: ["sessions"] }),
   });
 }
 
@@ -79,27 +47,43 @@ export function useUpdateSession(): UseMutationResult<
   });
 }
 
-/** useDeleteSession aborts a session's run and deletes it. */
-export function useDeleteSession(): UseMutationResult<void, Error, string> {
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: deleteSession,
-    onSuccess: () => client.invalidateQueries({ queryKey: ["sessions"] }),
-  });
+/**
+ * refreshAll reads every list of sessions and every open session again: what
+ * a lost event announced is not known, so nothing cached about sessions is
+ * trusted.
+ */
+function refreshAll(client: QueryClient): Promise<void> {
+  return Promise.all([
+    client.invalidateQueries({ queryKey: ["sessions"] }),
+    client.invalidateQueries({ queryKey: ["session"] }),
+  ]).then(() => undefined);
 }
 
 /**
  * useSessionUpdates keeps every session list current as sessions change
  * without this client asking: a `session.title` event on the global topic
  * says an untitled session was named, a `session.updated` one that someone
- * renamed, pinned, or archived one. The workbench calls it once, so a change
- * arrives in the sidebar whichever session is open.
+ * renamed, pinned, or archived one. The shell calls it once, so a change
+ * arrives whichever session is open. Events published while
+ * the socket was down, or that the bus dropped for this client, are gone, so
+ * the lists are read again when it comes back or the bus says it dropped some.
  */
 export function useSessionUpdates(): void {
   const client = useQueryClient();
+  useEffect(
+    () =>
+      eventStream().onReopen(() => {
+        void refreshAll(client);
+      }),
+    [client],
+  );
   useStreamSubscription(globalTopic, (e) => {
+    if (payloadOf(e, "bus.dropped")) {
+      void refreshAll(client);
+      return;
+    }
     // The harness announces the home computer on the global topic when it
-    // records it, which is how the sidebar learns it can offer it.
+    // records it, which is how the session view learns of it.
     if (payloadOf(e, "computer.state")) {
       void client.invalidateQueries({ queryKey: queryKeys.computers() });
       return;

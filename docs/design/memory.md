@@ -26,8 +26,8 @@ reads and writes it: briefs carry what a subagent needs.
 | Pinned memories (core profile) | Eika and the user; pinning is the user's | Bodies in full, in the preamble, capped | Recall |
 | Memory index | Generated from memories | One line per memory, in the preamble, capped | Recall pointer |
 | Memories | Eika and the user | On demand: `memory_read`, `memory_search` | Recall |
-| Compaction summary | Code and the main agent, at each compaction (`runtime.md` 11) | In the home session's context | Working state |
-| Episodic history | The sessions themselves | On demand: `history_search`, `history_read` (`runtime.md` 11) | Evidence |
+| Compaction summary | Code and the main agent, at each compaction ([Architecture](../ARCHITECTURE.md#history-recall)) | In the home session's context | Working state |
+| Episodic history | The sessions themselves | On demand: `history_search`, `history_read` ([Architecture](../ARCHITECTURE.md#history-recall)) | Evidence |
 
 Instructions and memory are kept apart on purpose. OpenAI advises treating
 memories as a recall layer, not as the only source for rules that must always
@@ -50,7 +50,7 @@ Memories are files, and files are the source of truth:
   `body_tsv tsvector`, `state` and `content_sha`.
   File and row change in one operation: write the file,
   commit, then upsert the row. A crash between steps is repaired at start-up by
-  `memory.Reconcile`, which re-indexes from the files whose SHA differs.
+  `Writer.Reconcile`, which re-indexes from the files whose SHA differs and holds uncommitted outside edits pending until the P5-05 screen exists.
   `make memory-reindex` rebuilds the whole index from files.
 - **No vector database and no embedding model.** Search is Postgres full-text
   search.
@@ -67,6 +67,7 @@ created: 2026-10-29T14:03:00Z
 updated: 2026-10-29T14:03:00Z
 expires:
 pinned: false
+state: active
 ---
 The user asked for metric units after a recipe in cups (2026-10-29).
 Exceptions: none so far.
@@ -79,12 +80,13 @@ Exceptions: none so far.
 | `type` | `user` (who the user is), `preference`, `person`, `fact`, `procedure` |
 | `source` | Where it was learned; links back in the UI |
 | `expires` | Optional date for facts that go stale ("the user is travelling until ...") |
+| `state` | `active`, `pending` or `archived`; tracked in the file for reindexing |
 | `pinned` | Loaded in full. At most 12; the total is capped (section 3) |
 | body | At most 2 KiB. Absolute dates only. One subject per memory |
 
 ## 3. The preamble: index and pinned bodies
 
-Eika's preamble entry (`runtime.md` 4) includes these, built once when the session
+Eika's preamble entry ([Architecture](../ARCHITECTURE.md#context-layout-and-prefix-stability)) includes these, built once when the session
 starts and rebuilt at compaction:
 
 ```
@@ -112,8 +114,9 @@ Index (memory_read <name> for details, memory_search for anything not listed):
   memories are searchable, with a marker, but never auto-loaded. OpenClaw's rule
   is that untrusted content cannot launder itself into the always-loaded core.
 - Memories written during a session do not change its preamble. The tail notice
-  says "memory saved: <name>". A memory the user changed shows as "memory updated
-  since this session started: <name>" in the next `<context>`.
+  names each change since the snapshot (saved, edited, archived, purged) in the
+  next `<context>`, by name only, one notice per message; it never wakes an idle
+  home or sends a push (P5-10).
 
 ## 4. Tools
 
@@ -125,7 +128,7 @@ Every write goes to Sentry as a `memory_write` action first.
 | `memory_read` | `name` | Full file |
 | `memory_write` | `name`, `description`, `type`, `body`, `expires?`, `replace?` | Creates, or replaces when `replace` is true. A name collision without `replace` returns the existing memory so the agent merges instead. The write is checked by the rules of section 6 |
 | `memory_forget` | `name`, `reason` | Archives the memory (moves it to `state = archived`, file kept in history). The user's "forget X" maps here; the UI can purge |
-| `history_search`, `history_read` | See `runtime.md` 11 | Search and read every past entry, verbatim |
+| `history_search`, `history_read` | See [Architecture](../ARCHITECTURE.md#history-recall) | Search and read every past entry, verbatim |
 
 Size limits are enforced by the tool, which returns a normal error the model can
 act on ("description must say when to use this memory, 20 to 200 characters").
@@ -184,7 +187,12 @@ outside a span quoted from the user, which sent paraphrased preferences to pendi
 and passed an instruction that avoided the words. The screen is a classifier
 trained on that question. An ordinary rule the user states ("always use metric")
 must not go pending, and the phase's live suite checks that it does not; if it
-does, memory writes get a threshold of their own.
+does, memory writes get a threshold of their own. They did: the live suite saw
+about 6% of ordinary rules score 0.9 or more, so a memory write goes pending at
+`memory_screen_threshold` (default 0.99), a setting apart from the ingest
+threshold. The guard cannot separate the two entirely: a rule like "never send a
+message without showing me the draft" scored 0.996, as high as most planted
+instructions, so a rare ordinary write can still be pending (the Inbox accepts it).
 
 The Inbox shows pending memories with their source session. The user accepts,
 edits or rejects, and nothing is pushed: a pending memory can wait.
@@ -247,7 +255,7 @@ Guardrails:
 
 ## 8. UI
 
-The Memory page, described in `interface.md`:
+The Memory page, described in [UI](ui.md#8-projects-memory-schedules-plugins-skills):
 
 - filter by type and state
 - search

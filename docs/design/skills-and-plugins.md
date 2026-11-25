@@ -37,13 +37,15 @@ enabled, and when it was installed.
 
 Parsing is lenient, the way the spec's client guide advises. A name and directory
 mismatch is a warning, and an unquoted colon in a description is retried quoted.
-A skill is skipped only when its description is missing or its YAML is
-unparseable, and the reason shows in the UI.
+A missing name falls back to the directory name with a warning. A skill is skipped
+when its description is missing, its YAML is unparseable, or its name is invalid
+(it becomes a directory path, so it must be 1 to 64 lowercase letters, digits and
+single hyphens), and the reason shows in the UI.
 
 ### Storage and scope
 
 ```
-/var/lib/eika/skills/<name>/...         volume eika-skills, read-only to every computer
+/var/lib/eika/skills/<name>/...         the skills volume (eika-cx-<generated id>), read-only to every computer
 core.skills: name, enabled, sha, installed_at, warnings
 ```
 
@@ -124,11 +126,13 @@ agents reach it:
 
 ### Permissions
 
-Each tool has a setting: `allow`, `ask` or `block`. The default comes from the
-tool's MCP annotations: `readOnlyHint` gives `allow`, and anything else gives `ask`.
-The Plugins page shows the setting per tool and lets the user change it. An
-approval card's "always" changes it too, or pins one argument, such as a recipient
-(`sentry.md` 5 and 7). A server that marks a sending tool read-only gets it
+Each tool has a setting: `allow`, `known`, `ask` or `block`, and may have a
+destination argument, such as a recipient. The default comes from the tool's
+schema and MCP annotations (`sentry.md` 5): `readOnlyHint` gives `allow`, and a
+tool with a destination argument gives `known`, which asks only the first time it
+reaches a destination. The Plugins page shows the setting per tool and lets the
+user change it. An approval card's "always" changes it too, or records the
+destination (`sentry.md` 7). A server that marks a sending tool read-only gets it
 allowed, which is why the page lists every tool's setting when a plugin is added.
 
 A plugin can be marked trusted: its results are still scored by the screen, and

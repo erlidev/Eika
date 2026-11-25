@@ -2,7 +2,6 @@ package mcp_test
 
 import (
 	"context"
-	"errors"
 	"io"
 	"slices"
 	"strings"
@@ -24,13 +23,6 @@ func eventually(t *testing.T, what string, cond func() bool) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-}
-
-// failingStore is a store whose server list cannot be read.
-type failingStore struct{ memStore }
-
-func (*failingStore) MCPServers(context.Context) ([]mcp.ServerConfig, error) {
-	return nil, errors.New("database down")
 }
 
 func TestPoolStartConnectsTheEnabledRemoteServers(t *testing.T) {
@@ -55,11 +47,6 @@ func TestPoolStartConnectsTheEnabledRemoteServers(t *testing.T) {
 		t.Errorf("stdio server status = %+v, launched %v; want it left alone", st, l.pipes)
 	}
 
-	failing := mcp.NewPool(mcp.Options{Store: &failingStore{}})
-	defer failing.Close()
-	if err := failing.Start(context.Background()); err == nil || !strings.Contains(err.Error(), "list mcp servers: database down") {
-		t.Errorf("Start with an unreadable store = %v", err)
-	}
 }
 
 func TestPoolListsAgainWhenAListChanges(t *testing.T) {

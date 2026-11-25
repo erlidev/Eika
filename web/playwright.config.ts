@@ -43,7 +43,7 @@ export default defineConfig({
   },
   webServer: {
     command: [
-      `npx vite build --outDir ${dist} --emptyOutDir --logLevel error`,
+      `npx vite build --mode e2e-mock --outDir ${dist} --emptyOutDir --logLevel error`,
       `npx vite preview --outDir ${dist} --port ${String(port)} --strictPort --host 127.0.0.1`,
     ].join(" && "),
     url: `http://127.0.0.1:${String(port)}`,

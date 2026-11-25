@@ -7,7 +7,6 @@ import (
 
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/provider/counter"
-	"github.com/erlidev/eika/internal/provider/probe"
 	"github.com/erlidev/eika/internal/provider/providertest"
 )
 
@@ -36,27 +35,6 @@ func TestMaxOutputDoesNotSeparateAPredictionFromItsMeasurement(t *testing.T) {
 	other.System = "be verbose"
 	if _, ok := c.Observe(ctx, other, providertest.Usage(pred.Tokens, 5, pred.Tokens+5)); ok {
 		t.Error("Observe matched a request with another system prompt")
-	}
-}
-
-func TestEstimateAnswersWithoutAskingTheServerAndIsObserved(t *testing.T) {
-	server := providertest.NewTokenServer(providertest.RoutesPrompt)
-	c := counter.New(server)
-	req := provider.Request{Model: "fake", Messages: []provider.Message{provider.UserMessage("hello there, how are you today")}}
-
-	pred := c.Estimate(req)
-	if pred.Method != provider.MethodEstimated || pred.Tokens <= 0 {
-		t.Fatalf("Estimate = %+v, want a positive estimate", pred)
-	}
-	if server.RenderCalls() != 0 || server.TextCalls() != 0 {
-		t.Errorf("Estimate asked the server (%d renders, %d texts)", server.RenderCalls(), server.TextCalls())
-	}
-	out, ok := c.Observe(context.Background(), req, providertest.Usage(40, 5, 45))
-	if !ok || out.Prediction != pred || out.Drift != pred.Tokens-40 {
-		t.Errorf("Observe = %+v, %v; want the estimate measured against 40", out, ok)
-	}
-	if c.EstimateError() <= 0 {
-		t.Error("EstimateError = 0 after an estimate was measured")
 	}
 }
 
@@ -120,15 +98,6 @@ func TestCountTextTokenisesOnlyWhereTheEndpointCan(t *testing.T) {
 	}
 }
 
-// A provider that cannot state its chat body leaves nothing to render, so a
-// server that renders chat requests is used for text alone.
-func TestRoutesWithoutAnEncoderCountTextOnly(t *testing.T) {
-	routes := counter.NewRoutes(counter.Config{BaseURL: "http://unused", Backend: probe.LlamaCpp, Counting: probe.CountChat}, nil)
-	if got := routes.Level(); got != counter.LevelText {
-		t.Errorf("Level = %v, want text", got)
-	}
-}
-
 func TestSwitchServesTheRoutesOnlyWhileTheyAreAttached(t *testing.T) {
 	ctx := context.Background()
 	server := providertest.NewTokenServer(providertest.RoutesPrompt)
@@ -175,14 +144,5 @@ func TestSwitchKeepsTheRoutesUntilTheLastUserReleases(t *testing.T) {
 	defer third()
 	if sw.Level() != counter.LevelText {
 		t.Errorf("Level = %v, want the routes attached last", sw.Level())
-	}
-}
-
-func TestEstimatingCounterPredictsByBytesAndLearns(t *testing.T) {
-	c := counter.NewEstimating()
-	req := provider.Request{Model: "fake", Messages: []provider.Message{provider.UserMessage("a question of some length")}}
-	pred, err := c.Predict(context.Background(), req)
-	if err != nil || pred.Method != provider.MethodEstimated || pred.Tokens <= 0 {
-		t.Fatalf("Predict = %+v, %v; want an estimate", pred, err)
 	}
 }

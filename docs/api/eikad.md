@@ -65,8 +65,16 @@ Reading a directory is `400`.
 
 ## PUT /files?path=
 
-Writes the request body to the file, creating parent directories. Returns the
-resulting file as a file object. Bodies over 64 MiB are `413`.
+Replaces the file through a temporary sibling and rename, creating parent
+directories. The new contents are synced to disk before the rename. Existing
+file permissions are kept. A failed write leaves the old file intact. Returns
+the resulting file as a file object.
+
+| Status | Cause |
+|---|---|
+| `403` | The path or a symlink leaves the computer root, or the existing file is read-only (no owner write bit). |
+| `400` | The target is not a regular file (a directory, for example), a parent is not a directory, or the write was canceled. |
+| `413` | The body is over 64 MiB. |
 
 ## GET /stat?path=
 
@@ -115,22 +123,6 @@ Closing the socket stops the process: its stdin closes, and a process still
 running two seconds later is sent SIGTERM, then SIGKILL after two more. It
 leads its own process group, whatever it started goes with it, and
 `EIKAD_TOKEN` is removed from its environment as it is for `/exec`.
-
-## GET /watch?path=
-
-Upgrades to a WebSocket that reports changes under `path`. The daemon polls
-once a second and compares modification times and sizes, so a change is
-reported within about a second of happening.
-
-| Field | Type | Meaning |
-|---|---|---|
-| `path` | string | Changed file, relative to the computer root. |
-| `kind` | string | `created`, `modified`, or `deleted`. |
-| `is_dir` | bool | Whether the changed file is a directory. |
-| `time` | RFC 3339 timestamp, UTC | When the daemon observed the change. |
-
-The first snapshot is taken before the connection is accepted, so no change
-made after the client connects is missed. At most 100 000 files are watched.
 
 ## PUT /environment
 

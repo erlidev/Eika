@@ -96,6 +96,16 @@ func (s *Server) previewNext(ctx context.Context, sess store.Session, cfg runCon
 	if err != nil {
 		return agent.Context{}, nil, nil, err
 	}
+	if sess.Agent != "" && loaded.Preamble == "" {
+		// A preview of a snapshot not stored yet leaves the memory section
+		// out, and so does the skill catalog: neither can be counted exactly before
+		// the counter exists.
+		loaded.Preamble, _, err = s.buildPreamble(ctx, sess, nil, nil)
+		if err != nil {
+			return agent.Context{}, nil, nil, err
+		}
+	}
+	cfg = cfg.withSnapshot(loaded)
 	ctr, release = s.counterFor(ctx, sess.ID, cfg.model, cfg.modelOK)
 	ag := s.newAgent(nil, sess, cfg, nil, s.offeredMCP(), agent.Options{Logger: s.log, Counter: ctr})
 	if next, err = ag.Preview(loaded); err != nil {

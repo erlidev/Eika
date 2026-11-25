@@ -124,6 +124,10 @@ type Message struct {
 	// title is made from Content, and only a request joins the two
 	// (ModelText).
 	Context string `json:"context,omitempty"`
+	// Notices are the ids of the notice entries whose text Context carries,
+	// so that storing the message is what records them as delivered. They
+	// are the harness's own bookkeeping and never reach a provider.
+	Notices []string `json:"notices,omitempty"`
 	// Images are the pictures a user message carries beside Content. A
 	// request carries them only to a model that accepts images; the agent
 	// replaces them with a note for any other.
@@ -146,6 +150,9 @@ type Message struct {
 	ToolCalls      []ToolCall     `json:"tool_calls,omitempty"`
 	ToolCallID     string         `json:"tool_call_id,omitempty"`
 	IsError        bool           `json:"is_error,omitempty"`
+	// Removed counts the windows ingest removed from a tool result, so a
+	// client marks the call without a lookup. It never reaches a provider.
+	Removed int `json:"removed,omitempty"`
 	// Metrics records the measured usage of an assistant response for session
 	// replay. Providers do not receive this metadata.
 	Metrics *MessageMetrics `json:"metrics,omitempty"`

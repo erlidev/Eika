@@ -1,5 +1,5 @@
 /**
- * The shell of a standalone page shown instead of the workbench: sign-in,
+ * The shell of a standalone page shown instead of the app's shell: sign-in,
  * the setup wizard, and the load failure. Every such page is one bordered
  * panel on a muted backdrop, with the same padding, heading, and mark, so
  * they read as one family (docs/STYLE_GUIDE.md, Web UI design).

@@ -1,65 +1,35 @@
-/** Server state for the Context panel: the next request, and the recorded ones. */
-
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+/** Server state for the request inspector. */
+import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import type { UseQueryResult } from "@tanstack/react-query";
-
 import { queryKeys } from "@/api/keys";
 import { getSessionCall, getSessionContext, listSessionCalls } from "@/api/routes";
 import type { ModelCall, ModelContext } from "@/api/types";
 
-/**
- * useNextRequest previews the session's next model request, as a run that
- * names `model` would send it. The stream invalidates it when a turn ends.
- */
-function useNextRequest(sessionId: string, model: string): UseQueryResult<ModelContext> {
-  return useQuery({
-    queryKey: queryKeys.sessionContext(sessionId, model),
-    queryFn: ({ signal }) => getSessionContext(sessionId, model, signal),
-    placeholderData: keepPreviousData,
-  });
-}
-
-/** useRecordedCalls lists the session's recorded model calls, oldest first. */
-function useRecordedCalls(sessionId: string): UseQueryResult<ModelCall[]> {
-  return useQuery({
-    queryKey: queryKeys.sessionCalls(sessionId),
-    queryFn: ({ signal }) => listSessionCalls(sessionId, signal),
-  });
-}
-
-/** useRecordedCall reads one recorded call in the preview's shape; a record never changes. */
-function useRecordedCall(sessionId: string, callId: string): UseQueryResult<ModelContext> {
-  return useQuery({
-    queryKey: queryKeys.sessionCall(sessionId, callId),
-    queryFn: ({ signal }) => getSessionCall(sessionId, callId, signal),
-    enabled: callId !== "",
-    staleTime: Infinity,
-  });
-}
-
-/** next is the request selection for the request a run started now would send. */
 export const nextRequest = "next";
-
-/** RequestSelection is which request the Context panel and inspector show, and what it is. */
 export type RequestSelection = {
-  /** selected is nextRequest or a recorded request's id. */
   selected: string;
   select: (id: string) => void;
-  /** records are the session's recorded calls, oldest first. */
   records: UseQueryResult<ModelCall[]>;
-  /** shown is the selected request, assembled. */
   shown: UseQueryResult<ModelContext>;
 };
-
-/**
- * useRequestSelection holds which request is shown: the next one, previewed
- * live for the model the session has chosen, or a recorded one.
- */
-export function useRequestSelection(sessionId: string, model: string): RequestSelection {
+export function useRequestSelection(
+  sessionId: string,
+  model = "",
+  previewEnabled = true,
+): RequestSelection {
   const [selected, select] = useState(nextRequest);
-  const records = useRecordedCalls(sessionId);
-  const preview = useNextRequest(sessionId, model);
-  const recorded = useRecordedCall(sessionId, selected === nextRequest ? "" : selected);
-  return { selected, select, records, shown: selected === nextRequest ? preview : recorded };
+  const records = useQuery({
+    queryKey: [...queryKeys.sessionContext(sessionId), "calls"],
+    queryFn: ({ signal }) => listSessionCalls(sessionId, signal),
+  });
+  const shown = useQuery({
+    queryKey: [...queryKeys.sessionContext(sessionId), "inspection", selected, model],
+    enabled: selected !== nextRequest || previewEnabled,
+    queryFn: ({ signal }) =>
+      selected === nextRequest
+        ? getSessionContext(sessionId, model, signal)
+        : getSessionCall(sessionId, selected, signal),
+  });
+  return { selected, select, records, shown };
 }

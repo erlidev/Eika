@@ -36,6 +36,30 @@ type Standalone interface {
 	Standalone()
 }
 
+// AgentOnly marks a tool that is available only through an agent definition.
+// Legacy profiles and sessions cannot select it.
+type AgentOnly interface {
+	Tool
+	AgentOnly()
+}
+
+// ReadOnlyTool is implemented by a tool that changes nothing and reaches
+// nowhere outside Eika, for the calls it answers true for. The gate's
+// failure mode keys on it: when the gate cannot answer, only such calls run.
+// A tool that does not implement it is treated as side-effecting.
+type ReadOnlyTool interface {
+	Tool
+	// ReadOnly reports whether this tool, as named, is read-only.
+	ReadOnly() bool
+}
+
+// SideEffecting reports whether t may change state or reach beyond Eika.
+// Anything not declared read-only is.
+func SideEffecting(t Tool) bool {
+	r, ok := t.(ReadOnlyTool)
+	return !ok || !r.ReadOnly()
+}
+
 // NeedsComputer reports whether t can run only in a session with a
 // computer.
 func NeedsComputer(t Tool) bool {
@@ -74,10 +98,27 @@ func (c CallContext) Output(ctx context.Context, text string) {
 
 // Result is what a tool call produced. Content is what the model sees; Details
 // is optional structured data for the user interface only.
+//
+// Parts, when set, are Content cut into the pieces that came from different
+// places, joined by a blank line. The agent ingests each untrusted part on its
+// own and rebuilds Content from them.
 type Result struct {
 	Content string
-	IsError bool
-	Details json.RawMessage
+	// SourceURL identifies the actual web content source; empty means unknown.
+	SourceURL string
+	IsError   bool
+	Details   json.RawMessage
+	Parts     []Part
+	// Removed counts the windows ingest removed from the result. The agent
+	// sets it; no tool does.
+	Removed int
+}
+
+// Part is one piece of a result. Source names where an untrusted part came
+// from (a URL); a part with no Source is the harness's own text.
+type Part struct {
+	Source string
+	Text   string
 }
 
 // Text returns a successful result carrying content.

@@ -3,14 +3,11 @@
  * prompt section by section to the parameters and the layer each came from.
  */
 
-import type { ConfigLayer, ModelContext, SessionConfiguration } from "@/api/types";
+import type { ModelContext } from "@/api/types";
 import { OutputBlock } from "@/components/OutputBlock";
 import { Messages } from "@/features/context/Messages";
-import { EditLink } from "@/features/context/parts";
 import {
-  editTargetOf,
   messageSizes,
-  parameterTarget,
   percent,
   segmentColors,
   segmentLabels,
@@ -19,28 +16,19 @@ import {
   tilde,
   toolGroupsOf,
 } from "@/features/context/segments";
-import type { SegmentKind, SizedSection, View } from "@/features/context/segments";
+import type { SizedSection, View } from "@/features/context/segments";
 import { ToolList, ToolSizes } from "@/features/context/ToolList";
-import { LayerChip } from "@/features/profiles/fields";
 import { formatTokens } from "@/lib/format";
 import { cn } from "@/lib/utils";
-
-/** Edit is what a pane needs to link a part to its setting; config is absent for a record. */
-type Edit = {
-  sessionId: string;
-  config: SessionConfiguration | undefined;
-  onOpen: () => void;
-};
 
 type PaneProps = {
   view: View;
   context: ModelContext;
   total: number;
-  edit: Edit;
   onView: (view: View) => void;
 };
 
-export function Pane({ view, context, total, edit, onView }: PaneProps) {
+export function Pane({ view, context, total, onView }: PaneProps) {
   const sections = sizedSections(context);
   const tools = sizedTools(context);
   if (view === "system") {
@@ -56,7 +44,7 @@ export function Pane({ view, context, total, edit, onView }: PaneProps) {
           <p className="text-muted-foreground text-sm">No system prompt.</p>
         )}
         {sections.map((s) => (
-          <SectionBlock key={s.kind} section={s} edit={edit} />
+          <SectionBlock key={s.kind} section={s} />
         ))}
       </PaneFrame>
     );
@@ -71,7 +59,7 @@ export function Pane({ view, context, total, edit, onView }: PaneProps) {
         approximate={section.approximate}
         total={total}
       >
-        <SectionBlock section={section} edit={edit} bare />
+        <SectionBlock section={section} bare />
       </PaneFrame>
     );
   }
@@ -98,7 +86,6 @@ export function Pane({ view, context, total, edit, onView }: PaneProps) {
             ? " The endpoint cannot render this request with and without its tools, so each size is the definition counted as JSON text."
             : " Each size is what the template adds when the tool is added to those before it; the first carries the template's wrapper around the list."
         }`}
-        action={<EditLinkFor edit={edit} kind="builtin_tools" what="the tools" />}
       >
         {group === undefined && tools.length > 0 && <ToolSizes groups={groups} onView={onView} />}
         <ToolList groups={shown} />
@@ -129,7 +116,7 @@ export function Pane({ view, context, total, edit, onView }: PaneProps) {
       title="Parameters"
       note="What the request sends beside its content, and the layer each came from."
     >
-      <Parameters context={context} edit={edit} />
+      <Parameters context={context} />
     </PaneFrame>
   );
 }
@@ -178,45 +165,18 @@ function PaneFrame({
   );
 }
 
-/** layerOf is the layer a setting of the next request came from. */
-function layerOf(config: SessionConfiguration | undefined, key: string): ConfigLayer | undefined {
-  return config?.resolved.sources?.[key];
-}
-
-type EditLinkForProps = { edit: Edit; kind: SegmentKind; what: string };
-
-/** EditLinkFor links a part of the next request to the setting behind it; a record links nowhere. */
-function EditLinkFor({ edit, kind, what }: EditLinkForProps) {
-  const target = editTargetOf(kind);
-  if (target === undefined || edit.config === undefined) return null;
-  return <EditLink {...edit} target={target} what={what} />;
-}
-
 type SectionBlockProps = {
   section: SizedSection;
-  edit: Edit;
   /** bare leaves out the header, for a pane that shows only this section. */
   bare?: boolean;
 };
 
 /** SectionBlock is one section of the system prompt, marked with its colour and source. */
-function SectionBlock({ section, edit, bare = false }: SectionBlockProps) {
-  const target = editTargetOf(section.kind);
-  const layer = target === undefined ? undefined : layerOf(edit.config, target.key);
+function SectionBlock({ section, bare = false }: SectionBlockProps) {
   const label = segmentLabels[section.kind];
   const body = <TextBlock label={label}>{section.text}</TextBlock>;
   if (bare) {
-    return (
-      <div className="space-y-2">
-        <div className="flex flex-wrap items-center gap-2">
-          {layer !== undefined && <LayerChip set={false} from={layer} />}
-          <div className="ml-auto">
-            <EditLinkFor edit={edit} kind={section.kind} what={label.toLowerCase()} />
-          </div>
-        </div>
-        {body}
-      </div>
-    );
+    return <div className="space-y-2">{body}</div>;
   }
   return (
     <article className="flex gap-3" aria-label={label}>
@@ -224,14 +184,10 @@ function SectionBlock({ section, edit, bare = false }: SectionBlockProps) {
       <div className="min-w-0 flex-1 space-y-1.5">
         <header className="flex flex-wrap items-center gap-2">
           <h4 className="text-sm font-medium">{label}</h4>
-          {layer !== undefined && <LayerChip set={false} from={layer} />}
           <span className="text-muted-foreground font-mono text-xs tabular-nums">
             {tilde(section.approximate)}
             {formatTokens(section.tokens)}
           </span>
-          <div className="ml-auto">
-            <EditLinkFor edit={edit} kind={section.kind} what={label.toLowerCase()} />
-          </div>
         </header>
         {body}
       </div>
@@ -250,10 +206,10 @@ function TextBlock({ label, children }: TextBlockProps) {
   );
 }
 
-type ParametersProps = { context: ModelContext; edit: Edit };
+type ParametersProps = { context: ModelContext };
 
 /** Parameters is what the request sends beside its content, and where each came from. */
-function Parameters({ context, edit }: ParametersProps) {
+function Parameters({ context }: ParametersProps) {
   const p = context.parameters;
   const rows: { name: string; value: string; key: string }[] = [
     { name: "model", value: p.model, key: "model" },
@@ -275,29 +231,18 @@ function Parameters({ context, edit }: ParametersProps) {
           <th className="py-1 pr-3 font-medium">Parameter</th>
           <th className="py-1 pr-3 font-medium">Value</th>
           <th className="py-1 pr-3 font-medium">From</th>
-          <th className="py-1">
-            <span className="sr-only">Edit</span>
-          </th>
         </tr>
       </thead>
       <tbody className="divide-y">
         {rows.map((r) => {
           const layer = context.sources?.[r.key];
-          const target = parameterTarget(r.key);
           return (
             <tr key={r.name}>
               <td className="py-1.5 pr-3 font-mono text-xs">{r.name}</td>
               <td className="py-1.5 pr-3 font-mono text-xs break-all">
                 {r.value === "" ? "none" : r.value}
               </td>
-              <td className="py-1.5 pr-3">
-                {layer !== undefined && <LayerChip set={false} from={layer} />}
-              </td>
-              <td className="py-1 text-right">
-                {target !== undefined && edit.config !== undefined && (
-                  <EditLink {...edit} target={target} what={r.name} compact />
-                )}
-              </td>
+              <td className="py-1.5 pr-3">{layer ?? "—"}</td>
             </tr>
           );
         })}

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"maps"
 	"net/http"
 	"net/url"
 	"strings"
@@ -14,8 +13,6 @@ import (
 
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/volume"
@@ -61,6 +58,8 @@ type Options struct {
 	// 127.0.0.1 instead, which is what a harness running outside compose
 	// needs.
 	Network string
+	// DirectNetworkAddress reaches a networked computer by its container IP.
+	DirectNetworkAddress bool
 	// EikadBinary is the path to the static eikad binary in the harness
 	// filesystem. It is copied into every container before it starts.
 	EikadBinary string
@@ -73,6 +72,9 @@ type Options struct {
 	// reaches it, for example http://eika:3128. Empty leaves a proxied
 	// sandbox with no way out at all.
 	EgressProxyURL string
+	// Plant returns extra KEY=VALUE entries for a computer's environment,
+	// given at every start and by Refresh. Nil plants nothing.
+	Plant func(ctx context.Context, id string) []string
 }
 
 // Host creates and runs computers on one Docker daemon.
@@ -136,14 +138,12 @@ func (h *Host) Create(ctx context.Context, spec Spec) (Computer, error) {
 		return Computer{}, err
 	}
 
-	cx.Image = orDefault(spec.Image, h.opts.Image)
-	built := spec.BuildContext != ""
-	if built {
-		cx.Image = builtImageRef(cx.ID)
-		if err := h.buildImage(ctx, spec, cx.Image); err != nil {
-			return Computer{}, err
-		}
+	cx.Root = orDefault(spec.Root, Root)
+	labels := map[string]string{Label: cx.ID}
+	if spec.Role != "" {
+		labels[RoleLabel] = spec.Role
 	}
+	cx.Image = orDefault(spec.Image, h.opts.Image)
 	cx.Volume = VolumeName(cx.ID)
 	// A volume that is already there holds files an earlier container of
 	// this computer left, which a computer made again under the same id
@@ -157,7 +157,7 @@ func (h *Host) Create(ctx context.Context, spec Spec) (Computer, error) {
 		if kept {
 			doomed.Volume = ""
 		}
-		h.discard(ctx, doomed, built)
+		h.discard(ctx, doomed)
 	}
 
 	if _, err := h.docker.VolumeCreate(ctx, volume.CreateOptions{
@@ -168,28 +168,29 @@ func (h *Host) Create(ctx context.Context, spec Spec) (Computer, error) {
 		return Computer{}, fmt.Errorf("create volume %s: %w", cx.Volume, err)
 	}
 
-	labels := map[string]string{Label: cx.ID}
-	maps.Copy(labels, spec.Labels)
-
-	user := orDefault(spec.User, DefaultUser)
 	port := nat.Port(DaemonPort + "/tcp")
 	cfg := &container.Config{
 		Image:      cx.Image,
-		Entrypoint: []string{eikad.BinaryPath, "-listen", ":" + DaemonPort, "-root", Root},
+		Entrypoint: []string{eikad.BinaryPath, "-listen", ":" + DaemonPort, "-root", cx.Root},
 		// HOME is the root whoever the user is: an image with no passwd
 		// entry for the uid would otherwise leave it at "/".
-		Env: append([]string{
-			"HOME=" + Root,
+		Env: []string{
+			"HOME=" + cx.Root,
 			eikad.TokenEnv + "=" + cx.Token,
 			proxyTokenEnv + "=" + cx.ProxyToken,
-		}, spec.Env...),
-		User:         user,
-		WorkingDir:   Root,
+		},
+		User:         fmt.Sprintf("%d:%d", userID, groupID),
+		WorkingDir:   cx.Root,
 		Labels:       labels,
 		ExposedPorts: nat.PortSet{port: struct{}{}},
 	}
+	mounts := []mount.Mount{{Type: mount.TypeVolume, Source: cx.Volume, Target: cx.Root}}
+	for _, m := range spec.ReadOnly {
+		mounts = append(mounts, mount.Mount{Type: mount.TypeVolume, Source: m.Volume, Target: m.Target, ReadOnly: true})
+		cx.Mounted = append(cx.Mounted, m.Target)
+	}
 	hostCfg := &container.HostConfig{
-		Mounts: []mount.Mount{{Type: mount.TypeVolume, Source: cx.Volume, Target: Root}},
+		Mounts: mounts,
 		// Docker's own init is PID 1 and reaps the orphans a shell leaves
 		// behind; eikad runs under it as an ordinary process.
 		Init: &useInit,
@@ -219,7 +220,7 @@ func (h *Host) Create(ctx context.Context, spec Spec) (Computer, error) {
 		rollback()
 		return Computer{}, err
 	}
-	if err := h.ownRoot(ctx, cx.ContainerID, user); err != nil {
+	if err := h.ownRoot(ctx, cx.ContainerID, cx.Root); err != nil {
 		rollback()
 		return Computer{}, err
 	}
@@ -227,10 +228,27 @@ func (h *Host) Create(ctx context.Context, spec Spec) (Computer, error) {
 	return cx, nil
 }
 
+// Recreate replaces a stopped computer's container with one made from spec,
+// which is how a computer gains a mount it was made without. Its data volume
+// is never removed: the new container mounts it again, and the files in it
+// are as they were. The computer gets new tokens, and the caller forgets the
+// old ones. A running computer is refused, so a restart is never forced.
+func (h *Host) Recreate(ctx context.Context, cx Computer, spec Spec) (Computer, error) {
+	if cx.State == StateRunning {
+		return Computer{}, fmt.Errorf("recreate computer %s: it is running", cx.ID)
+	}
+	spec.ID = cx.ID
+	// RemoveVolumes stays false: it removes only a container's anonymous
+	// volumes, never the named data volume, and nothing here needs it.
+	if err := h.docker.ContainerRemove(ctx, cx.ContainerID, container.RemoveOptions{Force: true}); err != nil && !cerrdefs.IsNotFound(err) {
+		return Computer{}, fmt.Errorf("remove the container of computer %s: %w", cx.ID, err)
+	}
+	return h.Create(ctx, spec)
+}
+
 // discard removes whatever of a computer already exists. It is the rollback
-// for a failed Create and the body of Destroy, and it ignores what is not
-// there.
-func (h *Host) discard(ctx context.Context, cx Computer, builtImage bool) {
+// for a failed Create, and it ignores what is not there.
+func (h *Host) discard(ctx context.Context, cx Computer) {
 	if cx.ContainerID != "" {
 		if err := h.docker.ContainerRemove(ctx, cx.ContainerID, container.RemoveOptions{
 			Force: true,
@@ -241,14 +259,6 @@ func (h *Host) discard(ctx context.Context, cx Computer, builtImage bool) {
 	if cx.Volume != "" {
 		if err := h.docker.VolumeRemove(ctx, cx.Volume, true); err != nil && !cerrdefs.IsNotFound(err) {
 			h.log.Warn("remove volume", "computer_id", cx.ID, "error", err)
-		}
-	}
-	if builtImage {
-		if _, err := h.docker.ImageRemove(ctx, builtImageRef(cx.ID), image.RemoveOptions{
-			Force:         true,
-			PruneChildren: true,
-		}); err != nil && !cerrdefs.IsNotFound(err) {
-			h.log.Warn("remove image", "computer_id", cx.ID, "error", err)
 		}
 	}
 }
@@ -295,56 +305,6 @@ func (h *Host) Stop(ctx context.Context, cx *Computer) error {
 	return nil
 }
 
-// Destroy removes the computer's container and its volume. The files in a
-// bind-mounted host directory are left alone.
-func (h *Host) Destroy(ctx context.Context, cx *Computer) error {
-	if err := h.docker.ContainerRemove(ctx, cx.ContainerID, container.RemoveOptions{
-		Force:         true,
-		RemoveVolumes: false,
-	}); err != nil && !cerrdefs.IsNotFound(err) {
-		return fmt.Errorf("remove container for computer %s: %w", cx.ID, err)
-	}
-	if cx.Volume != "" {
-		if err := h.docker.VolumeRemove(ctx, cx.Volume, true); err != nil && !cerrdefs.IsNotFound(err) {
-			return fmt.Errorf("remove volume %s: %w", cx.Volume, err)
-		}
-	}
-	// An image built for this one computer is named after it, so it goes too.
-	if cx.Image == builtImageRef(cx.ID) {
-		if _, err := h.docker.ImageRemove(ctx, cx.Image, image.RemoveOptions{
-			Force:         true,
-			PruneChildren: true,
-		}); err != nil && !cerrdefs.IsNotFound(err) {
-			return fmt.Errorf("remove image %s: %w", cx.Image, err)
-		}
-	}
-	cx.Address = ""
-	cx.State = StateGone
-	h.log.Info("computer destroyed", "computer_id", cx.ID)
-	return nil
-}
-
-// List reports every computer container the Docker daemon knows about,
-// running or not. The harness calls it on startup to reconcile with reality.
-func (h *Host) List(ctx context.Context) ([]Computer, error) {
-	summaries, err := h.docker.ContainerList(ctx, container.ListOptions{
-		All:     true,
-		Filters: filters.NewArgs(filters.Arg("label", Label)),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("list computer containers: %w", err)
-	}
-	out := make([]Computer, 0, len(summaries))
-	for _, s := range summaries {
-		cx, err := h.Inspect(ctx, s.Labels[Label])
-		if err != nil {
-			return nil, fmt.Errorf("inspect listed computer container %s: %w", s.ID, err)
-		}
-		out = append(out, cx)
-	}
-	return out, nil
-}
-
 // Inspect reports the current state of one computer, recovering its tokens
 // from the container so that the harness can keep working after a restart.
 func (h *Host) Inspect(ctx context.Context, id string) (Computer, error) {
@@ -359,6 +319,7 @@ func (h *Host) Inspect(ctx context.Context, id string) (Computer, error) {
 		ID:          id,
 		ContainerID: info.ID,
 		Image:       info.Config.Image,
+		Root:        orDefault(info.Config.WorkingDir, Root),
 		State:       StateStopped,
 		Token:       envValue(info.Config.Env, eikad.TokenEnv),
 		ProxyToken:  envValue(info.Config.Env, proxyTokenEnv),
@@ -370,7 +331,8 @@ func (h *Host) Inspect(ctx context.Context, id string) (Computer, error) {
 		_, cx.Proxied = info.NetworkSettings.Networks[h.opts.InternalNetwork]
 	}
 	for _, m := range info.Mounts {
-		if m.Destination != Root {
+		if m.Destination != cx.Root {
+			cx.Mounted = append(cx.Mounted, m.Destination)
 			continue
 		}
 		cx.Volume = m.Name
@@ -408,7 +370,7 @@ func (h *Host) client(cx Computer) (*sandbox.Client, error) {
 	if cx.Address == "" {
 		return nil, fmt.Errorf("computer %s has no address: it is not running", cx.ID)
 	}
-	return sandbox.New(sandbox.Options{BaseURL: cx.Address, Token: cx.Token, Root: Root})
+	return sandbox.New(sandbox.Options{BaseURL: cx.Address, Token: cx.Token, Root: RootOf(cx)})
 }
 
 // address is the base URL the harness reaches the computer's daemon on: the
@@ -416,7 +378,18 @@ func (h *Host) client(cx Computer) (*sandbox.Client, error) {
 // harness runs outside that network.
 func (h *Host) address(ctx context.Context, cx Computer) (string, error) {
 	if h.opts.Network != "" {
-		return "http://" + ContainerName(cx.ID) + ":" + DaemonPort, nil
+		if !h.opts.DirectNetworkAddress {
+			return "http://" + ContainerName(cx.ID) + ":" + DaemonPort, nil
+		}
+		info, err := h.docker.ContainerInspect(ctx, cx.ContainerID)
+		if err != nil {
+			return "", fmt.Errorf("inspect computer %s: %w", cx.ID, err)
+		}
+		endpoint := info.NetworkSettings.Networks[h.networkFor(cx.Proxied)]
+		if endpoint == nil || endpoint.IPAddress == "" {
+			return "", fmt.Errorf("computer %s has no network address", cx.ID)
+		}
+		return "http://" + endpoint.IPAddress + ":" + DaemonPort, nil
 	}
 	info, err := h.docker.ContainerInspect(ctx, cx.ContainerID)
 	if err != nil {

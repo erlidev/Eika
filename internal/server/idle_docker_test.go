@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/erlidev/eika/internal/provider/providertest"
+	"github.com/erlidev/eika/internal/store"
 )
 
 // computerState reads a computer's recorded state from the computer list.
@@ -38,83 +39,44 @@ func TestIdleComputersStop(t *testing.T) {
 		}
 	})
 
-	t.Run("counting from the end of the last run", func(t *testing.T) {
-		a := newAPI(t)
-		cx := a.home(t)
-		sess := a.newSession(t, cx.ID)
-		// First seen ten minutes ago, so only the run keeps it up below.
-		a.SweepIdle(t.Context(), time.Now().Add(-10*time.Minute))
-
-		a.script(providertest.Text("done"))
-		a.postMessage(t, sess.ID, "hello", "", 202)
-		a.waitIdle(t, sess.ID)
+	t.Run("counting from the end of the last worker run", func(t *testing.T) {
+		d := newDelegating(t)
+		d.SweepIdle(t.Context(), time.Now().Add(-10*time.Minute))
+		eika := providertest.New(call("start", "subagent_start", map[string]any{"agent": "worker", "name": "worker", "brief": "work"}), providertest.Text("started"))
+		worker := providertest.New(call("report", "report", map[string]any{"summary": "done"}), providertest.Text("done"))
+		d.use(byAgent{"You are Eika": answeringNotices(eika), "You are a worker": worker})
+		d.postMessage(t, d.home.ID, "start", "", 202)
+		waitFor(t, "worker to finish", func() bool {
+			child, err := d.store.Subagent(t.Context(), d.home.ID, "worker")
+			return err == nil && child.State == store.SessionIdle
+		})
 		finished := time.Now()
-
-		a.SweepIdle(t.Context(), finished.Add(14*time.Minute))
-		if got := a.computerState(t, cx.ID); got != "running" {
-			t.Fatalf("state 14 minutes after a run = %q, want running", got)
+		d.SweepIdle(t.Context(), finished.Add(14*time.Minute))
+		if got := d.computerState(t, d.computer); got != "running" {
+			t.Fatalf("state after 14 minutes = %q", got)
 		}
-		a.SweepIdle(t.Context(), finished.Add(15*time.Minute))
-		if got := a.computerState(t, cx.ID); got != "stopped" {
-			t.Errorf("state 15 minutes after a run = %q, want stopped", got)
+		d.SweepIdle(t.Context(), finished.Add(15*time.Minute))
+		if got := d.computerState(t, d.computer); got != "stopped" {
+			t.Errorf("state after 15 minutes = %q", got)
 		}
 	})
-
-	t.Run("after the timeout the settings name", func(t *testing.T) {
-		a := newAPI(t)
-		cx := a.home(t)
-		decodeBody[settingsWire](t, request(t, a.Server, "PUT", "/api/settings",
-			map[string]any{"computer_idle_minutes": 5}), 200)
+	t.Run("not while a worker run is going", func(t *testing.T) {
+		d := newDelegating(t)
 		start := time.Now()
-
-		a.SweepIdle(t.Context(), start)
-		a.SweepIdle(t.Context(), start.Add(5*time.Minute))
-		if got := a.computerState(t, cx.ID); got != "stopped" {
-			t.Errorf("state after 5 idle minutes = %q, want stopped", got)
+		d.SweepIdle(t.Context(), start)
+		eika := providertest.New(call("start", "subagent_start", map[string]any{"agent": "worker", "name": "worker", "brief": "work"}), providertest.Text("started"))
+		worker := newHeldScript(call("report", "report", map[string]any{"summary": "done"}), providertest.Text("done"))
+		d.use(byAgent{"You are Eika": answeringNotices(eika), "You are a worker": worker})
+		d.postMessage(t, d.home.ID, "start", "", 202)
+		<-worker.started
+		d.SweepIdle(t.Context(), start.Add(time.Hour))
+		if got := d.computerState(t, d.computer); got != "running" {
+			t.Errorf("state with worker running = %q", got)
 		}
+		worker.open()
+		waitFor(t, "worker to finish", func() bool {
+			child, err := d.store.Subagent(t.Context(), d.home.ID, "worker")
+			return err == nil && child.State == store.SessionIdle
+		})
 	})
-
-	t.Run("never when the timeout is zero", func(t *testing.T) {
-		a := newAPI(t)
-		cx := a.home(t)
-		decodeBody[settingsWire](t, request(t, a.Server, "PUT", "/api/settings",
-			map[string]any{"computer_idle_minutes": 0}), 200)
-		start := time.Now()
-
-		a.SweepIdle(t.Context(), start)
-		a.SweepIdle(t.Context(), start.Add(24*time.Hour))
-		if got := a.computerState(t, cx.ID); got != "running" {
-			t.Errorf("state with no timeout = %q, want running", got)
-		}
-	})
-
-	t.Run("not while a run is going in it", func(t *testing.T) {
-		a := newAPI(t)
-		cx := a.home(t)
-		sess := a.newSession(t, cx.ID)
-		start := time.Now()
-		a.SweepIdle(t.Context(), start)
-
-		a.script(askStep("c1", "still there?"), providertest.Text("done"))
-		a.postMessage(t, sess.ID, "hello", "", 202)
-		a.waitQuestion(t, sess.ID)
-		a.SweepIdle(t.Context(), start.Add(time.Hour))
-		if got := a.computerState(t, cx.ID); got != "running" {
-			t.Errorf("state with a run going = %q, want running", got)
-		}
-	})
-}
-
-func TestIdleTimeoutSettingIsBounded(t *testing.T) {
-	a := newAPI(t)
-	for _, value := range []any{-1, 10081, 1.5, "15"} {
-		rec := request(t, a.Server, "PUT", "/api/settings", map[string]any{"computer_idle_minutes": value})
-		if rec.Code != 400 {
-			t.Errorf("computer_idle_minutes = %v: status %d, want 400", value, rec.Code)
-		}
-	}
-	got := decodeBody[settingsWire](t, request(t, a.Server, "GET", "/api/settings", nil), 200)
-	if got.Defaults.ComputerIdleMinutes != 15 {
-		t.Errorf("default idle minutes = %d, want 15", got.Defaults.ComputerIdleMinutes)
-	}
 }

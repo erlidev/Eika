@@ -5,7 +5,7 @@ The guided setup a new harness opens with, so that running Eika is
 
 - `SetupWizard.tsx` walks the steps in `steps.ts`: choose the sign-in
   password, connect a provider (`features/providers/ProviderForm`), pick its
-  models (`ModelPicker`), check the sandbox and choose the default model
+  models (`ModelPicker`), check the sandbox and assign the model classes
   (`features/settings`); finishing the last step ends the setup.
 - `steps.ts` holds the order and `firstStep`, which resumes a setup left
   halfway at the first thing still missing.
@@ -19,3 +19,6 @@ rather than passing for an empty one and starting the setup over.
 
 Test it: `npm test -- setup` runs the order, the resume rule, and the
 wizard's handling of a list that fails to load.
+
+Setup proposes the first chosen chat model for the main class. Finish saves
+the assignment with setup completion; the user can choose another model.

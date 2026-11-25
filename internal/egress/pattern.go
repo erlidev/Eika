@@ -11,8 +11,8 @@ type Mode string
 
 // The egress modes.
 const (
-	// ModeOpen gives the sandbox a route to the internet of its own.
-	ModeOpen Mode = "open"
+	// ModePublic lets the sandbox reach public hosts through the proxy.
+	ModePublic Mode = "public"
 	// ModeAllowlist lets the sandbox reach the hosts its allowlist names,
 	// through the proxy, and nothing else.
 	ModeAllowlist Mode = "allowlist"
@@ -21,11 +21,7 @@ const (
 )
 
 // Modes lists every mode, in the order the UI offers them.
-var Modes = []Mode{ModeOpen, ModeAllowlist, ModeNone}
-
-// Restricted reports whether a mode keeps the sandbox off the open network,
-// so that it reaches out only through the proxy.
-func (m Mode) Restricted() bool { return m == ModeAllowlist || m == ModeNone }
+var Modes = []Mode{ModePublic, ModeAllowlist, ModeNone}
 
 // ParseMode reads a mode by name.
 func ParseMode(s string) (Mode, error) {
@@ -34,7 +30,7 @@ func ParseMode(s string) (Mode, error) {
 			return m, nil
 		}
 	}
-	return "", fmt.Errorf("egress mode %q is not one of open, allowlist, or none", s)
+	return "", fmt.Errorf("egress mode %q is not one of public, allowlist, or none", s)
 }
 
 // Bounds on an allowlist.
@@ -65,7 +61,7 @@ var DefaultAllowlist = []string{
 // ValidPattern checks one allowlist pattern: a host name such as github.com,
 // a wildcard such as *.github.com that matches every name below it but not
 // the name itself, or an IP address. A pattern names a host, never a scheme,
-// a port, or a path, and a lone * is refused: that is the open mode.
+// a port, or a path, and a lone * is refused: that is the public mode.
 func ValidPattern(p string) error {
 	if p == "" || len(p) > maxPatternLength {
 		return fmt.Errorf("allowlist entry %q must be a host name of 1 to %d characters", p, maxPatternLength)

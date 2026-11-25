@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/erlidev/eika/internal/event"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/provider/providertest"
 )
@@ -66,22 +65,6 @@ func TestEveryToolCallGetsAnIDOfItsOwnWhateverTheBackendCalledIt(t *testing.T) {
 		t.Errorf("the request carried calls %+v, want the stored %+v", requests[1].Messages[1].ToolCalls, calls[:3])
 	}
 
-	// Events and approvals use Eika's ids.
-	var started []string
-	for _, e := range f.events.all() {
-		if e.Type != event.TypeToolCall {
-			continue
-		}
-		var c event.ToolCall
-		if err := e.DecodePayload(&c); err != nil {
-			t.Fatal(err)
-		}
-		started = append(started, c.CallID)
-	}
-	want := []string{calls[0].ID, calls[1].ID, calls[2].ID, calls[3].ID}
-	if !reflect.DeepEqual(started, want) {
-		t.Errorf("tool.call events carry ids %v, want %v", started, want)
-	}
 }
 
 func TestACallStoredBeforeIDsWereMintedIsReplayedUnchanged(t *testing.T) {

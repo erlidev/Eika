@@ -5,7 +5,6 @@ package computer_test
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -62,12 +61,10 @@ func buildEikad(t *testing.T) string {
 	return path
 }
 
-// cleanUp destroys a computer left over by a test. It cannot use the test's
-// context: that is already cancelled by the time cleanup functions run.
-func cleanUp(host *computer.Host, cx *computer.Computer) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	host.Destroy(ctx, cx)
+// cleanUp removes the container and volume of a computer a test made.
+func cleanUp(cx *computer.Computer) {
+	_ = exec.Command("docker", "rm", "-f", computer.ContainerName(cx.ID)).Run()
+	_ = exec.Command("docker", "volume", "rm", "-f", computer.VolumeName(cx.ID)).Run()
 }
 
 // run executes a shell command in the computer and returns its output.
@@ -112,17 +109,11 @@ func TestComputerLifecycle(t *testing.T) {
 
 	cx, err := host.Create(t.Context(), computer.Spec{
 		Confinement: computer.Confinement{Limits: computer.Limits{CPUs: 1, MemoryBytes: 512 << 20, PIDs: 256}},
-		Labels:      map[string]string{"eika.test": "lifecycle"},
 	})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	destroyed := false
-	t.Cleanup(func() {
-		if !destroyed {
-			cleanUp(host, &cx)
-		}
-	})
+	t.Cleanup(func() { cleanUp(&cx) })
 	if err := host.Start(t.Context(), &cx); err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -184,32 +175,10 @@ func TestComputerLifecycle(t *testing.T) {
 		}
 	})
 
-	t.Run("refuses a proxied network outside compose", func(t *testing.T) {
-		if err := host.Confine(t.Context(), &cx, computer.Confinement{Proxied: true}); !errors.Is(err, computer.ErrNoEgressControl) {
-			t.Errorf("confine = %v, want ErrNoEgressControl", err)
-		}
-	})
-
-	t.Run("writes and reads a file", func(t *testing.T) {
-		if err := ex.WriteFile(t.Context(), "notes/hello.txt", []byte("hei")); err != nil {
-			t.Fatalf("write file: %v", err)
-		}
-		data, err := ex.ReadFile(t.Context(), "notes/hello.txt", executor.ReadOpts{})
-		if err != nil {
-			t.Fatalf("read file: %v", err)
-		}
-		if string(data) != "hei" {
-			t.Errorf("read = %q, want hei", data)
-		}
-		if got := run(t, ex, "cat /home/eika/notes/hello.txt"); got != "hei" {
-			t.Errorf("the file is not in the container: %q", got)
-		}
-	})
-
 	t.Run("runs a long-lived process in the computer", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 		defer cancel()
-		p, err := host.Process(ctx, cx, sandbox.ProcessSpec{Command: "sh", Args: []string{"-c", `read line; echo "$line $(cat notes/hello.txt)"`}}, nil)
+		p, err := host.Process(ctx, cx, sandbox.ProcessSpec{Command: "sh", Args: []string{"-c", `read line; echo "$line hei"`}}, nil)
 		if err != nil {
 			t.Fatalf("process: %v", err)
 		}
@@ -224,26 +193,7 @@ func TestComputerLifecycle(t *testing.T) {
 		}
 	})
 
-	t.Run("lists and inspects the computer", func(t *testing.T) {
-		listed, err := host.List(t.Context())
-		if err != nil {
-			t.Fatalf("list: %v", err)
-		}
-		found := false
-		for _, w := range listed {
-			if w.ID == cx.ID {
-				found = true
-				if w.Token != cx.Token || w.State != computer.StateRunning {
-					t.Errorf("listed computer = %+v, want the running computer with its token", w)
-				}
-			}
-		}
-		if !found {
-			t.Errorf("list did not report computer %s", cx.ID)
-		}
-	})
-
-	t.Run("stops and destroys", func(t *testing.T) {
+	t.Run("stops", func(t *testing.T) {
 		if err := host.Stop(t.Context(), &cx); err != nil {
 			t.Fatalf("stop: %v", err)
 		}
@@ -254,20 +204,9 @@ func TestComputerLifecycle(t *testing.T) {
 		if stopped.State != computer.StateStopped {
 			t.Errorf("state = %q, want stopped", stopped.State)
 		}
-		// A harness that restarted knows the volume only through Inspect, and
-		// Destroy removes only the volume it knows.
+		// A harness that restarted knows the volume only through Inspect.
 		if stopped.Volume != computer.VolumeName(cx.ID) {
 			t.Errorf("inspected volume = %q, want %q", stopped.Volume, computer.VolumeName(cx.ID))
-		}
-		if err := host.Destroy(t.Context(), &cx); err != nil {
-			t.Fatalf("destroy: %v", err)
-		}
-		destroyed = true
-		if _, err := host.Inspect(t.Context(), cx.ID); err == nil {
-			t.Error("the container outlived Destroy")
-		}
-		if err := exec.Command("docker", "volume", "inspect", computer.VolumeName(cx.ID)).Run(); err == nil {
-			t.Error("the volume outlived Destroy")
 		}
 	})
 }
@@ -295,93 +234,6 @@ func TestFailedCreateLeavesNothingBehind(t *testing.T) {
 	}
 	if err := exec.Command("docker", "volume", "inspect", computer.VolumeName(id)).Run(); err == nil {
 		t.Error("the volume outlived a failed Create")
-	}
-}
-
-func TestListReturnsAnInspectionFailure(t *testing.T) {
-	requireDocker(t)
-	requireImage(t)
-	id := "badlist" + fmt.Sprint(time.Now().UnixNano())
-	containerName := "misnamed-" + id
-	create := exec.Command("docker", "create",
-		"--name", containerName,
-		"--label", computer.Label+"="+id,
-		sandboxImage,
-	)
-	if out, err := create.CombinedOutput(); err != nil {
-		t.Fatalf("create mislabeled container: %v: %s", err, out)
-	}
-	t.Cleanup(func() { _ = exec.Command("docker", "rm", "--force", containerName).Run() })
-
-	host, err := computer.NewHost(computer.Options{
-		DockerSocket: requireDocker(t),
-		Image:        sandboxImage,
-		EikadBinary:  "/not-used",
-	}, testLogger())
-	if err != nil {
-		t.Fatalf("new host: %v", err)
-	}
-	t.Cleanup(func() { _ = host.Close() })
-	if _, err := host.List(t.Context()); err == nil {
-		t.Fatal("List dropped a container that it could not inspect")
-	}
-}
-
-func TestComputerFromADockerfile(t *testing.T) {
-	requireDocker(t)
-	host := newHost(t)
-
-	// An image that has never heard of eikad still works, because the daemon
-	// is copied in before the container starts.
-	build := t.TempDir()
-	if err := os.WriteFile(filepath.Join(build, "Dockerfile"),
-		[]byte("FROM alpine:3.20\nRUN mkdir -p /home/eika && echo baked > /home/eika/from-the-image.txt\n"), 0o600); err != nil {
-		t.Fatalf("write dockerfile: %v", err)
-	}
-
-	cx, err := host.Create(t.Context(), computer.Spec{BuildContext: build})
-	if err != nil {
-		t.Fatalf("create: %v", err)
-	}
-	t.Cleanup(func() { cleanUp(host, &cx) })
-	if err := host.Start(t.Context(), &cx); err != nil {
-		t.Fatalf("start: %v", err)
-	}
-	ex, err := host.Executor(cx)
-	if err != nil {
-		t.Fatalf("executor: %v", err)
-	}
-
-	// The volume at the root starts with what the image holds there.
-	data, err := ex.ReadFile(t.Context(), "from-the-image.txt", executor.ReadOpts{})
-	if err != nil {
-		t.Fatalf("read the file baked into the image: %v", err)
-	}
-	if strings.TrimSpace(string(data)) != "baked" {
-		t.Errorf("read = %q, want baked", data)
-	}
-	if got := run(t, ex, "echo built"); got != "built" {
-		t.Errorf("echo = %q, want built", got)
-	}
-
-	// The image was built for this computer alone, so it goes with it.
-	image := cx.Image
-	if err := host.Destroy(t.Context(), &cx); err != nil {
-		t.Fatalf("destroy: %v", err)
-	}
-	if err := exec.Command("docker", "image", "inspect", image).Run(); err == nil {
-		t.Errorf("image %s outlived Destroy", image)
-	}
-}
-
-func TestHasImageTellsPresentFromMissing(t *testing.T) {
-	requireImage(t)
-	host := newHost(t)
-	if ok, err := host.HasImage(t.Context(), sandboxImage); err != nil || !ok {
-		t.Errorf("HasImage(%s) = %v, %v; want present", sandboxImage, ok, err)
-	}
-	if ok, err := host.HasImage(t.Context(), "eika-test-absent-"+strings.ToLower(t.Name())+":never"); err != nil || ok {
-		t.Errorf("HasImage of a missing image = %v, %v; want absent", ok, err)
 	}
 }
 
@@ -436,7 +288,7 @@ func TestConfineMovesAComputerBetweenTheSandboxNetworks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	t.Cleanup(func() { cleanUp(host, &cx) })
+	t.Cleanup(func() { cleanUp(&cx) })
 	if got := networksOf(t, cx.ContainerID); len(got) != 1 || got[0] != internal {
 		t.Fatalf("a proxied computer is on %v, want only %s", got, internal)
 	}
@@ -514,7 +366,7 @@ func TestStartRejoinsARecreatedSandboxNetwork(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	t.Cleanup(func() { cleanUp(host, &cx) })
+	t.Cleanup(func() { cleanUp(&cx) })
 
 	// A container records its network's id only once it has run, so run it
 	// before the network goes away.

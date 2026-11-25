@@ -1,7 +1,7 @@
 # session
 
-The session that is open: its streaming transcript, its composer, its run, and
-the three context panels it registers. A chat is a session with no computer
+The session that is open: its streaming transcript, its composer, and its
+run. A chat is a session with no computer
 and uses the same view; its header says it is a chat where a computer
 session's names its computer. This is the largest feature and the only
 one that holds client state of its own.
@@ -10,16 +10,20 @@ one that holds client state of its own.
 
 - `SessionView.tsx` is the centre pane. It owns the stream subscription and
   composes the transcript, the composer, and the run status bar under it.
+  Chat (`features/chat`) renders it for the home session. A session that runs an
+  agent, as home does, names no model in a request, because the harness refuses
+  one (its class picks it), and its status bar has no model control.
+  With `readOnly` it is the transcript alone, streamed live: Activity uses it for a
+  subagent, which Eika steers, so there is no composer, status bar, abort key or
+  rewind. `Transcript` shows nothing from a store that holds another session.
 - `SessionHeading.tsx` is the header's title: a click on it renames the
   session in place, and an archived session shows a badge with Unarchive.
-- `useSessionStream.ts` folds every event of `session:<id>` into the store and
-  asks for the replay that fills the transcript. A turn that ended, events the
-  bus dropped, and a socket that reconnected all ask for the same catch-up:
-  one replay from the last entry the transcript holds.
-- `transcript.ts` is the reducer: a pure function from `(state, event)` to
-  state, folding `docs/api/events.md` into renderable items. It knows two
-  sources, the live turn keyed by `run_id` and the stored entries keyed by
-  `entry_id`, and drops the live items of a turn once its entries arrive.
+- `useSessionStream.ts` opens the session topic before it reads the newest
+  50 entries. It reads older pages on request. After a turn, a dropped event,
+  or a reconnect, it reads back to a known entry and merges by entry ID.
+- `transcript.ts` folds live events and stored entries into renderable rows.
+  A result without its call stays hidden until the call's page is loaded.
+  Live rows stay visible until catch-up replaces the completed turn.
 - `cutOffText` in `transcript.ts` turns a `length` or `content_filter` stop
   reason into the line the transcript shows under the answer. The harness
   keeps what a cut-off response produced (`docs/DECISIONS.md`), so without that
@@ -40,22 +44,21 @@ one that holds client state of its own.
 - `ContextMeter.tsx` is what the status bar states about cost. Every number in
   it was measured by the endpoint and arrived in `turn.progress` or
   `turn.end`; assistant entries store the final context measurement, so
-  replay restores the meter. The tooltips state the numbers and leave the
-  explaining to the run panel, whose breakdown also repeats the two rates
-  when the reader has turned them on.
+  replay restores the meter. The tooltips state the numbers.
 - `Speed.tsx` is how fast an answer was produced, under the answer: the
   generation rate, and the prompt rate for an endpoint that measures its own
   (`docs/api/events.md` lists which do). It is off unless the reader turns it
   on in `preferences.ts`.
 - `escape.ts` decides whether an `Esc` belongs to the run or to the dialog,
-  select, palette, or text field on top of it.
+  select, or text field on top of it.
 - `store.ts` is a thin Zustand shell around that reducer. It owns which
-  session is open, which model its next run uses — the status bar sets that
-  and the run panel reads it, so neither can own it — and the composer's
+  session is open, which model its next run uses, and the composer's
   draft and its images, which are here because rewinding a message puts both
-  back in the box and the two components are not each other's parents. `rewound` discards the
-  transcript and asks for the path again: a replay only ever adds, so without
-  it the branch the head just left would stay on screen.
+  back in the box and the two components are not each other's parents. `open` parks the draft, images and model of the session it leaves and restores
+  them on return, so watching a subagent does not clear Chat's unsent message.
+  `rewound` reloads the newest page after a head change. The outline filters
+  entries outside the current branch from loaded pages.
+
 - `RunStatusBar.tsx` is the pane's footer, under the composer: the run's
   state, the model, the reasoning effort (one click cycles through the
   model's own list), the context meter, and the abort.
@@ -79,18 +82,10 @@ one that holds client state of its own.
   `useRewind` is the one a message's rewind calls: it lands the head on the
   entry before the message and then puts the text in the composer, in that
   order, so a refused move leaves nothing in the box.
-- `ToolsPanel.tsx` is a chat's third panel: the profiles feature's `ToolPicker` over the
-  session's own tool choice, with a reset back to its profile's, and the
-  names of the tools a chat never has. `tools.ts` holds the pure parts: what
-  a chat can never offer, and the one-line summary of a description written
-  for the model.
 - `ToolCard.tsx` draws one tool call and delegates to the renderer registry.
 - `renderers/` is that registry: `registry.ts` has the type and the argument
   helpers, `renderers.tsx` maps a tool name to a renderer, `parts.tsx` holds
   the pieces they share. Adding one is in `docs/EXTENDING.md`.
-- `RunPanel.tsx` is a panel `app/panels.tsx` registers. It is where the
-  status bar's meter explains itself: the window, the prompt and the response
-  that fill it, and the turn's cost.
 - `tree.ts` finds where a rewind lands: `rewindTarget` takes the entry before
   a message, and refuses one whose entry is not `resumable`, in the middle of
   a turn, matching the `400` the harness answers.
@@ -107,5 +102,4 @@ title, its outline, its run); the store holds what it is _saying_.
 `npm test -- transcript` folds the scripted event sequences from
 `docs/api/events.md` through the reducer, the meter's arithmetic included. A
 new event type or a new folding rule needs a case there. `npm test -- tree` covers the tree's rows, its
-keyboard movement, and `rewindTarget`. `npm test -- session/tools` covers what a
-chat cannot offer.
+keyboard movement, and `rewindTarget`.

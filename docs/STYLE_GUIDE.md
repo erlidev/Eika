@@ -7,10 +7,11 @@ case, change it here in the same change, with a sentence of reasoning.
 ## 1. General
 
 - **Correctness first.** A change is not done until `make check` passes and
-  the behavior is covered by a test.
-- **Refactors preserve behavior.** Before restructuring untested behavior, add
-  a characterization test. Keep wire shapes, defaults, and visible output
-  unchanged unless the change explicitly calls for it.
+  the behavior that matters has a test. `AGENTS.md`, "Testing", says what
+  matters; most changes need a few tests, and less test code than product code.
+- **Refactors preserve behavior.** Keep wire shapes, defaults, and visible
+  output unchanged unless the change explicitly calls for it. Add a test first
+  only where the restructured behavior is risky and has none.
 - **Small, whole changes.** One change does one thing completely: code,
   tests, docs. No TODOs: finish the work, or list it as deferred in
   `docs/DECISIONS.md`.
@@ -97,16 +98,23 @@ case, change it here in the same change, with a sentence of reasoning.
 
 ### Tests
 
+- What to test, and what not to, is in `AGENTS.md`, "Testing". The rules below
+  are how.
 - Standard `testing` package. No assertion libraries.
-- Table-driven tests with `t.Run` and descriptive case names.
+- Table-driven tests with `t.Run` and descriptive case names, where several
+  cases take different branches. One case is a plain test, not a table.
+- Assert the outcome, not the wording: check an error with `errors.Is` or by
+  its kind, not by its message.
+- Keep setup short. A test that needs a screen of scaffolding is testing at
+  the wrong level, or the helper belongs in a `<pkg>test` package.
 - Test the behavior through the package's public API. Internal tests
   (`package foo`) are for algorithms that are hard to reach otherwise.
 - Fakes over mocks. `provider/providertest` ships a scripted fake provider;
   `executor/local` runs against a temp dir. Do not add a mocking framework.
 - Tests that need Docker use the build tag `//go:build docker` and skip
   with a clear message when the socket is missing. `make check` runs them.
-- A bug fix includes a test that fails without the fix. Name it after the
-  behavior, not the bug number.
+- A fix for a bug that reached a merged branch includes a test that fails
+  without the fix. Name it after the behavior, not the bug number.
 - Keep test files next to the code. Test helpers that are shared across
   packages live in a `<pkg>test` package.
 
@@ -165,6 +173,15 @@ web/src/
   and nothing in `make check`.
 - Accessibility: every interactive element is a `button`, `a`, or input
   with a label. Keyboard navigation works for every panel.
+
+### Touch density
+
+On a coarse pointer, `index.css` raises the type tokens one step and gives
+controls a 44 px minimum target. Keep controls available without hover. Use
+shared tokens and controls so that touch and fine-pointer layouts stay in sync.
+For a small switch or checkbox, expand its hit area without expanding its glyph.
+Do not use hover to reveal a control; ESLint checks common reveal utilities.
+Check new screens with a coarse-pointer Playwright context at phone size.
 
 ### Web UI design
 
@@ -244,8 +261,10 @@ never hand-edited; its look changes only through the tokens.
 
 ### Tests
 
-- Vitest for `lib/` and store logic. Component tests only for non-trivial
-  interaction logic (queues, tree navigation, forms).
+- Vitest for `lib/` and store logic with real edge cases. Component tests only
+  for non-trivial interaction logic (queues, tree navigation, forms), never to
+  check that something renders.
+- One end-to-end spec per user flow, not one per screen state.
 - End-to-end specs live in `web/e2e/` and run against the mock harness there;
   see `web/e2e/README.md`. A spec states its point with locator assertions:
   what is visible, enabled, focused, or described. Add a screenshot baseline
@@ -293,21 +312,31 @@ make obvious.
 
 - Agent actions execute only through `executor` implementations backed by
   a sandbox. `executor/local` is `//go:build !prod` and test-only.
-- The harness holds all credentials (LLM keys, git remote tokens), sealed
-  with `internal/secret` before they reach the database and never returned
-  by the API. Sandboxes receive a per-computer `eikad` token and nothing
-  else.
+- Core holds model keys and third-party credentials. Seal stored secrets with
+  `internal/secret` and never return them from the API. A computer gets its
+  own `eikad` token and proxy identity, and nothing else (the canary is fake).
+- Send untrusted content through Sentry ingest before a model sees it. Ingest
+  removes hidden characters, redacts secrets, screens the text and wraps it as
+  untrusted data.
+- Mark a tool `ReadOnly` only when it has no side effects. A tool that changes
+  state or sends data must not declare `ReadOnly`.
+- Send outbound requests through the guarded clients. They enforce the host
+  blocklist and halt state; new outbound dials must also use `netguard`.
+- Never log or return secret values. Redact them before storage or model use.
+- Keep audit records append-only. Add audit rows through the existing audit
+  store; do not update or delete them.
 - All HTTP handlers require a bearer token except the health checks and the
   sign-in routes that hand one out.
 - Validate and bound every input from an agent or the UI: path traversal in
   file tools, command length, output size, search query length.
-- Never log secrets. Config values named `*_key`, `*_token`, `*_secret` are
-  redacted by the config package's `String()`.
+- Config values named `*_key`, `*_token`, `*_secret` are redacted by the
+  config package's `String()`.
 
 ## 7. Checklist before finishing a change
 
 1. `make check` passes.
-2. New behavior has tests; fixed bugs have regression tests.
+2. Behavior that matters has a test, and the tests are shorter than the code
+   they cover (`AGENTS.md`, "Testing").
 3. Exported identifiers have doc comments; new packages have `doc.go`.
 4. `docs/` updated where affected (ARCHITECTURE, DECISIONS, EXTENDING, api).
 5. No new dependency without justification.

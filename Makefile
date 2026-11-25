@@ -34,7 +34,7 @@ SMOKE_COMPOSE := EIKA_PORT=$(SMOKE_PORT) EIKA_AUTH_TOKEN=$(SMOKE_TOKEN) \
 .PHONY: all build build-go build-web test test-go test-web lint lint-go lint-web \
 	fmt fmt-check check typecheck dev dev-go dev-web local local-down local-logs \
 	sandbox sandbox-test web-install clean visual visual-update shot playwright-browser contract \
-	smoke smoke-down live
+	smoke smoke-down live bench-sentry memory-reindex backup restore restore-test
 
 all: build
 
@@ -64,6 +64,10 @@ sandbox-test:
 	@if docker info >/dev/null 2>&1; then \
 		docker build -q -f sandbox/Dockerfile -t $(SANDBOX_TEST_IMAGE) . >/dev/null; \
 	fi
+
+## bench-sentry: check the 1 ms limit for 64 KiB tool arguments.
+bench-sentry:
+	$(GO) test ./internal/sentry -run '^$$' -bench '^BenchmarkDecide$$' -benchtime=200x -count=1
 
 ## contract: rewrite docs/api/contract.json from the Go wire types, after a
 ## change to one. The mock harness in web/e2e/harness is held to it.
@@ -110,7 +114,7 @@ fmt-check:
 ## first run also downloads Chromium. About a minute in all; while iterating,
 ## run the targets it lists one at a time.
 check: web-install
-	$(MAKE) -j --output-sync=target fmt-check lint-go lint-web test-go typecheck test-web
+	$(MAKE) -j --output-sync=target fmt-check lint-go lint-web test-go typecheck test-web bench-sentry
 	$(MAKE) visual
 
 typecheck: web-install
@@ -137,11 +141,19 @@ shot: web-install
 
 ## smoke: build the whole stack as `make local` does, with a scripted model
 ## (compose.smoke.yaml), and drive it from the guided setup to a shell
-## command run in a sandbox (web/e2e/smoke). It needs Docker and takes a few
+## command run in a sandbox and a memory flow (web/e2e/smoke). It waits for the guard, which runs
+## from its real image. It needs Docker and takes a few
 ## minutes on a first build. The stack is removed afterwards, pass or fail.
 smoke: web-install playwright-browser
 	$(SMOKE_COMPOSE) up -d --build
+	@echo "waiting for the guard"; \
+	for i in $$(seq 1 90); do \
+		[ "$$(docker inspect -f '{{.State.Health.Status}}' $$($(SMOKE_COMPOSE) ps -q guard))" = healthy ] && break; \
+		[ $$i = 90 ] && { echo "the guard did not become healthy"; $(MAKE) smoke-down; exit 1; }; \
+		sleep 2; \
+	done
 	cd $(WEB) && EIKA_SMOKE_URL=http://127.0.0.1:$(SMOKE_PORT) EIKA_SMOKE_TOKEN=$(SMOKE_TOKEN) \
+		EIKA_SMOKE_COMPOSE="$(SMOKE_COMPOSE)" \
 		npx playwright test -c playwright.smoke.config.ts; \
 		status=$$?; cd .. && $(MAKE) smoke-down; exit $$status
 
@@ -158,15 +170,40 @@ smoke-down:
 	fi
 	$(SMOKE_COMPOSE) down -v
 
+## memory-reindex: rebuild the memory index from the files in the memory
+## computer through the memory writer, in the running stack (`make local`).
+## For `make dev`, run the same flag with the dev environment: `go run
+## ./cmd/eika -memory-reindex`. Edits found outside Eika are held pending.
+memory-reindex:
+	$(COMPOSE) exec eika eika -memory-reindex
+
+## backup: write one backup set of the running stack (`make local`) to
+## ./backups: database dump, memory repository, seal key and a manifest. It
+## stops eika while the set is taken and starts it again. See README.md.
+backup:
+	COMPOSE="$(COMPOSE)" deploy/backup.sh
+
+## restore: restore a backup set into a stopped, empty stack (BACKUP=<set
+## directory>). It checks the whole set first and refuses a target that holds
+## data; FORCE=1 overwrites it and is destructive. See README.md.
+restore:
+	COMPOSE="$(COMPOSE)" BACKUP="$(BACKUP)" FORCE="$(FORCE)" deploy/restore.sh
+
+## restore-test: back up and restore a populated throwaway stack (its own
+## compose projects, removed afterwards) and check everything comes back,
+## that bad sets are rejected and that a filled target is refused.
+restore-test:
+	deploy/restore-test.sh
+
 ## live: run the live tests (evals/live) against the real model on the bench
 ## (docs/PLAN.md, "Live test bench"), with no test cache, and write a report
 ## to evals/results. It opens the SSH forward to the model when the endpoint is
 ## on loopback and its port does not answer. With EIKA_LIVE_ENDPOINT unset the
 ## tests skip, saying why; set but silent, they fail. It is never part of
 ## `make check`.
-live:
+live: sandbox-test
 	evals/forward.sh
-	$(GO) test -tags live -count=1 -v -run '^TestScenarios$$' ./evals/live/...
+	EIKA_TEST_SANDBOX_IMAGE=$(SANDBOX_TEST_IMAGE) $(GO) test -tags live -timeout=60m -count=1 -v ./evals/live/...
 
 ## dev: run the harness and the Vite dev server against the compose services.
 dev:

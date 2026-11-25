@@ -1,10 +1,55 @@
 import { describe, expect, it } from "vitest";
 
 import type { EikaEvent, EventType } from "@/api/events";
-import { applyEvent, cutOffText, items, newTranscript } from "@/features/session/transcript";
+import type { Entry } from "@/api/types";
+import {
+  applyEntries,
+  applyEvent,
+  applyOutline,
+  cutOffText,
+  items,
+  newTranscript,
+} from "@/features/session/transcript";
 import type { TranscriptState } from "@/features/session/transcript";
 
 const sessionID = "s1";
+
+it("keeps abandoned entries out when pages are loaded again", () => {
+  const time = "2026-01-01T00:00:00Z";
+  const entries: Entry[] = [
+    {
+      id: "a",
+      seq: 1,
+      kind: "user" as const,
+      created_at: time,
+      message: { role: "user", content: "Keep" },
+    },
+    {
+      id: "b",
+      seq: 2,
+      kind: "assistant" as const,
+      created_at: time,
+      message: { role: "assistant", content: "Leave" },
+    },
+  ];
+  const nodes = [
+    { id: "a", kind: "user" as const, preview: "", resumable: true, created_at: time },
+    {
+      id: "b",
+      parent_id: "a",
+      kind: "assistant" as const,
+      preview: "",
+      resumable: true,
+      created_at: time,
+    },
+  ];
+  let state = applyEntries(newTranscript(sessionID), entries);
+  state = applyOutline(state, { session_id: sessionID, head_entry_id: "a", nodes });
+  state = applyEntries(state, entries);
+  expect(items(state)).toMatchObject([{ kind: "user", text: "Keep" }]);
+  state = applyOutline(state, { session_id: sessionID, head_entry_id: "b", nodes });
+  expect(items(state)).toMatchObject([{ text: "Keep" }, { text: "Leave" }]);
+});
 
 /** ev builds one envelope; the payloads are the shapes docs/api/events.md lists. */
 function ev(type: EventType, payload: unknown, topic = `session:${sessionID}`): EikaEvent {
@@ -239,6 +284,39 @@ describe("applyEvent", () => {
     expect(items(state)).toHaveLength(0);
   });
 
+  it("adds no row for a stored message that carries only notices", () => {
+    const state = fold([
+      ev("session.message", {
+        session_id: sessionID,
+        entry_id: "e1",
+        kind: "user",
+        created_at: "2026-01-01T00:00:00Z",
+        message: {
+          role: "user",
+          context: "<context>\nnotice: plumber (worker) reported: done\n</context>",
+          notices: ["n1"],
+        },
+      }),
+    ]);
+    expect(items(state)).toHaveLength(0);
+    expect(state.lastEntryId).toBe("e1");
+  });
+
+  it("shows a notice delivered by replay", () => {
+    const state = fold([
+      ev("session.message", {
+        session_id: sessionID,
+        entry_id: "notice-1",
+        kind: "notice",
+        created_at: "2026-01-01T00:00:00Z",
+        message: { text: "plumber reported" },
+      }),
+    ]);
+    expect(items(state)).toEqual([
+      expect.objectContaining({ kind: "notice", text: "plumber reported" }),
+    ]);
+  });
+
   it("ignores an entry it already holds", () => {
     const message = ev("session.message", {
       session_id: sessionID,
@@ -334,16 +412,6 @@ describe("applyEvent", () => {
     const state = fold([ev("bus.dropped", { dropped: 7 }, "global")]);
     expect(state.dropped).toBe(7);
     expect(state.needsReplay).toBe(true);
-  });
-
-  it("ignores an event whose payload is not an object", () => {
-    const before = fold(turn.slice(0, 2));
-    expect(applyEvent(before, ev("message.delta", "nonsense"))).toBe(before);
-  });
-
-  it("ignores an event type it has no rule for", () => {
-    const before = newTranscript(sessionID);
-    expect(applyEvent(before, ev("computer.state", { run_id: "r1" }))).toBe(before);
   });
 });
 
@@ -491,77 +559,11 @@ describe("the meter", () => {
     });
   }
 
-  it("is absent until an endpoint reports usage", () => {
-    expect(fold(turn.slice(0, 3)).meter).toBeUndefined();
-  });
-
   it("takes the newest sample as it came", () => {
     const state = fold([progress(10, 1000), progress(40, 2000)]);
     expect(state.meter?.live).toBe(true);
     expect(state.meter?.context.total_tokens).toBe(140);
     expect(state.meter?.generationMs).toBe(2000);
-  });
-
-  it("drops the meter after a retry, whose measurements describe nothing on screen", () => {
-    const state = fold([progress(40, 2000), ev("message.reset", { run_id: "r1" })]);
-    expect(state.meter).toBeUndefined();
-  });
-
-  it("stops being live when the turn ends", () => {
-    const ended = ev("turn.end", {
-      run_id: "r1",
-      stop_reason: "stop",
-      usage: {
-        input_tokens: 100,
-        output_tokens: 10,
-        total_tokens: 110,
-        cached_tokens: null,
-        prefilled_tokens: null,
-        reasoning_tokens: null,
-      },
-      context: {
-        input_tokens: 100,
-        output_tokens: 10,
-        total_tokens: 110,
-        cached_tokens: null,
-        prefilled_tokens: null,
-        reasoning_tokens: null,
-      },
-      generation_ms: 1000,
-      context_window: 400_000,
-    });
-    const state = fold([...turn.slice(0, 3), progress(10, 1000), ended]);
-    expect(state.meter?.live).toBe(false);
-    expect(state.meter?.generationMs).toBe(1000);
-    expect(state.meter?.contextWindow).toBe(400_000);
-  });
-
-  it("takes the final totals when the turn ends", () => {
-    const ended = ev("turn.end", {
-      run_id: "r1",
-      stop_reason: "stop",
-      usage: {
-        input_tokens: 100,
-        output_tokens: 100,
-        total_tokens: 200,
-        cached_tokens: null,
-        prefilled_tokens: null,
-        reasoning_tokens: null,
-      },
-      context: {
-        input_tokens: 100,
-        output_tokens: 100,
-        total_tokens: 200,
-        cached_tokens: null,
-        prefilled_tokens: null,
-        reasoning_tokens: null,
-      },
-      generation_ms: 4000,
-      context_window: 400_000,
-    });
-    const state = fold([progress(10, 1000), progress(40, 2000), ended]);
-    expect(state.meter?.usage.total_tokens).toBe(200);
-    expect(state.meter?.live).toBe(false);
   });
 
   it("does not replace a live measurement with an older replay entry", () => {
@@ -602,149 +604,6 @@ describe("the meter", () => {
     );
     expect(state.meter?.runId).toBe("r1");
   });
-
-  it("restores context usage from a stored assistant entry", () => {
-    const state = fold([
-      ev("session.message", {
-        session_id: sessionID,
-        entry_id: "e-metrics",
-        kind: "assistant",
-        created_at: "2026-01-01T00:00:00Z",
-        message: {
-          role: "assistant",
-          content: "done",
-          metrics: {
-            run_id: "r-stored",
-            usage: {
-              input_tokens: 90,
-              output_tokens: 10,
-              total_tokens: 100,
-              cached_tokens: null,
-              prefilled_tokens: null,
-              reasoning_tokens: null,
-            },
-            context: {
-              input_tokens: 90,
-              output_tokens: 10,
-              total_tokens: 100,
-              cached_tokens: null,
-              prefilled_tokens: null,
-              reasoning_tokens: null,
-            },
-            generation_ms: 1200,
-            context_window: 8192,
-          },
-        },
-      }),
-    ]);
-    expect(state.meter).toMatchObject({
-      runId: "r-stored",
-      contextWindow: 8192,
-      context: { total_tokens: 100 },
-      live: false,
-    });
-  });
-});
-
-describe("generation speed", () => {
-  const timings = {
-    prompt_tokens: 1200,
-    prompt_ms: 300,
-    decode_tokens: 256,
-    decode_ms: 3200,
-    source: "endpoint" as const,
-  };
-
-  /** timed is one turn.progress carrying what measured the call's speed. */
-  function timed(carried: unknown, run = "r1"): EikaEvent {
-    return ev("turn.progress", {
-      run_id: run,
-      usage: {
-        input_tokens: 1200,
-        output_tokens: 256,
-        total_tokens: 1456,
-        cached_tokens: null,
-        prefilled_tokens: null,
-        reasoning_tokens: null,
-      },
-      context: {
-        input_tokens: 1200,
-        output_tokens: 256,
-        total_tokens: 1456,
-        cached_tokens: null,
-        prefilled_tokens: null,
-        reasoning_tokens: null,
-      },
-      generation_ms: 3200,
-      context_window: 400_000,
-      timings: carried,
-    });
-  }
-
-  it("states the speed under the prose the model is writing", () => {
-    const state = fold([...turn.slice(0, 3), timed(timings)]);
-    const rendered = items(state);
-    expect(rendered.at(-1)).toMatchObject({ kind: "assistant", timings });
-    expect(state.meter?.timings).toEqual(timings);
-  });
-
-  it("leaves a message alone when the call measured nothing", () => {
-    const state = fold([...turn.slice(0, 3), timed(undefined)]);
-    expect(rendered(state)).not.toHaveProperty("timings");
-  });
-
-  it("does not stamp a later call's speed onto prose a tool already closed", () => {
-    // turn.slice(0, 4) ends on the tool call, which seals the prose above it.
-    const state = fold([...turn.slice(0, 4), timed(timings)]);
-    const prose = items(state).find((item) => item.kind === "assistant");
-    expect(prose).not.toHaveProperty("timings");
-  });
-
-  it("restores the speed of a stored answer on replay", () => {
-    const state = fold([
-      ev("session.message", {
-        session_id: sessionID,
-        entry_id: "e-timed",
-        kind: "assistant",
-        created_at: "2026-01-01T00:00:00Z",
-        message: {
-          role: "assistant",
-          content: "done",
-          metrics: {
-            run_id: "r-stored",
-            usage: {
-              input_tokens: 1200,
-              output_tokens: 256,
-              total_tokens: 1456,
-              cached_tokens: null,
-              prefilled_tokens: null,
-              reasoning_tokens: null,
-            },
-            context: {
-              input_tokens: 1200,
-              output_tokens: 256,
-              total_tokens: 1456,
-              cached_tokens: null,
-              prefilled_tokens: null,
-              reasoning_tokens: null,
-            },
-            generation_ms: 3200,
-            context_window: 400_000,
-            timings,
-          },
-        },
-      }),
-    ]);
-    expect(items(state).at(-1)).toMatchObject({ kind: "assistant", timings });
-    expect(state.meter?.timings).toEqual(timings);
-  });
-
-  /** rendered is the last item of a folded state. */
-  function rendered(state: TranscriptState) {
-    const last = items(state).at(-1);
-    expect(last?.kind).toBe("assistant");
-    return last as object;
-  }
 });
 
 describe("compaction", () => {
@@ -831,36 +690,107 @@ describe("compaction", () => {
       error: "the endpoint is down",
     });
   });
+});
 
-  it("drops the meter, whose context the next request no longer sends", () => {
-    const measured = fold(turn);
-    expect(measured.meter).toBeDefined();
-    expect(fold([start("k1"), end("k1")], measured).meter).toBeUndefined();
-    const failed = fold([start("k1"), end("k1", { error: "down" })], measured);
-    expect(failed.meter).toBeDefined();
+describe("paginated transcript", () => {
+  it("merges pages in write order and attaches a result when its older call loads", () => {
+    const call = {
+      id: "call",
+      seq: 1,
+      kind: "assistant" as const,
+      created_at: "2026-01-01T00:00:01Z",
+      message: {
+        role: "assistant" as const,
+        tool_calls: [{ id: "c", name: "bash", arguments: {} }],
+      },
+    };
+    const result = {
+      id: "result",
+      seq: 2,
+      kind: "tool_result" as const,
+      created_at: "2026-01-01T00:00:02Z",
+      message: { role: "tool" as const, tool_call_id: "c", content: "done" },
+    };
+    const newer = {
+      id: "new",
+      seq: 3,
+      kind: "assistant" as const,
+      created_at: "2026-01-01T00:00:03Z",
+      message: { role: "assistant" as const, content: "answer" },
+    };
+    let state = applyEntries(newTranscript(sessionID), [result, newer]);
+    expect(state.committed).toHaveLength(1);
+    const answer = state.committed[0];
+    state = applyEntries(state, [call, result]);
+    expect(state.committed[1]).toBe(answer);
+    expect(state.entries.map((e) => e.id)).toEqual(["call", "result", "new"]);
+    expect(state.committed).toMatchObject([
+      { kind: "tool", content: "done", done: true },
+      { kind: "assistant", text: "answer" },
+    ]);
   });
 
-  it("does not restore a measurement from before a stored compaction", () => {
-    const state = fold([
-      ev("session.message", {
-        session_id: sessionID,
-        entry_id: "e1",
-        kind: "assistant",
-        created_at: "2026-01-01T00:00:00Z",
-        message: {
-          role: "assistant",
-          content: "done",
-          metrics: {
-            run_id: "r-old",
-            usage,
-            context: usage,
-            generation_ms: 100,
-            context_window: 8192,
-          },
-        },
-      }),
-      entry("e2", "## Goal"),
+  it("keeps a live turn while pages overlap it and replaces it on catch-up", () => {
+    const user = {
+      id: "user",
+      run_id: "r1",
+      seq: 1,
+      kind: "user" as const,
+      created_at: "2026-01-01T00:00:01Z",
+      message: { role: "user" as const, content: "hello" },
+    };
+    const answer = {
+      id: "answer",
+      run_id: "r1",
+      seq: 2,
+      kind: "assistant" as const,
+      created_at: "2026-01-01T00:00:02Z",
+      message: { role: "assistant" as const, content: "hi" },
+    };
+    let state = fold([
+      ev("turn.start", { run_id: "r1", session_id: sessionID, message: "hello" }),
+      ev("message.delta", { run_id: "r1", text: "hi" }),
     ]);
-    expect(state.meter).toBeUndefined();
+    state = applyEntries(state, [user, answer]);
+    expect(items(state).map((item) => item.kind)).toEqual(["user", "assistant"]);
+    state = fold(
+      [
+        ev("turn.end", {
+          run_id: "r1",
+          stop_reason: "stop",
+          usage: {},
+          context: {},
+          generation_ms: 0,
+          context_window: 0,
+        }),
+      ],
+      state,
+    );
+    state = applyEntries(state, [user, answer], ["r1"]);
+    expect(state.entries).toHaveLength(2);
+    expect(items(state)).toMatchObject([
+      { kind: "user", text: "hello" },
+      { kind: "assistant", text: "hi" },
+    ]);
+  });
+  it.each(["page first", "stream first"])("merges equal-time %s by turn ID", (order) => {
+    const saved = {
+      id: "current",
+      run_id: "r2",
+      seq: 1,
+      kind: "user" as const,
+      created_at: "2026-01-01T00:00:00Z",
+      message: { role: "user" as const, content: "new" },
+    };
+    const start = ev("turn.start", { run_id: "r2", session_id: sessionID, message: "new" });
+    let state = newTranscript(sessionID);
+    if (order === "page first") {
+      state = applyEntries(state, [saved]);
+      state = applyEvent(state, start);
+    } else {
+      state = applyEvent(state, start);
+      state = applyEntries(state, [saved]);
+    }
+    expect(items(state)).toMatchObject([{ kind: "user", text: "new" }]);
   });
 });

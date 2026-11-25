@@ -20,7 +20,7 @@ import (
 var modelCallers = map[string]string{
 	"internal/provider/complete.go": "Complete is the helper its callers hold a lease around",
 	"internal/agent/response.go":    "stream takes the run's lease for each attempt",
-	"internal/provider/probe/responses.go": "the conformance check takes a lease for each of its two requests " +
+	"internal/provider/probe/check.go": "the conformance and slot affinity checks take a lease for each of their requests " +
 		"(Queue.Do), at maintenance or interactive priority",
 	"internal/utility/title.go": "Title runs inside the lease the server takes for the title task",
 	"internal/server/models.go": "the model test runs inside a lease at interactive priority",

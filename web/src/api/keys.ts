@@ -5,44 +5,53 @@
 
 /** queryKeys names the cached server state, one entry per route. */
 export const queryKeys = {
-  /** chats sits under the sessions prefix, so invalidating sessions refreshes it. */
-  chats: () => ["sessions", "chats"] as const,
-  /** computerSessions sits under the sessions prefix too, for the same reason. */
-  computerSessions: (computerId: string) => ["sessions", "computer", computerId] as const,
-  /** computers is the list of computers, of which the sidebar reads the home one. */
+  /** allSessions is every session, which Activity reads the subagents of; it sits under the sessions prefix too. */
+  allSessions: () => ["sessions", "all"] as const,
+  /** computers is the list of computers, of which the session view reads the home one. */
   computers: () => ["computers"] as const,
+  /** home is the one home session, the conversation Chat shows. */
+  home: () => ["home"] as const,
   session: (id: string) => ["session", id] as const,
   sessionOutline: (id: string) => ["session", id, "outline"] as const,
   runStatus: (sessionId: string) => ["session", sessionId, "run"] as const,
-  /** sessionConfiguration without a draft is the saved one and the prefix of every draft's. */
-  sessionConfiguration: (id: string, draft?: { profileId?: string; modelId?: string }) =>
-    draft === undefined
-      ? (["session", id, "configuration"] as const)
-      : (["session", id, "configuration", draft.profileId ?? null, draft.modelId ?? null] as const),
-  /** sessionContext without a model is the prefix of every preview of the session. */
-  sessionContext: (id: string, model?: string) =>
-    model === undefined
-      ? (["session", id, "context"] as const)
-      : (["session", id, "context", model] as const),
+  /** sessionContext is the prefix of what the session's next request is expected to be. */
+  sessionContext: (id: string) => ["session", id, "context"] as const,
   /**
    * sessionPrediction sits under the context prefix, so whatever invalidates the
-   * previews of a session (a turn that ends, a compaction, a change of tools)
-   * invalidates its prediction too.
+   * session's context (a turn that ends, a compaction) invalidates its
+   * prediction too.
    */
   sessionPrediction: (id: string, model: string) =>
     ["session", id, "context", "prediction", model] as const,
-  /** sessionCalls is the prefix of the session's recorded model calls and each one. */
-  sessionCalls: (id: string) => ["session", id, "calls"] as const,
-  sessionCall: (id: string, callId: string) => ["session", id, "calls", callId] as const,
-  profiles: () => ["profiles"] as const,
-  /** profileInherited sits under the profiles prefix, so a profile change refreshes it. */
-  profileInherited: (modelId: string) => ["profiles", "inherited", modelId] as const,
+  /** projects is the list of projects, which name what a subagent works on. */
+  projects: () => ["projects"] as const,
+  projectInstructions: (id: string) => ["project", id, "instructions"] as const,
+  /** agents is the built-in agents with the user's overrides. */
+  agents: () => ["agents"] as const,
+  /** instructions is the user's global About me and rules. */
+  instructions: () => ["instructions"] as const,
   settings: () => ["settings"] as const,
+  /** halt is whether Eika is halted. */
+  halt: () => ["halt"] as const,
+  guard: () => ["guard"] as const,
+  blockedHosts: () => ["blocked-hosts"] as const,
+  trustedSources: () => ["trusted-sources"] as const,
+  /** withheld is the list of removals, newest first, paged. */
+  withheld: () => ["withheld"] as const,
+  /** memories without arguments is the prefix of every memory query. */
+  memories: () => ["memories"] as const,
+  memory: (name: string) => ["memories", name] as const,
+  /** inbox is the prefix of the Inbox queries: its count and its pending list. */
+  inbox: () => ["inbox"] as const,
+  inboxCount: () => ["inbox", "count"] as const,
+  inboxList: () => ["inbox", "list"] as const,
+  /** skills without arguments is the prefix of every skills query. */
+  skills: () => ["skills"] as const,
+  skill: (name: string) => ["skills", name] as const,
   models: () => ["models"] as const,
   providers: () => ["providers"] as const,
   system: () => ["system"] as const,
   searchStatus: () => ["search", "status"] as const,
-  tools: () => ["tools"] as const,
   /** mcpServers without an id is the prefix of every MCP server query. */
   mcpServers: () => ["mcp"] as const,
   mcpServer: (id: string) => ["mcp", id] as const,

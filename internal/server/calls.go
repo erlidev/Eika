@@ -65,7 +65,7 @@ type modelCallBody struct {
 	// was resolved from and Priority what the call asked for: interactive,
 	// foreground, background or maintenance. They are null or absent for a
 	// call recorded before the queue existed, and Class for a run that named
-	// its model. Agent is null until the agents fill it.
+	// its model. Agent is absent for a legacy profile session.
 	QueueMS  *int   `json:"queue_ms"`
 	Slot     *int   `json:"slot"`
 	Class    string `json:"class,omitempty"`
@@ -205,6 +205,7 @@ func (c callRecorder) Record(ctx context.Context, call agent.ModelCall) error {
 		QueueMS:               queueMS(call.Queue),
 		Slot:                  slotOf(call.Queue),
 		Class:                 call.Queue.Class,
+		Agent:                 sess.Agent,
 		Priority:              call.Queue.Priority,
 		PrefillMS:             prefillMS(call.Timings),
 		DecodeMS:              decodeMS(call.Timings),

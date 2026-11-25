@@ -7,13 +7,14 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"reflect"
-	"slices"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/erlidev/eika/internal/store"
 	"github.com/erlidev/eika/internal/store/storetest"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func TestMain(m *testing.M) {
@@ -60,185 +61,6 @@ func TestTablesLiveInSchemaCore(t *testing.T) {
 	}
 }
 
-func TestComputersAndSessions(t *testing.T) {
-	st := storetest.Open(t)
-	ctx := t.Context()
-
-	cx, err := st.CreateComputer(ctx, store.Computer{
-		Name: "fix-build", Image: "eika-sandbox:latest", State: "creating",
-	})
-	if err != nil {
-		t.Fatalf("create computer: %v", err)
-	}
-	if err := st.SetComputerState(ctx, cx.ID, "running", "container-1"); err != nil {
-		t.Fatalf("set computer state: %v", err)
-	}
-	got, err := st.Computer(ctx, cx.ID)
-	if err != nil {
-		t.Fatalf("read computer: %v", err)
-	}
-	if got.State != "running" || got.ContainerID != "container-1" {
-		t.Errorf("computer = %+v, want running container-1", got)
-	}
-	if err := st.SetComputerState(ctx, cx.ID, "stopped", ""); err != nil {
-		t.Fatalf("set computer state: %v", err)
-	}
-	if got, err = st.Computer(ctx, cx.ID); err != nil || got.ContainerID != "container-1" {
-		t.Errorf("empty container id overwrote the recorded one: %+v, %v", got, err)
-	}
-	if !reflect.DeepEqual(got.Sandbox, store.ComputerSandbox{}) {
-		t.Errorf("a new computer's sandbox = %+v, want none of its fields set", got.Sandbox)
-	}
-	sandbox := store.ComputerSandbox{
-		CPUs: 1.5, MemoryMB: 2048, PIDs: 512, Egress: "allowlist",
-		Allow: []string{"github.com"},
-	}
-	if got, err = st.SetComputerSandbox(ctx, cx.ID, sandbox); err != nil || !reflect.DeepEqual(got.Sandbox, sandbox) {
-		t.Errorf("SetComputerSandbox = %+v, %v; want the sandbox back", got.Sandbox, err)
-	}
-	if got, err = st.Computer(ctx, cx.ID); err != nil || !reflect.DeepEqual(got.Sandbox, sandbox) {
-		t.Errorf("computer sandbox = %+v, %v; want what was set", got.Sandbox, err)
-	}
-	if _, err := st.SetComputerSandbox(ctx, "missing", sandbox); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("SetComputerSandbox on a missing computer = %v, want ErrNotFound", err)
-	}
-
-	sess, err := st.CreateSession(ctx, store.Session{ComputerID: cx.ID, Title: "first"})
-	if err != nil {
-		t.Fatalf("create session: %v", err)
-	}
-	renamed := "renamed"
-	if _, err := st.UpdateSession(ctx, sess.ID, store.SessionChanges{Title: &renamed}); err != nil {
-		t.Fatalf("rename session: %v", err)
-	}
-	sessions, err := st.Sessions(ctx, cx.ID)
-	if err != nil || len(sessions) != 1 || sessions[0].Title != "renamed" {
-		t.Fatalf("Sessions = %+v, %v", sessions, err)
-	}
-	if sessions[0].Kind != store.SessionUser {
-		t.Errorf("kind = %q, want %q", sessions[0].Kind, store.SessionUser)
-	}
-}
-
-// A chat is a session with no computer. It is listed apart from every
-// computer's sessions, and keeps the tools the user chose.
-func TestChatsHaveNoComputerAndKeepTheirTools(t *testing.T) {
-	st := storetest.Open(t)
-	ctx := t.Context()
-
-	cx, err := st.CreateComputer(ctx, store.Computer{
-		Name: "main", State: "running",
-	})
-	if err != nil {
-		t.Fatalf("create computer: %v", err)
-	}
-	if _, err := st.CreateSession(ctx, store.Session{ComputerID: cx.ID, Title: "work"}); err != nil {
-		t.Fatalf("create session: %v", err)
-	}
-	chat, err := st.CreateSession(ctx, store.Session{Title: "question"})
-	if err != nil {
-		t.Fatalf("create chat: %v", err)
-	}
-	if !chat.Chat() || chat.ComputerID != "" {
-		t.Errorf("chat = %+v, want no computer", chat)
-	}
-	if chat.Tools != nil {
-		t.Errorf("new chat tools = %#v, want nil for every tool", chat.Tools)
-	}
-
-	if err := st.SetSessionTools(ctx, chat.ID, []string{"web_search"}); err != nil {
-		t.Fatalf("set tools: %v", err)
-	}
-	if got, err := st.Session(ctx, chat.ID); err != nil || len(got.Tools) != 1 || got.Tools[0] != "web_search" {
-		t.Errorf("chat = %+v, %v; want web_search kept", got, err)
-	}
-
-	chats, err := st.Chats(ctx)
-	if err != nil {
-		t.Fatalf("Chats: %v", err)
-	}
-	if len(chats) != 1 || chats[0].ID != chat.ID {
-		t.Fatalf("Chats = %+v, want the chat alone", chats)
-	}
-	if all, err := st.Sessions(ctx, ""); err != nil || len(all) != 2 {
-		t.Errorf("every session = %d rows, %v; want 2", len(all), err)
-	}
-
-	// An empty list is no tools, which is not the same as every tool.
-	if err := st.SetSessionTools(ctx, chat.ID, []string{}); err != nil {
-		t.Fatalf("clear tools: %v", err)
-	}
-	if got, err := st.Session(ctx, chat.ID); err != nil || got.Tools == nil || len(got.Tools) != 0 {
-		t.Errorf("tools after clearing = %#v, %v; want empty, not nil", got.Tools, err)
-	}
-	if err := st.SetSessionTools(ctx, chat.ID, nil); err != nil {
-		t.Fatalf("restore tools: %v", err)
-	}
-	if got, err := st.Session(ctx, chat.ID); err != nil || got.Tools != nil {
-		t.Errorf("tools after restoring = %#v, %v; want nil", got.Tools, err)
-	}
-	if err := st.SetSessionTools(ctx, "missing", nil); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("SetSessionTools on a missing session = %v, want ErrNotFound", err)
-	}
-}
-
-func TestRunsAndSettings(t *testing.T) {
-	st := storetest.Open(t)
-	ctx := t.Context()
-
-	cx, err := st.CreateComputer(ctx, store.Computer{
-		Name: "parent", State: "running",
-	})
-	if err != nil {
-		t.Fatalf("create computer: %v", err)
-	}
-	parent, err := st.CreateSession(ctx, store.Session{ComputerID: cx.ID})
-	if err != nil {
-		t.Fatalf("create session: %v", err)
-	}
-
-	run, err := st.StartRun(ctx, parent.ID)
-	if err != nil {
-		t.Fatalf("start run: %v", err)
-	}
-	if run.State != store.RunRunning || !run.FinishedAt.IsZero() {
-		t.Errorf("run = %+v, want a running run without a finish time", run)
-	}
-	if err := st.FinishRun(ctx, run.ID, store.RunError, "provider refused"); err != nil {
-		t.Fatalf("finish run: %v", err)
-	}
-	finished, err := st.Run(ctx, run.ID)
-	if err != nil {
-		t.Fatalf("read run: %v", err)
-	}
-	if finished.State != store.RunError || finished.Error != "provider refused" || finished.FinishedAt.IsZero() {
-		t.Errorf("run = %+v, want a failed run with a finish time", finished)
-	}
-	if runs, err := st.Runs(ctx, parent.ID); err != nil || len(runs) != 1 {
-		t.Fatalf("Runs = %d rows, %v; want 1", len(runs), err)
-	}
-
-	if err := st.SetSetting(ctx, "model", json.RawMessage(`{"name":"gpt-5"}`)); err != nil {
-		t.Fatalf("write setting: %v", err)
-	}
-	if err := st.SetSetting(ctx, "model", json.RawMessage(`{"name":"gpt-5-mini"}`)); err != nil {
-		t.Fatalf("overwrite setting: %v", err)
-	}
-	set, err := st.Setting(ctx, "model")
-	if err != nil {
-		t.Fatalf("read setting: %v", err)
-	}
-	var value struct {
-		Name string `json:"name"`
-	}
-	if err := json.Unmarshal(set.Value, &value); err != nil || value.Name != "gpt-5-mini" {
-		t.Fatalf("setting = %s, %v; want the second write", set.Value, err)
-	}
-	if all, err := st.Settings(ctx); err != nil || len(all) != 1 {
-		t.Fatalf("Settings = %+v, %v; want one row", all, err)
-	}
-}
-
 func TestSetSettingsWritesAllOrNothing(t *testing.T) {
 	st := storetest.Open(t)
 	ctx := t.Context()
@@ -275,7 +97,7 @@ func TestAbortRunningRunsClosesRowsFromAnEarlierProcess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create computer: %v", err)
 	}
-	sess, err := st.CreateSession(ctx, store.Session{ComputerID: cx.ID})
+	sess, err := st.CreateSession(ctx, store.Session{Kind: store.SessionRoutine, Agent: "eika", Name: "test", ComputerID: cx.ID})
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
@@ -299,49 +121,6 @@ func TestAbortRunningRunsClosesRowsFromAnEarlierProcess(t *testing.T) {
 	}
 }
 
-func TestErrNotFound(t *testing.T) {
-	st := storetest.Open(t)
-	ctx := t.Context()
-
-	cx, err := st.CreateComputer(ctx, store.Computer{
-		Name: "w", State: "running",
-	})
-	if err != nil {
-		t.Fatalf("create computer: %v", err)
-	}
-	sess, err := st.CreateSession(ctx, store.Session{ComputerID: cx.ID})
-	if err != nil {
-		t.Fatalf("create session: %v", err)
-	}
-
-	missing := store.NewID()
-	cases := map[string]error{
-		"computer":   errOf(func() error { _, err := st.Computer(ctx, missing); return err }),
-		"session":    errOf(func() error { _, err := st.Session(ctx, missing); return err }),
-		"entry":      errOf(func() error { _, err := st.Entry(ctx, missing); return err }),
-		"run":        errOf(func() error { _, err := st.Run(ctx, missing); return err }),
-		"setting":    errOf(func() error { _, err := st.Setting(ctx, missing); return err }),
-		"append":     errOf(func() error { _, err := st.AppendEntry(ctx, missing, store.Entry{Kind: store.KindUser}); return err }),
-		"set head":   st.SetSessionHead(ctx, sess.ID, missing),
-		"finish run": st.FinishRun(ctx, missing, store.RunDone, ""),
-		"update session": errOf(func() error {
-			_, err := st.UpdateSession(ctx, missing, store.SessionChanges{})
-			return err
-		}),
-		"set computer state": st.SetComputerState(ctx, missing, "running", ""),
-		"set computer sandbox": errOf(func() error {
-			_, err := st.SetComputerSandbox(ctx, missing, store.ComputerSandbox{})
-			return err
-		}),
-		"home computer": errOf(func() error { _, err := st.HomeComputer(ctx); return err }),
-	}
-	for name, err := range cases {
-		if !errors.Is(err, store.ErrNotFound) {
-			t.Errorf("%s: err = %v, want ErrNotFound", name, err)
-		}
-	}
-}
-
 func TestSetSessionHeadIsGuarded(t *testing.T) {
 	st := storetest.Open(t)
 	ctx := t.Context()
@@ -352,7 +131,7 @@ func TestSetSessionHeadIsGuarded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create computer: %v", err)
 	}
-	sess, err := st.CreateSession(ctx, store.Session{ComputerID: cx.ID})
+	sess, err := st.CreateSession(ctx, store.Session{Kind: store.SessionRoutine, Agent: "eika", Name: "test", ComputerID: cx.ID})
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
@@ -377,6 +156,14 @@ func TestSetSessionHeadIsGuarded(t *testing.T) {
 		t.Fatalf("restore head: %v", err)
 	}
 
+	// The head of a session never points at another session's entry.
+	other, err := st.CreateSession(ctx, store.Session{Kind: store.SessionRoutine, Agent: "eika", Name: "test", Title: "another"})
+	if err != nil {
+		t.Fatalf("create second session: %v", err)
+	}
+	if err := st.SetSessionHead(ctx, other.ID, entry.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("set head to another session's entry = %v, want ErrNotFound", err)
+	}
 	if err := st.SetSessionHead(ctx, store.NewID(), entry.ID); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("set head of a missing session = %v, want ErrNotFound", err)
 	}
@@ -385,8 +172,37 @@ func TestSetSessionHeadIsGuarded(t *testing.T) {
 	}
 }
 
-// errOf runs a call that only fails or does not, so that a table can hold it.
-func errOf(call func() error) error { return call() }
+// Every append takes the session row lock, so concurrent writers leave one
+// chain with dense sequence numbers, whatever order they ran in.
+func TestConcurrentAppendsKeepOneChain(t *testing.T) {
+	st := storetest.Open(t)
+	ctx := t.Context()
+	sess, err := st.CreateSession(ctx, store.Session{Kind: store.SessionRoutine, Agent: "eika", Name: "test", Title: "busy"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const writers = 20
+	var wg sync.WaitGroup
+	for range writers {
+		wg.Go(func() {
+			if _, err := st.AppendEntry(ctx, sess.ID, store.Entry{Kind: store.KindUser, Payload: json.RawMessage(`{"content":"x"}`)}); err != nil {
+				t.Errorf("concurrent append: %v", err)
+			}
+		})
+	}
+	wg.Wait()
+	path, err := st.SessionPath(ctx, sess.ID)
+	if err != nil || len(path) != writers {
+		t.Fatalf("SessionPath = %d entries, %v; want one chain of %d", len(path), err, writers)
+	}
+	parent := ""
+	for i, e := range path {
+		if e.Seq != int64(i+1) || e.ParentID != parent {
+			t.Errorf("entry %d: seq %d parent %q, want %d %q", i, e.Seq, e.ParentID, i+1, parent)
+		}
+		parent = e.ID
+	}
+}
 
 // A title made in the background goes only to a session that is still
 // untitled.
@@ -394,14 +210,14 @@ func TestUntitledSessions(t *testing.T) {
 	st := storetest.Open(t)
 	ctx := t.Context()
 
-	untitled, err := st.CreateSession(ctx, store.Session{Title: "New chat", Untitled: true})
+	untitled, err := st.CreateSession(ctx, store.Session{Kind: store.SessionRoutine, Agent: "eika", Name: "test", Title: "New chat", Untitled: true})
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
 	if !untitled.Untitled {
 		t.Fatalf("session = %+v, want untitled", untitled)
 	}
-	renamed, err := st.CreateSession(ctx, store.Session{Title: "New chat", Untitled: true})
+	renamed, err := st.CreateSession(ctx, store.Session{Kind: store.SessionRoutine, Agent: "eika", Name: "test", Title: "New chat", Untitled: true})
 	if err != nil {
 		t.Fatalf("create second session: %v", err)
 	}
@@ -442,7 +258,7 @@ func TestUpdatesChangeOnlyTheFieldsTheyName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create computer: %v", err)
 	}
-	sess, err := st.CreateSession(ctx, store.Session{ComputerID: cx.ID, Title: "New session", Untitled: true})
+	sess, err := st.CreateSession(ctx, store.Session{Kind: store.SessionRoutine, Agent: "eika", Name: "test", ComputerID: cx.ID, Title: "New session", Untitled: true})
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
@@ -466,99 +282,64 @@ func TestUpdatesChangeOnlyTheFieldsTheyName(t *testing.T) {
 	}
 }
 
-func TestComputersListInOrderOfCreation(t *testing.T) {
-	st := storetest.Open(t)
-	ctx := t.Context()
-	if got, err := st.Computers(ctx); err != nil || len(got) != 0 {
-		t.Fatalf("Computers of a new database = %+v, %v; want none", got, err)
-	}
-	var want []string
-	for _, name := range []string{"first", "second", "third"} {
-		cx, err := st.CreateComputer(ctx, store.Computer{Name: name, State: "running"})
-		if err != nil {
-			t.Fatalf("create computer %s: %v", name, err)
-		}
-		want = append(want, cx.ID)
-	}
-	got, err := st.Computers(ctx)
-	if err != nil {
-		t.Fatalf("Computers: %v", err)
-	}
-	var ids []string
-	for _, cx := range got {
-		ids = append(ids, cx.ID)
-	}
-	if !slices.Equal(ids, want) {
-		t.Errorf("Computers = %v, want %v", ids, want)
-	}
-}
-
-func TestDeletingAComputerDeletesItsSessions(t *testing.T) {
+// upgradeFrom builds a database as migration last left it, with the
+// migrations up to it recorded, runs setup on it, and opens the store over it,
+// which applies every migration after. The connection stays open for checks
+// the store has no call for.
+func upgradeFrom(t *testing.T, last string, setup ...string) (*store.Store, *pgx.Conn) {
+	t.Helper()
 	ctx := t.Context()
 	databaseURL := storetest.URL(t)
-	st, err := store.Open(ctx, databaseURL)
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	defer st.Close()
-	cx, err := st.CreateComputer(ctx, store.Computer{Name: "doomed", State: "running"})
-	if err != nil {
-		t.Fatalf("create computer: %v", err)
-	}
-	sess, err := st.CreateSession(ctx, store.Session{ComputerID: cx.ID, Title: "in it"})
-	if err != nil {
-		t.Fatalf("create session: %v", err)
-	}
-	// The store has no call that deletes a computer, so the row goes the way
-	// an operator's SQL would take it.
 	conn, err := pgx.Connect(ctx, databaseURL)
 	if err != nil {
 		t.Fatalf("connect: %v", err)
 	}
-	defer func() { _ = conn.Close(context.WithoutCancel(ctx)) }()
-	if _, err := conn.Exec(ctx, `DELETE FROM core.computers WHERE id = $1`, cx.ID); err != nil {
-		t.Fatalf("delete computer: %v", err)
+	t.Cleanup(func() { _ = conn.Close(context.WithoutCancel(ctx)) })
+	statements := []string{
+		`CREATE SCHEMA core`, `SET search_path = core`,
+		`CREATE TABLE schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`,
 	}
-	if _, err := st.Session(ctx, sess.ID); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("session of a deleted computer = %v, want ErrNotFound", err)
+	files, err := os.ReadDir("migrations")
+	if err != nil {
+		t.Fatal(err)
 	}
+	found := false
+	for _, file := range files {
+		name := strings.TrimSuffix(file.Name(), ".sql")
+		if name > last {
+			break
+		}
+		sql, err := os.ReadFile("migrations/" + file.Name())
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		statements = append(statements, string(sql), `INSERT INTO schema_migrations (version) VALUES ('`+name+`')`)
+		found = found || name == last
+	}
+	if !found {
+		t.Fatalf("no migration %s", last)
+	}
+	for _, stmt := range append(statements, setup...) {
+		if _, err := conn.Exec(ctx, stmt); err != nil {
+			t.Fatalf("set up the %s database: %v\n%s", last, err, stmt)
+		}
+	}
+	st, err := store.Open(ctx, databaseURL)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(st.Close)
+	return st, conn
 }
 
 // A database at 0002 holds computers with the filing columns. The upgrade
 // drops the columns and keeps every computer.
 func TestUpgradeFrom0002KeepsComputersWithoutFiling(t *testing.T) {
 	ctx := t.Context()
-	databaseURL := storetest.URL(t)
-	conn, err := pgx.Connect(ctx, databaseURL)
-	if err != nil {
-		t.Fatalf("connect: %v", err)
-	}
-	defer func() { _ = conn.Close(context.WithoutCancel(ctx)) }()
-	statements := []string{`CREATE SCHEMA core`, `SET search_path = core`}
-	for _, name := range []string{"0001_baseline", "0002_remove_session_forks"} {
-		sql, err := os.ReadFile("migrations/" + name + ".sql")
-		if err != nil {
-			t.Fatalf("read %s: %v", name, err)
-		}
-		statements = append(statements, string(sql))
-	}
-	statements = append(statements,
-		`CREATE TABLE schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`,
-		`INSERT INTO schema_migrations (version) VALUES ('0001_baseline'), ('0002_remove_session_forks')`,
+	st, conn := upgradeFrom(t, "0002_remove_session_forks",
 		`INSERT INTO computers (id, name, state, pinned, archived, home) VALUES ('filed', 'filed', 'running', true, true, false)`,
 		`INSERT INTO computers (id, name, state, home) VALUES ('home', 'home', 'running', true)`,
 	)
-	for _, stmt := range statements {
-		if _, err := conn.Exec(ctx, stmt); err != nil {
-			t.Fatalf("set up the 0002 database: %v\n%s", err, stmt)
-		}
-	}
-
-	st, err := store.Open(ctx, databaseURL)
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	defer st.Close()
 	all, err := st.Computers(ctx)
 	if err != nil || len(all) != 2 {
 		t.Fatalf("Computers = %+v, %v; want both computers kept", all, err)
@@ -575,51 +356,180 @@ func TestUpgradeFrom0002KeepsComputersWithoutFiling(t *testing.T) {
 }
 
 // A database made by the baseline holds forks, which are sessions of their own
-// once forking is gone. The upgrade keeps them as user sessions and removes
-// both the kind and the column that only forks used.
+// once forking is gone. The upgrade keeps their history as user sessions,
+// removes the fork relationship, and adds a new delegation relationship.
 func TestUpgradeFromTheBaselineKeepsForksAsSessions(t *testing.T) {
 	ctx := t.Context()
-	databaseURL := storetest.URL(t)
-	baseline, err := os.ReadFile("migrations/0001_baseline.sql")
-	if err != nil {
-		t.Fatalf("read the baseline: %v", err)
-	}
-	conn, err := pgx.Connect(ctx, databaseURL)
-	if err != nil {
-		t.Fatalf("connect: %v", err)
-	}
-	defer func() { _ = conn.Close(context.WithoutCancel(ctx)) }()
-	for _, stmt := range []string{
-		`CREATE SCHEMA core`,
-		`SET search_path = core`,
-		string(baseline),
-		`CREATE TABLE schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`,
-		`INSERT INTO schema_migrations (version) VALUES ('0001_baseline')`,
+	st, conn := upgradeFrom(t, "0001_baseline",
 		`INSERT INTO sessions (id, title) VALUES ('parent', 'parent')`,
 		`INSERT INTO sessions (id, title, kind, parent_session_id) VALUES ('child', 'child', 'fork', 'parent')`,
-	} {
-		if _, err := conn.Exec(ctx, stmt); err != nil {
-			t.Fatalf("set up the baseline database: %v\n%s", err, stmt)
-		}
+		`INSERT INTO session_entries (id, session_id, seq, kind, payload) VALUES
+			('entry', 'child', 1, 'user', '{"role":"user","content":"saved"}')`,
+		`UPDATE sessions SET head_entry_id = 'entry' WHERE id = 'child'`,
+	)
+	child, err := st.Session(ctx, "child")
+	if err != nil || child.Kind != store.SessionRoutine || child.Title != "child" || child.ParentSessionID != "" || child.HeadEntryID != "entry" {
+		t.Errorf("former fork = %+v, %v; want a routine session", child, err)
+	}
+	parent, err := st.Session(ctx, "parent")
+	if err != nil || parent.Kind != store.SessionRoutine || parent.Title != "parent" || parent.ParentSessionID != "" {
+		t.Errorf("parent = %+v, %v; want the original user session", parent, err)
+	}
+	path, err := st.SessionPath(ctx, "child")
+	if err != nil || len(path) != 1 || path[0].ID != "entry" || path[0].Kind != store.KindUser {
+		t.Fatalf("former fork path = %+v, %v; want its saved entry", path, err)
+	}
+	var message struct {
+		Content string `json:"content"`
+	}
+	if err := json.Unmarshal(path[0].Payload, &message); err != nil || message.Content != "saved" {
+		t.Errorf("former fork entry = %s, %v; want saved content", path[0].Payload, err)
+	}
+	var oldParent *string
+	if err := conn.QueryRow(ctx, `SELECT parent_session_id FROM sessions WHERE id = 'child'`).Scan(&oldParent); err != nil || oldParent != nil {
+		t.Errorf("former fork parent = %v, %v; want SQL NULL", oldParent, err)
 	}
 
-	st, err := store.Open(ctx, databaseURL)
+	home, err := st.CreateSession(ctx, store.Session{Kind: store.SessionHome, Agent: "eika", Name: "home"})
 	if err != nil {
-		t.Fatalf("open: %v", err)
+		t.Fatalf("create home: %v", err)
+	}
+	delegated, err := st.CreateSession(ctx, store.Session{
+		Kind: store.SessionSubagent, Agent: "worker", Name: "worker", ParentSessionID: home.ID,
+	})
+	if err != nil || delegated.ParentSessionID != home.ID {
+		t.Fatalf("create delegated session = %+v, %v", delegated, err)
+	}
+	read, err := st.Session(ctx, delegated.ID)
+	if err != nil || read.ParentSessionID != home.ID {
+		t.Errorf("read delegated session = %+v, %v; want its delegating home", read, err)
+	}
+	for _, tc := range []struct {
+		name, query, code string
+	}{
+		{"fork kind", `INSERT INTO sessions (id, kind, agent, name, parent_session_id) VALUES ('forked', 'fork', 'worker', 'forked', 'parent')`, "23514"},
+		{"subagent without parent", `INSERT INTO sessions (id, kind, agent, name) VALUES ('orphan', 'subagent', 'worker', 'orphan')`, "23514"},
+		{"subagent with missing parent", `INSERT INTO sessions (id, kind, agent, name, parent_session_id) VALUES ('missing', 'subagent', 'worker', 'missing', 'absent')`, "23503"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := conn.Exec(ctx, tc.query)
+			var pgErr *pgconn.PgError
+			if !errors.As(err, &pgErr) || pgErr.Code != tc.code {
+				t.Errorf("insert = %v; want PostgreSQL error %s", err, tc.code)
+			}
+		})
+	}
+}
+
+func TestScreenSettingsAuditInSameTransaction(t *testing.T) {
+	ctx := t.Context()
+	url := storetest.URL(t)
+	st, err := store.Open(ctx, url)
+	if err != nil {
+		t.Fatal(err)
 	}
 	defer st.Close()
-	child, err := st.Session(ctx, "child")
-	if err != nil || child.Kind != store.SessionUser || child.Title != "child" {
-		t.Errorf("former fork = %+v, %v; want a user session", child, err)
+	if err := st.SetSettings(ctx, map[string]json.RawMessage{"screen_required": json.RawMessage(`true`)}); err != nil {
+		t.Fatal(err)
 	}
+	if err := st.SetSettings(ctx, map[string]json.RawMessage{"screen_required": json.RawMessage(`true`)}); err != nil {
+		t.Fatal(err)
+	}
+	conn, err := pgx.Connect(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close(context.WithoutCancel(ctx)) }()
+	var count int
+	if err := conn.QueryRow(ctx, `SELECT count(*) FROM core.audit WHERE event = 'setting' AND name = 'screen_required'`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("audit rows %d: %v", count, err)
+	}
+	err = st.SetSettings(ctx, map[string]json.RawMessage{"screen_required": json.RawMessage(`false`), "bad": json.RawMessage(`"\u0000"`)})
+	if err == nil {
+		t.Fatal("invalid setting accepted")
+	}
+	row, err := st.Setting(ctx, "screen_required")
+	if err != nil || string(row.Value) != "true" {
+		t.Fatalf("setting %s: %v", row.Value, err)
+	}
+	if err := conn.QueryRow(ctx, `SELECT count(*) FROM core.audit WHERE event = 'setting' AND name = 'screen_required'`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("audit rows %d: %v", count, err)
+	}
+}
 
-	var columns int
-	err = conn.QueryRow(ctx, `SELECT count(*) FROM information_schema.columns
-		WHERE table_schema = 'core' AND table_name = 'sessions' AND column_name = 'parent_session_id'`).Scan(&columns)
-	if err != nil || columns != 0 {
-		t.Errorf("parent_session_id columns = %d, %v; want none", columns, err)
+func TestSecuritySettingsAudit(t *testing.T) {
+	ctx := t.Context()
+	url := storetest.URL(t)
+	st, err := store.Open(ctx, url)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, err := conn.Exec(ctx, `INSERT INTO sessions (id, kind) VALUES ('forked', 'fork')`); err == nil {
-		t.Error("a session of kind fork was accepted; want the kind refused")
+	defer st.Close()
+	conn, err := pgx.Connect(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close(context.WithoutCancel(ctx)) }()
+	values := map[string]json.RawMessage{"screen_threshold": json.RawMessage(`0.8`), "sandbox_egress": json.RawMessage(`{"mode":"allowlist","allow":["example.com"]}`)}
+	if err := st.SetSettings(ctx, values); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetSettings(ctx, values); err != nil {
+		t.Fatal(err)
+	}
+	values["sandbox_egress"] = json.RawMessage(`{"mode":"none","allow":[]}`)
+	if err := st.SetSettings(ctx, values); err != nil {
+		t.Fatal(err)
+	}
+	var threshold, egress int
+	err = conn.QueryRow(ctx, `SELECT count(*) FILTER (WHERE name = 'screen_threshold'), count(*) FILTER (WHERE name = 'sandbox_egress') FROM core.audit WHERE event = 'setting'`).Scan(&threshold, &egress)
+	if err != nil || threshold != 1 || egress != 2 {
+		t.Fatalf("audit rows: threshold %d, egress %d: %v", threshold, egress, err)
+	}
+}
+
+func TestSettingsReadOneSnapshot(t *testing.T) {
+	st := storetest.Open(t)
+	ctx := t.Context()
+	set := func(required bool) error {
+		values := map[string]json.RawMessage{"screen_required": json.RawMessage(`false`), "screen_threshold": json.RawMessage(`0.2`)}
+		if required {
+			values["screen_required"], values["screen_threshold"] = json.RawMessage(`true`), json.RawMessage(`0.8`)
+		}
+		return st.SetSettings(ctx, values)
+	}
+	if err := set(false); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		for i := range 100 {
+			if err := set(i%2 == 0); err != nil {
+				done <- err
+				return
+			}
+		}
+		done <- nil
+	}()
+	for range 100 {
+		rows, err := st.Settings(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var required, threshold string
+		for _, row := range rows {
+			if row.Key == "screen_required" {
+				required = string(row.Value)
+			}
+			if row.Key == "screen_threshold" {
+				threshold = string(row.Value)
+			}
+		}
+		if (required == "true" && threshold != "0.8") || (required == "false" && threshold != "0.2") || (required != "true" && required != "false") {
+			t.Fatalf("inconsistent settings: %s %s", required, threshold)
+		}
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
 	}
 }

@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"time"
 )
 
 // Defaults for the bounds the daemon puts on a request.
@@ -21,8 +20,6 @@ const (
 	defaultMaxReadBytes = 16 << 20
 	// maxWriteBytes caps the body of a file write.
 	maxWriteBytes = 64 << 20
-	// defaultWatchInterval is how often the watcher rescans the tree.
-	defaultWatchInterval = time.Second
 )
 
 // Options configures a Daemon.
@@ -33,19 +30,15 @@ type Options struct {
 	Token string
 	// MaxReadBytes caps a single file read. Zero uses the default.
 	MaxReadBytes int64
-	// WatchInterval is how often /watch rescans the tree. Zero uses the
-	// default.
-	WatchInterval time.Duration
 }
 
 // Daemon serves the sandbox API over HTTP for one computer.
 type Daemon struct {
-	root          string
-	token         string
-	log           *slog.Logger
-	maxRead       int64
-	watchInterval time.Duration
-	mux           *http.ServeMux
+	root    string
+	token   string
+	log     *slog.Logger
+	maxRead int64
+	mux     *http.ServeMux
 
 	// mu guards env.
 	mu sync.Mutex
@@ -82,18 +75,14 @@ func New(opts Options, log *slog.Logger) (*Daemon, error) {
 	}
 
 	d := &Daemon{
-		root:          root,
-		token:         opts.Token,
-		log:           log,
-		maxRead:       opts.MaxReadBytes,
-		watchInterval: opts.WatchInterval,
-		mux:           http.NewServeMux(),
+		root:    root,
+		token:   opts.Token,
+		log:     log,
+		maxRead: opts.MaxReadBytes,
+		mux:     http.NewServeMux(),
 	}
 	if d.maxRead <= 0 {
 		d.maxRead = defaultMaxReadBytes
-	}
-	if d.watchInterval <= 0 {
-		d.watchInterval = defaultWatchInterval
 	}
 	d.routes()
 	return d, nil
@@ -115,7 +104,6 @@ func (d *Daemon) routes() {
 	d.mux.HandleFunc("PUT /files", d.authed(d.handleWriteFile))
 	d.mux.HandleFunc("GET /stat", d.authed(d.handleStat))
 	d.mux.HandleFunc("GET /list", d.authed(d.handleList))
-	d.mux.HandleFunc("GET /watch", d.authed(d.handleWatch))
 	d.mux.HandleFunc("PUT /environment", d.authed(d.handleSetEnvironment))
 }
 

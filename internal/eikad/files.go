@@ -8,13 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-)
 
-// Permissions for files and directories the daemon creates. The sandbox is
-// single-user, so the owner's bits are what matter.
-const (
-	filePerm = 0o644
-	dirPerm  = 0o755
+	"github.com/erlidev/eika/internal/executor"
 )
 
 // handleReadFile streams a file's contents, truncated at ?max_bytes= or at the
@@ -65,11 +60,7 @@ func (d *Daemon) handleWriteFile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, d.log, http.StatusRequestEntityTooLarge, fmt.Errorf("read request body: %w", err))
 		return
 	}
-	if err := os.MkdirAll(filepath.Dir(path), dirPerm); err != nil {
-		writeError(w, d.log, statusFor(err), fmt.Errorf("create parent of %s: %w", d.rel(path), err))
-		return
-	}
-	if err := os.WriteFile(path, data, filePerm); err != nil {
+	if err := executor.AtomicWriteFile(r.Context(), d.root, path, data); err != nil {
 		writeError(w, d.log, statusFor(err), fmt.Errorf("write %s: %w", d.rel(path), err))
 		return
 	}

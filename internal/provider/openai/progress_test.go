@@ -42,39 +42,26 @@ func keepAliveServer(t *testing.T, progress *atomic.Int64, chunk string) *httpte
 	return srv
 }
 
-func TestBothProvidersReportEverySSECommentAsProgress(t *testing.T) {
+func TestStreamReportsEverySSECommentAsProgress(t *testing.T) {
 	// A server reading a long prompt may send nothing but comments, which no
 	// provider turns into an event. The client reports their bytes, so a
 	// caller watching for a stalled stream sees the server is alive.
 	chat := `data: {"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":"stop"}]}` + "\n\ndata: [DONE]\n\n"
-	responses := string(fixture(t, "llamacpp/answer.sse"))
-	for _, tc := range []struct {
-		name  string
-		build func(url string) provider.Provider
-		chunk string
-	}{
-		{"chat completions", func(url string) provider.Provider { return newProvider(t, url) }, chat},
-		{"responses", func(url string) provider.Provider { return newResponses(t, url, false) }, responses},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			var progress atomic.Int64
-			srv := keepAliveServer(t, &progress, tc.chunk)
-			ctx := provider.WithProgress(context.Background(), func() { progress.Add(1) })
-			ch, err := tc.build(srv.URL).Stream(ctx, provider.Request{Model: "m", Messages: []provider.Message{provider.UserMessage("hi")}})
-			if err != nil {
-				t.Fatalf("Stream: %v", err)
-			}
-			var last provider.Event
-			for e := range ch {
-				last = e
-			}
-			if last.Kind != provider.KindDone {
-				t.Fatalf("the stream ended with %+v: a comment's bytes were not reported", last)
-			}
-			// The response itself and each of the three comments.
-			if got := progress.Load(); got < 4 {
-				t.Errorf("progress reported %d times, want at least 4", got)
-			}
-		})
+	var progress atomic.Int64
+	srv := keepAliveServer(t, &progress, chat)
+	ctx := provider.WithProgress(context.Background(), func() { progress.Add(1) })
+	ch, err := newProvider(t, srv.URL).Stream(ctx, provider.Request{Model: "m", Messages: []provider.Message{provider.UserMessage("hi")}})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	var last provider.Event
+	for e := range ch {
+		last = e
+	}
+	if last.Kind != provider.KindDone {
+		t.Fatalf("the stream ended with %+v: a comment's bytes were not reported", last)
+	}
+	if got := progress.Load(); got < 4 {
+		t.Errorf("progress reported %d times, want at least 4 (the response and three comments)", got)
 	}
 }

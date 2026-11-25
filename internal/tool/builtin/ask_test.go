@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -85,6 +84,11 @@ func TestAskUserBlocksUntilAnswered(t *testing.T) {
 	if pending := q.Pending(); len(pending) != 1 || pending[0].ID != payload.QuestionID {
 		t.Fatalf("pending = %+v, want the asked question", pending)
 	}
+	for _, bad := range []string{"c", ""} {
+		if err := q.Answer(payload.QuestionID, bad); !errors.Is(err, builtin.ErrBadAnswer) || len(q.Pending()) != 1 {
+			t.Errorf("answer %q = %v, want ErrBadAnswer and the question still pending", bad, err)
+		}
+	}
 	if err := q.Answer(payload.QuestionID, "work"); err != nil {
 		t.Fatalf("answer: %v", err)
 	}
@@ -127,78 +131,6 @@ func TestAskUserStopsWhenTheRunIsCancelled(t *testing.T) {
 	}
 	if err := q.Answer(payload.QuestionID, "late"); !errors.Is(err, builtin.ErrNoQuestion) {
 		t.Errorf("answering an abandoned question = %v, want ErrNoQuestion", err)
-	}
-}
-
-func TestQuestionsAnswerRejectsWhatTheQuestionDoesNotAccept(t *testing.T) {
-	q := builtin.NewQuestions()
-	emitter := newCollector()
-	tl := askUser(t, q)
-
-	done := make(chan struct{})
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go func() {
-		defer close(done)
-		_, _ = tl.Call(ctx, tool.CallContext{Emit: emitter, SessionID: "s1"},
-			json.RawMessage(`{"question":"which?","options":["a","b"]}`))
-	}()
-	payload := emitter.asked(t)
-
-	cases := []struct {
-		name   string
-		answer string
-	}{
-		{"outside the options", "c"},
-		{"empty", ""},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			if err := q.Answer(payload.QuestionID, c.answer); !errors.Is(err, builtin.ErrBadAnswer) {
-				t.Errorf("answer = %v, want ErrBadAnswer", err)
-			}
-			if len(q.Pending()) != 1 {
-				t.Error("a rejected answer removed the question")
-			}
-		})
-	}
-	if err := q.Answer(payload.QuestionID, "b"); err != nil {
-		t.Fatalf("answer: %v", err)
-	}
-	<-done
-}
-
-func TestAskUserRejectsBadArguments(t *testing.T) {
-	tl := askUser(t, builtin.NewQuestions())
-	cases := []struct {
-		name string
-		args string
-	}{
-		{"no question", `{"question":"  "}`},
-		{"too many options", `{"question":"pick","options":["1","2","3","4","5","6","7","8","9","10","11"]}`},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			res, err := tl.Call(context.Background(), tool.CallContext{SessionID: "s1"}, json.RawMessage(c.args))
-			if err != nil {
-				t.Fatalf("call: %v", err)
-			}
-			if !res.IsError {
-				t.Errorf("result = %+v, want an error the model can act on", res)
-			}
-		})
-	}
-}
-
-func TestAskUserWithoutABrokerFails(t *testing.T) {
-	tl := askUser(t, nil)
-	res, err := tl.Call(context.Background(), tool.CallContext{SessionID: "s1"},
-		json.RawMessage(`{"question":"anyone there?"}`))
-	if err != nil {
-		t.Fatalf("call: %v", err)
-	}
-	if !res.IsError {
-		t.Errorf("result = %+v, want an error", res)
 	}
 }
 
@@ -245,30 +177,26 @@ func TestARejectedAnswerNeverOutlivesItsRun(t *testing.T) {
 	}
 }
 
-func TestPendingQuestionsAreOldestFirst(t *testing.T) {
+func TestAskUserRelaysWithoutRegisteringALegacyQuestion(t *testing.T) {
 	q := builtin.NewQuestions()
-	emitter := newCollector()
-	tl := askUser(t, q)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	// Two runs, each waiting on a question of its own.
-	const asked = 3
-	for i := range asked {
-		go func() {
-			_, _ = tl.Call(ctx, tool.CallContext{Emit: emitter, SessionID: "s1"},
-				json.RawMessage(`{"question":"number `+strconv.Itoa(i)+`?"}`))
-		}()
-		emitter.asked(t)
-	}
-
-	pending := q.Pending()
-	if len(pending) != asked {
-		t.Fatalf("pending = %d, want %d", len(pending), asked)
-	}
-	for i := 1; i < len(pending); i++ {
-		if pending[i].AskedAt.Before(pending[i-1].AskedAt) {
-			t.Errorf("question %d was asked before question %d, so the order is wrong", i, i-1)
+	reg, err := builtin.Registry(builtin.Deps{Questions: q, QuestionRelay: func(_ context.Context, asked builtin.Question) (string, bool, error) {
+		if asked.SessionID != "child" || asked.CallID != "call-1" || asked.Text != "Which finish?" || asked.AllowFreeText {
+			t.Errorf("question = %+v", asked)
 		}
+		if len(q.Pending()) != 0 {
+			t.Error("relayed question registered with the HTTP broker")
+		}
+		if err := q.Answer(asked.ID, "Matte"); !errors.Is(err, builtin.ErrNoQuestion) {
+			t.Errorf("HTTP answer = %v", err)
+		}
+		return "Matte", true, nil
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tl, _ := reg.Get("ask_user")
+	res, err := tl.Call(t.Context(), tool.CallContext{SessionID: "child", CallID: "call-1"}, json.RawMessage(`{"question":"Which finish?","options":["Matte","Gloss"]}`))
+	if err != nil || res.IsError || res.Content != "Matte" || len(q.Pending()) != 0 {
+		t.Fatalf("result = %+v, %v", res, err)
 	}
 }

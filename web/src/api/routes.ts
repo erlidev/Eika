@@ -7,34 +7,37 @@
 import { request, requestEmpty } from "@/api/client";
 import type { Connection } from "@/api/connection";
 import type {
+  Agent,
+  AgentOverride,
+  Agents,
   AuthStatus,
   CompactRequest,
   Computer,
-  Configuration,
   ContentDetail,
   CreateMCPServer,
   CreateModel,
   CreateProvider,
-  CreateSession,
   ElicitationAnswer,
   Entry,
+  GlobalInstructions,
+  Halt,
+  GuardHealth,
+  HaltRequest,
   MCPPromptResult,
   MCPServer,
   MCPServerDetails,
   Model,
-  ModelContext,
   ModelCall,
-  ModelCalls,
+  ModelContext,
   NextPrediction,
   Models,
   OAuthCallback,
   PostMessage,
   ProbeProvider,
   ProbeResponse,
-  Profile,
-  ProfileInput,
-  Profiles,
-  ProfileSettings,
+  Project,
+  ProjectInstructions,
+  Projects,
   Provider,
   Providers,
   Run,
@@ -44,7 +47,6 @@ import type {
   SearchRequest,
   SearchStatus,
   Session,
-  SessionConfiguration,
   SessionOutline,
   Settings,
   SettingsState,
@@ -52,60 +54,71 @@ import type {
   SystemStatus,
   TestModel,
   TestModelResult,
-  Tool,
   UpdateMCPServer,
   UpdateModel,
   UpdateProvider,
   UpdateSession,
+  WithheldPage,
+  EditMemoryRequest,
+  InboxCount,
+  InboxListQuery,
+  InboxPage,
+  Memory,
+  MemoryListQuery,
+  MemoryPage,
+  RejectMemoryRequest,
+  Skill,
+  SkillInstall,
+  SkillList,
 } from "@/api/types";
 
-/** listChats lists the sessions with no computer. */
-export async function listChats(signal?: AbortSignal): Promise<Session[]> {
-  const body = await request<{ sessions: Session[] }>("/api/sessions", {
-    query: { chats: "true" },
+/** getHome reads the home session with the entry its head points at. */
+export function getHome(): Promise<{ session: Session; head?: Entry }> {
+  return request<{ session: Session; head?: Entry }>("/api/home");
+}
+
+/** listSessions lists every session, oldest first: chats, computer sessions, home and subagents. */
+export async function listSessions(signal?: AbortSignal): Promise<Session[]> {
+  const body = await request<{ sessions: Session[] }>("/api/sessions", { signal });
+  return body.sessions;
+}
+
+/** listProjects lists the projects, by slug. */
+export async function listProjects(signal?: AbortSignal): Promise<Project[]> {
+  const body = await request<Projects>("/api/projects", { signal });
+  return body.projects;
+}
+
+/** getProject reads a project's metadata. */
+export function getProject(id: string, signal?: AbortSignal): Promise<Project> {
+  return request<Project>(`/api/projects/${encodeURIComponent(id)}`, { signal });
+}
+
+/** getProjectInstructions reads the user's project instructions. */
+export function getProjectInstructions(
+  id: string,
+  signal?: AbortSignal,
+): Promise<ProjectInstructions> {
+  return request<ProjectInstructions>(`/api/projects/${encodeURIComponent(id)}/instructions`, {
     signal,
   });
-  return body.sessions;
+}
+
+/** putProjectInstructions replaces the user's project instructions. */
+export function putProjectInstructions(
+  id: string,
+  input: ProjectInstructions,
+): Promise<ProjectInstructions> {
+  return request<ProjectInstructions>(`/api/projects/${encodeURIComponent(id)}/instructions`, {
+    method: "PUT",
+    body: input,
+  });
 }
 
 /** listComputers lists the computers, oldest first. */
 export async function listComputers(signal?: AbortSignal): Promise<Computer[]> {
   const body = await request<{ computers: Computer[] }>("/api/computers", { signal });
   return body.computers;
-}
-
-/** listComputerSessions lists the sessions that run in one computer. */
-export async function listComputerSessions(
-  computerId: string,
-  signal?: AbortSignal,
-): Promise<Session[]> {
-  const body = await request<{ sessions: Session[] }>("/api/sessions", {
-    query: { computer_id: computerId },
-    signal,
-  });
-  return body.sessions;
-}
-
-/** createSession opens a session in a computer, or a chat in none. */
-export function createSession(input: CreateSession): Promise<Session> {
-  return request<Session>("/api/sessions", { method: "POST", body: input });
-}
-
-/**
- * setSessionTools chooses the tools the session's next run offers the model;
- * null clears the choice, so the profile's applies.
- */
-export function setSessionTools(id: string, tools: string[] | null): Promise<Session> {
-  return request<Session>(`/api/sessions/${encodeURIComponent(id)}/tools`, {
-    method: "PUT",
-    body: { tools },
-  });
-}
-
-/** listTools lists every tool a run can offer, with whether it needs a computer. */
-export async function listTools(signal?: AbortSignal): Promise<Tool[]> {
-  const body = await request<{ tools: Tool[] }>("/api/tools", { signal });
-  return body.tools;
 }
 
 /** getSession reads a session with the entry its head points at. */
@@ -118,17 +131,21 @@ export function getSession(
   });
 }
 
+/** getSessionEntries reads a page in session write order. */
+export function getSessionEntries(
+  id: string,
+  before?: string,
+  signal?: AbortSignal,
+): Promise<{ session_id: string; entries: Entry[]; next_before?: string }> {
+  return request(`/api/sessions/${encodeURIComponent(id)}/entries`, { query: { before }, signal });
+}
+
 /** updateSession renames, pins, or archives a session. */
 export function updateSession(id: string, input: UpdateSession): Promise<Session> {
   return request<Session>(`/api/sessions/${encodeURIComponent(id)}`, {
     method: "PATCH",
     body: input,
   });
-}
-
-/** deleteSession aborts the session's run and deletes it with its entries. */
-export function deleteSession(id: string): Promise<void> {
-  return requestEmpty(`/api/sessions/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
 /** getSessionOutline reads the whole tree without payloads. */
@@ -168,6 +185,11 @@ export function compactSession(id: string, input: CompactRequest): Promise<Run> 
   });
 }
 
+/** cancelSubagent stops a subagent's assignment and returns it as it ended. */
+export function cancelSubagent(id: string): Promise<Session> {
+  return request<Session>(`/api/sessions/${encodeURIComponent(id)}/cancel`, { method: "POST" });
+}
+
 /** abortRun cancels a run and waits for it to stop. */
 export function abortRun(id: string): Promise<Run> {
   return request<Run>(`/api/runs/${encodeURIComponent(id)}/abort`, { method: "POST" });
@@ -178,63 +200,6 @@ export function answerQuestion(id: string, answer: string): Promise<void> {
   return requestEmpty(`/api/questions/${encodeURIComponent(id)}/answer`, {
     method: "POST",
     body: { answer },
-  });
-}
-
-/**
- * ConfigurationDraft is what a session's editor has chosen and not saved:
- * inherited then falls through as if it were. An absent field keeps the
- * saved one; "" is the default profile, or no model of the session's own.
- */
-export type ConfigurationDraft = { profileId?: string; modelId?: string };
-
-/** getSessionConfiguration reads what a session sets itself and what its next run resolves to. */
-export function getSessionConfiguration(
-  id: string,
-  draft: ConfigurationDraft = {},
-  signal?: AbortSignal,
-): Promise<SessionConfiguration> {
-  const query = new URLSearchParams();
-  if (draft.profileId !== undefined) query.set("profile_id", draft.profileId);
-  if (draft.modelId !== undefined) query.set("model_id", draft.modelId);
-  const search = query.size > 0 ? `?${query.toString()}` : "";
-  return request<SessionConfiguration>(
-    `/api/sessions/${encodeURIComponent(id)}/configuration${search}`,
-    { signal },
-  );
-}
-
-/** setSessionProfile chooses a session's profile; "" is the default one. */
-export function setSessionProfile(id: string, profileId: string): Promise<SessionConfiguration> {
-  return request<SessionConfiguration>(`/api/sessions/${encodeURIComponent(id)}/profile`, {
-    method: "PUT",
-    body: { profile_id: profileId },
-  });
-}
-
-/** setSessionOverrides replaces what a session sets over its profile. */
-export function setSessionOverrides(
-  id: string,
-  overrides: ProfileSettings,
-): Promise<SessionConfiguration> {
-  return request<SessionConfiguration>(`/api/sessions/${encodeURIComponent(id)}/overrides`, {
-    method: "PUT",
-    body: overrides,
-  });
-}
-
-/**
- * getSessionContext previews the session's next model request, as a run
- * that names `model` ("" for none) would send it.
- */
-export function getSessionContext(
-  id: string,
-  model: string,
-  signal?: AbortSignal,
-): Promise<ModelContext> {
-  return request<ModelContext>(`/api/sessions/${encodeURIComponent(id)}/context`, {
-    query: { model: model === "" ? undefined : model },
-    signal,
   });
 }
 
@@ -254,15 +219,28 @@ export function getSessionPrediction(
   });
 }
 
-/** listSessionCalls lists the records of a session's model calls, oldest first. */
-export async function listSessionCalls(id: string, signal?: AbortSignal): Promise<ModelCall[]> {
-  const body = await request<ModelCalls>(`/api/sessions/${encodeURIComponent(id)}/calls`, {
+/** getSessionContext previews the next model request. */
+export function getSessionContext(
+  id: string,
+  model: string,
+  signal?: AbortSignal,
+): Promise<ModelContext> {
+  return request<ModelContext>(`/api/sessions/${encodeURIComponent(id)}/context`, {
+    query: { model: model || undefined },
     signal,
   });
+}
+
+/** listSessionCalls lists recorded calls in order. */
+export async function listSessionCalls(id: string, signal?: AbortSignal): Promise<ModelCall[]> {
+  const body = await request<{ calls: ModelCall[] | null }>(
+    `/api/sessions/${encodeURIComponent(id)}/calls`,
+    { signal },
+  );
   return body.calls ?? [];
 }
 
-/** getSessionCall reads one recorded model call in the preview's shape. */
+/** getSessionCall reads a recorded request. */
 export function getSessionCall(
   id: string,
   callId: string,
@@ -274,33 +252,33 @@ export function getSessionCall(
   );
 }
 
-/** listProfiles lists the profiles, the default one, and the built-in prompts. */
-export function listProfiles(signal?: AbortSignal): Promise<Profiles> {
-  return request<Profiles>("/api/profiles", { signal });
+/** listAgents lists the built-in agents with their overrides. */
+export async function listAgents(signal?: AbortSignal): Promise<Agent[]> {
+  const body = await request<Agents>("/api/agents", { signal });
+  return body.agents;
 }
 
-/** getInheritedProfile reads what a profile choosing a model ("" for none) falls through to. */
-export function getInheritedProfile(modelId: string, signal?: AbortSignal): Promise<Configuration> {
-  const search = modelId === "" ? "" : `?model_id=${encodeURIComponent(modelId)}`;
-  return request<Configuration>(`/api/profiles/inherited${search}`, { signal });
-}
-
-/** createProfile adds a profile. */
-export function createProfile(input: ProfileInput): Promise<Profile> {
-  return request<Profile>("/api/profiles", { method: "POST", body: input });
-}
-
-/** updateProfile replaces a profile with the one given. */
-export function updateProfile(id: string, input: ProfileInput): Promise<Profile> {
-  return request<Profile>(`/api/profiles/${encodeURIComponent(id)}`, {
+/** putAgent replaces an agent's class and prompt overrides; null uses the built-in. */
+export function putAgent(name: string, override: AgentOverride): Promise<Agent> {
+  return request<Agent>(`/api/agents/${encodeURIComponent(name)}`, {
     method: "PUT",
-    body: input,
+    body: override,
   });
 }
 
-/** deleteProfile removes a profile; its sessions go back to the default one. */
-export function deleteProfile(id: string): Promise<void> {
-  return requestEmpty(`/api/profiles/${encodeURIComponent(id)}`, { method: "DELETE" });
+/** resetAgent removes both overrides, so the agent runs as built. */
+export function resetAgent(name: string): Promise<void> {
+  return requestEmpty(`/api/agents/${encodeURIComponent(name)}`, { method: "DELETE" });
+}
+
+/** getInstructions reads the user's global About me and rules. */
+export function getInstructions(signal?: AbortSignal): Promise<GlobalInstructions> {
+  return request<GlobalInstructions>("/api/instructions", { signal });
+}
+
+/** putInstructions replaces both global instruction texts. */
+export function putInstructions(input: GlobalInstructions): Promise<GlobalInstructions> {
+  return request<GlobalInstructions>("/api/instructions", { method: "PUT", body: input });
 }
 
 /** getSettings reads the settings table and the defaults of the harness's own keys. */
@@ -544,4 +522,188 @@ export function answerElicitation(id: string, answer: ElicitationAnswer): Promis
     method: "POST",
     body: answer,
   });
+}
+
+/** testNotification queues a test to the configured ntfy topic. */
+export function testNotification(): Promise<void> {
+  return requestEmpty("/api/notifications/test", { method: "POST" });
+}
+
+/** getWithheld reads a page of removals, newest first; `before` is the previous page's cursor. */
+export function getWithheld(before?: string, signal?: AbortSignal): Promise<WithheldPage> {
+  return request<WithheldPage>("/api/withheld", { query: { before }, signal });
+}
+
+/** listMemories lists or, with q, searches memories; a list is paged by `after`. */
+export function listMemories(
+  query: MemoryListQuery = {},
+  signal?: AbortSignal,
+): Promise<MemoryPage> {
+  const text = (v: string | number | boolean | undefined) =>
+    v === undefined ? undefined : String(v);
+  return request<MemoryPage>("/api/memories", {
+    query: {
+      q: query.q,
+      type: query.type,
+      state: query.state,
+      pinned: text(query.pinned),
+      include_archived: text(query.include_archived),
+      limit: text(query.limit),
+      after: query.after,
+    },
+    signal,
+  });
+}
+
+/** getMemory reads one memory in full, with the content_sha later changes need. */
+export function getMemory(name: string, signal?: AbortSignal): Promise<Memory> {
+  return request<Memory>(`/api/memories/${encodeURIComponent(name)}`, { signal });
+}
+
+/** editMemory changes a memory; a stale content_sha is a 409 and a flagged edit comes back pending. */
+export function editMemory(name: string, input: EditMemoryRequest): Promise<Memory> {
+  return request<Memory>(`/api/memories/${encodeURIComponent(name)}`, {
+    method: "PATCH",
+    body: input,
+  });
+}
+
+/** setMemoryPinned pins or unpins a memory; a pin is refused over 12 pins or 3,000 tokens. */
+export function setMemoryPinned(
+  name: string,
+  pinned: boolean,
+  contentSha?: string,
+): Promise<Memory> {
+  return request<Memory>(`/api/memories/${encodeURIComponent(name)}/${pinned ? "pin" : "unpin"}`, {
+    method: "POST",
+    body: { content_sha: contentSha },
+  });
+}
+
+/** archiveMemory moves a memory to archived; the reason defaults on the server. */
+export function archiveMemory(name: string, reason?: string, contentSha?: string): Promise<Memory> {
+  return request<Memory>(`/api/memories/${encodeURIComponent(name)}/archive`, {
+    method: "POST",
+    body: { reason, content_sha: contentSha },
+  });
+}
+
+/** purgeMemory removes a memory's file and row; git history, sessions and backups may still hold it. */
+export function purgeMemory(name: string, contentSha?: string): Promise<void> {
+  return requestEmpty(`/api/memories/${encodeURIComponent(name)}`, {
+    method: "DELETE",
+    query: { content_sha: contentSha },
+  });
+}
+
+/** getInboxCount reads how many memories wait for an answer, for the badge. */
+export function getInboxCount(signal?: AbortSignal): Promise<InboxCount> {
+  return request<InboxCount>("/api/inbox/count", { signal });
+}
+
+/** listInboxMemories lists pending memories in full, with their screen verdict; paged by `after`. */
+export function listInboxMemories(
+  query: InboxListQuery = {},
+  signal?: AbortSignal,
+): Promise<InboxPage> {
+  return request<InboxPage>("/api/inbox/memories", {
+    query: {
+      limit: query.limit === undefined ? undefined : String(query.limit),
+      after: query.after,
+    },
+    signal,
+  });
+}
+
+/**
+ * acceptMemory makes a pending memory active, with any edit given. content_sha
+ * is required; a repeated or stale answer is a 409 and a credential is a 400.
+ */
+export function acceptMemory(name: string, input: EditMemoryRequest): Promise<Memory> {
+  return request<Memory>(`/api/inbox/memories/${encodeURIComponent(name)}/accept`, {
+    method: "POST",
+    body: input,
+  });
+}
+
+/** rejectMemory archives a pending memory; content_sha is required. */
+export function rejectMemory(name: string, input: RejectMemoryRequest): Promise<Memory> {
+  return request<Memory>(`/api/inbox/memories/${encodeURIComponent(name)}/reject`, {
+    method: "POST",
+    body: input,
+  });
+}
+
+/** listSkills lists every installed skill, by name. */
+export function listSkills(signal?: AbortSignal): Promise<SkillList> {
+  return request<SkillList>("/api/skills", { signal });
+}
+
+/** getSkill reads one skill in full: body, file list and screen result. */
+export function getSkill(name: string, signal?: AbortSignal): Promise<Skill> {
+  return request<Skill>(`/api/skills/${encodeURIComponent(name)}`, { signal });
+}
+
+/**
+ * installSkill uploads a zip. The skill arrives disabled with its warnings and
+ * screen hits; a zip over 5 MiB is a 413 and a credential in it a 400.
+ */
+export function installSkill(file: Blob): Promise<SkillInstall> {
+  const form = new FormData();
+  form.append("file", file, file instanceof File ? file.name : "skill.zip");
+  return request<SkillInstall>("/api/skills", { method: "POST", form });
+}
+
+/** setSkillEnabled enables or disables a skill; enabling past the catalog budget is a 409, with no exact count a 503. */
+export function setSkillEnabled(name: string, enabled: boolean): Promise<Skill> {
+  return request<Skill>(
+    `/api/skills/${encodeURIComponent(name)}/${enabled ? "enable" : "disable"}`,
+    { method: "POST" },
+  );
+}
+
+/** deleteSkill removes a skill's directory and row. */
+export function deleteSkill(name: string): Promise<void> {
+  return requestEmpty(`/api/skills/${encodeURIComponent(name)}`, { method: "DELETE" });
+}
+
+/** getHalt reads whether Eika is halted. */
+export function getHalt(signal?: AbortSignal): Promise<Halt> {
+  return request<Halt>("/api/halt", { signal });
+}
+
+/** halt stops every run and every tool call until resume; halting twice changes nothing. */
+export function halt(input: HaltRequest = {}): Promise<Halt> {
+  return request<Halt>("/api/halt", { method: "POST", body: input });
+}
+
+/** resumeHalt lifts the halt; the runs it aborted stay aborted. */
+export function resumeHalt(): Promise<Halt> {
+  return request<Halt>("/api/halt/resume", { method: "POST" });
+}
+
+/** Guard and trusted web sources. */
+export function getGuard(signal?: AbortSignal) {
+  return request<GuardHealth>("/api/guard", { signal });
+}
+export function getBlockedHosts(signal?: AbortSignal) {
+  return request<{ hosts: string[] }>("/api/blocked-hosts", { signal });
+}
+export function addBlockedHost(host: string) {
+  return requestEmpty("/api/blocked-hosts", { method: "POST", body: { host } });
+}
+export function removeBlockedHost(host: string) {
+  return requestEmpty(`/api/blocked-hosts/${encodeURIComponent(host)}`, { method: "DELETE" });
+}
+export function getTrustedSources(signal?: AbortSignal) {
+  return request<{ hosts: string[] }>("/api/trusted-sources", { signal });
+}
+export function addTrustedSource(host: string) {
+  return requestEmpty("/api/trusted-sources", { method: "POST", body: { host } });
+}
+export function removeTrustedSource(host: string) {
+  return requestEmpty(`/api/trusted-sources/${encodeURIComponent(host)}`, { method: "DELETE" });
+}
+export function trustWithheld(id: string) {
+  return requestEmpty(`/api/withheld/${encodeURIComponent(id)}/trust`, { method: "POST" });
 }

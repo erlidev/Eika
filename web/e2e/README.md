@@ -103,19 +103,22 @@ the route, and press Retry. In a spec, pass `failing: { "GET /api/models":
 
 ## Scenarios
 
-`harness/scenarios.ts` names the starting states. The workbench ones share
-fixed ids: session `ses-backoff` in computer `cx-retries`; the sidebar lists chats only, so it opens by URL. `chat` adds two
-chats and opens chat `chat-jitter`, a session with no computer; `chat-empty`
-opens one with no messages. `home` adds the home computer the harness makes for itself, with
-a session on it that ran `bash`, beside the chats; the other scenarios have no home computer, so
-the sidebar offers no home chat. `mcp` adds five MCP servers, one in each state, and `chat-mcp` the
-same servers beside the chats; the mock's authorization server approves at
-once, so Sign in returns straight to `/mcp/callback`. `profiles` adds two
-profiles to the workbench, puts `ses-backoff` on one with an override of its
-own, and records two of its model calls,
-for the Profiles tab, the status bar's profile, and the Context panel; the
-mock resolves profiles and assembles requests in `harness/profiles.ts`, and
-every run it plays records its model call. The `agent-*`
+`harness/scenarios.ts` names the starting states. Every world has the home
+session `home-main`, as the harness makes it at start, and every scenario opens
+at `/`, where Chat shows it. `home-empty` leaves it empty; `home-world` has it
+with named subagents in different states, with stable IDs for session route
+tests. `activity` extends it for the Activity page: two projects (Garden, Kitchen) and
+subagents in every state, two waiting for different reasons, and a run going on
+each running or waiting one so Cancel works (aborting it records the subagent
+`cancelled`, as the harness does); it opens at `/activity`. The workbench ones share a story: computers in several states, session
+`ses-backoff` in computer `cx-retries` (which the mock's own tests address), and
+the same transcript on `home-main`, which is the one the UI can open.
+`chat` queues a web search reply. `mcp` adds five MCP servers, one in each
+state; the mock's authorization server approves at
+once, so Sign in returns straight to `/mcp/callback`. `halted` is Eika halted over an empty home (the banner, and a message refused with 409). `recorded-calls` adds
+two recorded calls to `ses-backoff` for the context meter. The mock resolves
+agent definitions and assembles requests in `harness/modelContext.ts`. Each run
+it plays records its model call. The `agent-*`
 scenarios queue a scripted reply for the next message: tool calls with
 streamed output, reasoning streamed before the answer, a question with
 options, an MCP server asking for input, a provider failure, or a run that
@@ -214,18 +217,26 @@ tab shows that URL, so its baselines change with the port).
 
 `make smoke` is the one test against the real stack. It starts compose as
 project `eika-smoke` on port 18080 with `compose.smoke.yaml`, whose `model`
-service runs `smoke/model.ts`, a scripted OpenAI-compatible endpoint: it
-lists one model, `smoke`, answers a user message by calling `bash` when the
-request offers it, and answers the tool result with "The command printed
-<output>." The command prints `smoke-ok`, the hostname and the working
-directory. `smoke/smoke.spec.ts` (config `playwright.smoke.config.ts`) first
-polls until the harness has made the home computer, with no setup done. It
-then walks the guided setup with that endpoint, opens a plain chat (no
-sandbox, so no `bash`; the model answers "ok"), then a chat on the home
-computer with "New home chat", and waits for the answer that carries the
-hostname of the home computer's container (read from `GET /api/computers`)
-and `/home/eika`: only eikad running the command there prints both. The stack
-builds its own sandbox image, `eika-sandbox:smoke`, and never reads or moves
+service runs `smoke/model.ts`, a scripted OpenAI-compatible endpoint. The
+model lists `smoke`, answers a home message, and delegates the sandbox probe
+to a worker. The worker calls `bash` to print `smoke-ok`, the hostname and
+the working directory. `smoke/smoke.spec.ts` (config
+`playwright.smoke.config.ts`) waits for the home computer, completes setup,
+and sends the probe request in Chat. It reads the worker's session path and
+checks the hostname against the home computer's container ID and the directory
+against `/home/eika`. This proves that eikad ran the command in the container.
+The stack builds its own sandbox image, `eika-sandbox:smoke`, and never reads
+or moves
 `eika-sandbox:latest`. `make smoke-down` removes the stack, its volumes, and
 any sandbox left on its networks with the volume of each. A first run builds
 the images and takes a few minutes; later runs take well under one.
+
+## Measure transcript history
+
+Run `EIKA_MEASURE_HISTORY=1 npm run visual -- e2e/specs/history-measurement.spec.ts --workers=1`
+from `web/`. The test loads 5,000 entries in 50-entry pages, then scrolls for
+three seconds. It prints each page's elapsed time, React render duration and rendered row
+count, and total time in long tasks (50 ms or more). It also prints initial
+load, frame count, frames above 20 ms, and the longest frame interval. The
+measurement uses React's production profiling build. The mobile browser context emulates
+screen size and touch; its timing is not a measurement on a physical phone.

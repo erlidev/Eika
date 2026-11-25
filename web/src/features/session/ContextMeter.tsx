@@ -10,17 +10,14 @@
  * counter's prediction (`GET /api/sessions/{id}/prediction`) and says how it
  * is known; an `estimated` one carries a tilde. Anything not reported is n/a,
  * never 0. How fast the turn ran is not in the bar: it belongs to the answer
- * that was produced at that speed, so `Speed.tsx` states it there, and the
- * breakdown below repeats it for a reader who asked for it.
+ * that was produced at that speed, so `Speed.tsx` states it there.
  *
- * The tooltips state the numbers and nothing else; the run panel's breakdown
- * is where they are explained.
+ * The tooltips state the numbers and nothing else.
  */
 
 import type { NextPrediction } from "@/api/types";
-import { useTranscriptPreferences } from "@/features/session/preferences";
 import type { Meter } from "@/features/session/transcript";
-import { contextFill, formatRate, formatReported, formatTokens } from "@/lib/format";
+import { contextFill, formatReported, formatTokens } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 export type ContextMeterProps = {
@@ -71,8 +68,6 @@ export function ContextMeter({ meter, prediction }: ContextMeterProps) {
   const promptFraction = prompt === null ? fraction : fraction * (prompt / used);
 
   // The tooltip repeats the bar in words and adds the split it cannot show.
-  // What the turn cost belongs in the run panel: it is a different number,
-  // and one the endpoint only updates when a model call ends.
   const split = [
     ...(prompt === null ? [] : [`${formatTokens(prompt)} prompt`]),
     ...(response === null ? [] : [`${formatTokens(response)} response`]),
@@ -175,148 +170,5 @@ function NextRequest({ prediction }: NextRequestProps) {
       </span>{" "}
       {prediction.method}
     </span>
-  );
-}
-
-export type ContextBreakdownProps = {
-  meter: Meter | undefined;
-  /** prediction is how large the next request is expected to be and how that is known. */
-  prediction?: NextPrediction | undefined;
-};
-
-/**
- * ContextBreakdown is the meter with room to explain itself: the same bar,
- * larger, with what each part of it is and what the turn cost. The status bar
- * has space for a number; the run panel has space for the answer to "why is
- * it that number".
- */
-export function ContextBreakdown({ meter, prediction }: ContextBreakdownProps) {
-  const showSpeed = useTranscriptPreferences((s) => s.speed);
-  const used = meter ? contextFill(meter.context) : undefined;
-  if (!meter || used === undefined || used === 0) {
-    return (
-      <div className="space-y-2">
-        <p className="text-muted-foreground">No model call has reported its usage yet.</p>
-        {prediction !== undefined && (
-          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
-            <NextRequestRow prediction={prediction} />
-          </dl>
-        )}
-      </div>
-    );
-  }
-  const window = meter.contextWindow;
-  const fraction = window > 0 ? Math.min(1, used / window) : 0;
-  const band = fullBand(fraction);
-  const prompt = meter.context.input_tokens;
-  const promptFraction = prompt === null ? fraction : fraction * (prompt / used);
-
-  return (
-    <div className="space-y-2">
-      {window > 0 && (
-        <>
-          <span aria-hidden className="bg-muted relative flex h-2 overflow-hidden rounded-full">
-            <span
-              className={cn("rounded-full", band.bar)}
-              style={{ width: `${String(promptFraction * 100)}%` }}
-            />
-            <span
-              className={cn("rounded-full opacity-50", band.bar)}
-              style={{ width: `${String((fraction - promptFraction) * 100)}%` }}
-            />
-          </span>
-          <p className={cn("font-mono tabular-nums", band.text)}>
-            {formatTokens(used)} of {formatTokens(window)} · {Math.round(fraction * 100)}% full
-          </p>
-        </>
-      )}
-      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
-        <dt className="text-muted-foreground">Prompt</dt>
-        <dd className="font-mono tabular-nums">{formatReported(meter.context.input_tokens)}</dd>
-        <dt className="text-muted-foreground">Response</dt>
-        <dd className="font-mono tabular-nums">{formatReported(meter.context.output_tokens)}</dd>
-        <dt
-          className="text-muted-foreground"
-          title="Part of the prompt the endpoint served from its cache."
-        >
-          Cached
-        </dt>
-        <dd className="font-mono tabular-nums">{formatReported(meter.context.cached_tokens)}</dd>
-        {window > 0 && (
-          <>
-            <dt className="text-muted-foreground">Free</dt>
-            <dd className="font-mono tabular-nums">{formatTokens(Math.max(0, window - used))}</dd>
-          </>
-        )}
-        <dt
-          className="text-muted-foreground"
-          title="Every model call the turn has made, as the endpoint reported them. A call in flight is counted when it ends."
-        >
-          Turn cost
-        </dt>
-        <dd className="font-mono tabular-nums">
-          {formatReported(meter.usage.input_tokens)} in ·{" "}
-          {formatReported(meter.usage.output_tokens)} out
-        </dd>
-        {prediction !== undefined && <NextRequestRow prediction={prediction} />}
-        {showSpeed && <SpeedRows meter={meter} />}
-      </dl>
-    </div>
-  );
-}
-
-type NextRequestRowProps = { prediction: NextPrediction };
-
-/** NextRequestRow states the next request's expected size and how it is known. */
-function NextRequestRow({ prediction }: NextRequestRowProps) {
-  return (
-    <>
-      <dt className="text-muted-foreground" title={methodTitles[prediction.method]}>
-        Next request
-      </dt>
-      <dd className="font-mono tabular-nums">
-        {prediction.method === "estimated" ? "~" : ""}
-        {formatTokens(prediction.tokens)} <span className="font-sans">{prediction.method}</span>
-      </dd>
-    </>
-  );
-}
-
-type SpeedRowsProps = { meter: Meter };
-
-/**
- * SpeedRows are the last model call's two rates, for a reader who turned them
- * on. They are rows of the breakdown's list rather than a block of their own,
- * so they read as two more measurements of the same call.
- */
-function SpeedRows({ meter }: SpeedRowsProps) {
-  const decode = formatRate(meter.timings?.decode_tokens, meter.timings?.decode_ms);
-  const prompt = formatRate(meter.timings?.prompt_tokens, meter.timings?.prompt_ms);
-  return (
-    <>
-      {decode !== "" && (
-        <>
-          <dt
-            className="text-muted-foreground"
-            title={
-              meter.timings?.source === "harness"
-                ? "Timed here, from the response's first streamed token."
-                : "Timed by the endpoint."
-            }
-          >
-            Generation
-          </dt>
-          <dd className="font-mono tabular-nums">{decode}</dd>
-        </>
-      )}
-      {prompt !== "" && (
-        <>
-          <dt className="text-muted-foreground" title="Timed by the endpoint.">
-            Prompt processing
-          </dt>
-          <dd className="font-mono tabular-nums">{prompt}</dd>
-        </>
-      )}
-    </>
   );
 }

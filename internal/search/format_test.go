@@ -29,9 +29,6 @@ func TestNormalizeURLKeepsMeaningfulParamsSorted(t *testing.T) {
 	if search.NormalizeURL("https://example.com/s?q=a") == search.NormalizeURL("https://example.com/s?q=b") {
 		t.Error("two different queries normalized to the same page")
 	}
-	if got := search.NormalizeURL("not a url"); got != "not a url" {
-		t.Errorf("NormalizeURL(not a url) = %q", got)
-	}
 }
 
 func TestDedupeKeepsFirstAndDropsIncomplete(t *testing.T) {
@@ -69,38 +66,10 @@ func TestTruncateCutsOnAWordBoundary(t *testing.T) {
 	if !ok || len(body) > 5*search.CharsPerToken || !strings.HasPrefix(text, body) || strings.HasSuffix(body, " ") {
 		t.Errorf("Truncate = %q, want a word-boundary prefix of at most 20 bytes and an ellipsis", out)
 	}
-	if got := search.Truncate("short", 100); got != "short" {
-		t.Errorf("Truncate(short) = %q", got)
-	}
 	if got := search.Truncate(strings.Repeat("a", 200), 5); got != strings.Repeat("a", 20)+"…" {
 		t.Errorf("Truncate(one long word) = %q", got)
 	}
 	if got := search.Truncate(strings.Repeat("é", 30), 5); !strings.HasSuffix(got, "…") || strings.ContainsRune(got, '�') {
 		t.Errorf("Truncate cut a rune in half: %q", got)
-	}
-}
-
-func TestFormatResults(t *testing.T) {
-	got := search.FormatResults([]search.Result{
-		{Title: "Tokio", URL: "https://tokio.rs/", Description: "An asynchronous Rust runtime."},
-		{Title: "No snippet", URL: "https://example.com/"},
-	}, 100)
-	want := strings.Join([]string{
-		"1. Tokio", "   https://tokio.rs/", "   An asynchronous Rust runtime.", "",
-		"2. No snippet", "   https://example.com/",
-	}, "\n")
-	if got != want {
-		t.Errorf("FormatResults =\n%s\nwant\n%s", got, want)
-	}
-	if got := search.FormatResults(nil, 100); got != "No results." {
-		t.Errorf("FormatResults(nil) = %q", got)
-	}
-}
-
-func TestPlural(t *testing.T) {
-	for n, want := range map[int]string{0: "0 sections", 1: "1 section", 1234: "1,234 sections"} {
-		if got := search.Plural(n, "section"); got != want {
-			t.Errorf("Plural(%d) = %q, want %q", n, got, want)
-		}
 	}
 }

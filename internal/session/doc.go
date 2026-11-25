@@ -7,9 +7,9 @@
 // from the root to the head, which is what becomes the provider conversation.
 //
 // Not every entry is a place a branch can start. PathResumable is the rule:
-// a run can continue from an entry only when the path down to it leaves no
-// tool call unanswered, because a model that asked for three calls needs all
-// three answered before it is asked anything else. Outline reports it per
+// a run can continue only when the entry is not a preamble and its path leaves
+// no tool call unanswered. A replacement preamble takes effect with its
+// compaction, and a model needs every tool call answered. Outline reports it per
 // node and Tree.Resumable for one entry, and the server checks it before
 // moving a head.
 //

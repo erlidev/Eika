@@ -6,6 +6,7 @@
 
 import { OutputBlock } from "@/components/OutputBlock";
 import { AskUserBody } from "@/features/session/renderers/AskUserRenderer";
+import { HomeBody } from "@/features/session/renderers/HomeRenderer";
 import { MCPToolBody } from "@/features/session/renderers/MCPRenderer";
 import { ResultBlock } from "@/features/session/renderers/parts";
 import { detail, stringArg } from "@/features/session/renderers/registry";
@@ -63,6 +64,24 @@ const webFetchRenderer: ToolRenderer = {
   Body: WebFetchBody,
 };
 
+/** homeRenderer shows named inputs and results for the home agent's tools. */
+const homeRenderer: ToolRenderer = {
+  summary: (call) =>
+    firstLine(
+      stringArg(call, "path") ||
+        stringArg(call, "name") ||
+        stringArg(call, "subagent") ||
+        stringArg(call, "project") ||
+        stringArg(call, "slug") ||
+        stringArg(call, "query") ||
+        stringArg(call, "entry") ||
+        stringArg(call, "around") ||
+        stringArg(call, "summary"),
+      80,
+    ),
+  Body: HomeBody,
+};
+
 /** jsonRenderer is the fallback: the arguments and the result, as they are. */
 const jsonRenderer: ToolRenderer = {
   summary: (call) => firstLine(describeArgument(call.arguments), 80),
@@ -95,6 +114,20 @@ const mcpRenderer: ToolRenderer = {
  */
 export const toolRenderers: Record<string, ToolRenderer> = {
   bash: bashRenderer,
+  subagent_start: homeRenderer,
+  subagent_message: homeRenderer,
+  subagent_status: homeRenderer,
+  subagent_cancel: homeRenderer,
+  report: homeRenderer,
+  file_read: homeRenderer,
+  file_write: homeRenderer,
+  file_edit: homeRenderer,
+  project_list: homeRenderer,
+  project_open: homeRenderer,
+  project_create: homeRenderer,
+  project_update: homeRenderer,
+  history_search: homeRenderer,
+  history_read: homeRenderer,
   ask_user: askUserRenderer,
   web_search: webSearchRenderer,
   web_fetch: webFetchRenderer,

@@ -8,6 +8,10 @@ export type Settings = Record<string, unknown>;
 
 /** SettingsDefaults are the values the harness uses until the settings name one. */
 export type SettingsDefaults = {
+  screen_required: boolean;
+  screen_threshold: number;
+  /** memory_screen_threshold is the score at or over which a memory write goes pending. */
+  memory_screen_threshold: number;
   sandbox_image: string;
   /** sandbox_limits and sandbox_egress are what the home computer gets until the user sets others. */
   sandbox_limits: SandboxLimits;
@@ -20,6 +24,10 @@ export type SettingsDefaults = {
   compaction: CompactionSettings;
   /** computer_idle_minutes is how long a running computer may go without a run. */
   computer_idle_minutes: number;
+  compact_idle_fill: number;
+  compact_idle_minutes: number;
+  /** subagent_max_running is how many subagents may run at once. */
+  subagent_max_running: number;
   /** maintenance_idle_seconds, aging_seconds and preempt_running are the inference queue's settings. */
   maintenance_idle_seconds: number;
   aging_seconds: number;
@@ -80,3 +88,6 @@ export type SettingsState = {
   /** titles_model is the name of the model that makes session titles; empty when none does. */
   titles_model: string;
 };
+
+/** GuardHealth is the last observed screening outcome. */
+export type GuardHealth = { status: "unknown" | "up" | "down" };

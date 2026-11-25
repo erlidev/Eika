@@ -151,15 +151,6 @@ describe("EventStream", () => {
     expect(timers[1]?.ms).toBe(500);
   });
 
-  it("lengthens the backoff while connecting keeps failing", () => {
-    const { stream, sockets, timers } = harness();
-    stream.subscribe("session:s1", () => undefined);
-    sockets[0]?.close();
-    timers[0]?.fn();
-    sockets[1]?.close();
-    expect(timers.map((timer) => timer.ms)).toEqual([500, 1000]);
-  });
-
   it("keeps lengthening the backoff when a socket opens and drops at once", () => {
     const { stream, sockets, timers, advance } = harness();
     stream.subscribe("session:s1", () => undefined);

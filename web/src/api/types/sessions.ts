@@ -3,10 +3,23 @@
 import type { CompactionReason, EntryKind, Timings, Usage } from "@/api/events";
 
 /** SessionKind is who opened a session. */
-export type SessionKind = "user";
+export type SessionKind = "home" | "subagent" | "routine" | (string & {});
+
+/** SessionState is the lifecycle state set by the harness. */
+export type SessionState = "idle" | "running" | "waiting" | "failed" | "cancelled";
 
 /** Session is a tree of entries in one computer, or in none for a chat. */
 export type Session = {
+  owner: string;
+  agent?: string;
+  name?: string;
+  project_id?: string;
+  parent_session_id?: string;
+  state: SessionState;
+  brief?: string;
+  result?: string;
+  last_active_at: string;
+  waiting_reason?: string;
   id: string;
   /** computer_id is where the session's runs act; a chat has none. */
   computer_id?: string;
@@ -16,10 +29,6 @@ export type Session = {
   head_entry_id?: string;
   /** tools are the tools the next run offers the model, sorted by name. */
   tools: string[];
-  /** profile_id is the profile the session chose; absent, it runs with the default one. */
-  profile_id?: string;
-  /** overridden says the session sets something of its own over its profile. */
-  overridden: boolean;
   /** pinned sessions are listed before the others. */
   pinned: boolean;
   /** archived sessions are set aside under an Archived heading; they run like any other. */
@@ -50,13 +59,6 @@ export type Tool = {
   /** tokens is the estimated size of the tool's definition, which offering it costs every request. */
   tokens: number;
 };
-
-/**
- * CreateSession opens a session in a computer, or a chat in none. Without a
- * title it is untitled: it shows a placeholder until its first run names it.
- */
-export type CreateSession =
-  { computer_id: string; title?: string } | { chat: true; title?: string };
 
 /** Role is the author of one provider message. */
 export type Role = "system" | "user" | "assistant" | "tool";
@@ -106,7 +108,8 @@ export type MessageImage = {
 
 /** Message is one entry of a conversation, as the provider package stores it. */
 export type Message = {
-  role: Role;
+  /** An entry with no provider message has an empty role. */
+  role: Role | "";
   content?: string;
   /**
    * context is the block the model reads at the end of a user message: the
@@ -114,6 +117,12 @@ export type Message = {
    * `content` alone and the Context panel shows both.
    */
   context?: string;
+  /**
+   * notices are the ids of the notice entries whose text `context` carries
+   * to the model, which storing the message marks delivered. The UI does not
+   * read them.
+   */
+  notices?: string[];
   /** images are the pictures a user message carries beside its text. */
   images?: MessageImage[];
   /** reasoning is the model's thinking for this message, shown apart from its answer. */
@@ -127,6 +136,8 @@ export type Message = {
   tool_calls?: MessageToolCall[];
   tool_call_id?: string;
   is_error?: boolean;
+  /** removed counts the windows ingest removed from a tool result. */
+  removed?: number;
   /** metrics are stored UI metadata and are not sent to the provider. */
   metrics?: MessageMetrics;
   /**
@@ -148,15 +159,36 @@ export type Compaction = {
   reason: CompactionReason;
   /** usage is what making the summary cost. */
   usage: Usage;
+  /**
+   * board_as_of is when the home session's subagent board was read, absent
+   * on a summary without one.
+   */
+  board_as_of?: string;
+};
+
+/** QuestionNotice is the structured question of a notice a subagent asked. */
+export type QuestionNotice = {
+  name: string;
+  agent: string;
+  question_id: string;
+  question: string;
+  options?: string[];
+  allow_free_text: boolean;
 };
 
 /** Entry is one stored node of a session tree, with its message. */
 export type Entry = {
+  /** run_id identifies the agent turn that wrote this entry, when known. */
+  run_id?: string;
+  channel?: string;
+  /** text is present on preamble and notice entries. */
+  text?: string;
+  /** question is present on a notice that carries a subagent's question. */
+  question?: QuestionNotice;
   id: string;
   parent_id?: string;
   seq: number;
   kind: EntryKind;
-  commit?: string;
   created_at: string;
   message: Message;
   /** compaction is present on an entry of kind compaction. */
@@ -169,7 +201,6 @@ export type Node = {
   parent_id?: string;
   kind: EntryKind;
   preview: string;
-  commit?: string;
   /**
    * resumable is whether a run can continue from this entry. An entry in the
    * middle of a turn leaves tool calls unanswered, so the harness refuses to
@@ -184,4 +215,11 @@ export type SessionOutline = {
   session_id: string;
   head_entry_id?: string;
   nodes: Node[];
+};
+
+/** SessionEntries is a page of entries in write order. */
+export type SessionEntries = {
+  session_id: string;
+  entries: Entry[];
+  next_before?: string;
 };

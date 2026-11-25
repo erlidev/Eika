@@ -60,14 +60,6 @@ func (c Count) Ptr() *int {
 	return &n
 }
 
-// CountOf returns the Count a pointer stands for: not reported when nil.
-func CountOf(p *int) Count {
-	if p == nil {
-		return Count{}
-	}
-	return Reported(*p)
-}
-
 // MarshalJSON writes the count as a number, or null when not reported.
 func (c Count) MarshalJSON() ([]byte, error) {
 	if !c.ok {

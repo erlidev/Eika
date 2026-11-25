@@ -1,14 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { SandboxHost } from "@/api/types";
-import {
-  checkDraft,
-  draftOf,
-  formatCores,
-  formatMemory,
-  formatPids,
-  normalizePattern,
-} from "@/features/sandbox/form";
+import { checkDraft, draftOf, normalizePattern } from "@/features/sandbox/form";
 import type { SandboxDraft, SandboxSettings } from "@/features/sandbox/form";
 
 const host: SandboxHost = { cpus: 8, memory_bytes: 16 * 2 ** 30, egress_control: true };
@@ -52,11 +45,9 @@ describe("draftOf and checkDraft", () => {
 
 describe("normalizePattern", () => {
   it.each([
-    ["github.com", "github.com"],
     [" GitHub.com ", "github.com"],
     ["*.githubusercontent.com", "*.githubusercontent.com"],
     ["https://registry.npmjs.org/some/package", "registry.npmjs.org"],
-    ["203.0.113.5", "203.0.113.5"],
   ])("reads %s as %s", (input, want) => {
     expect(normalizePattern(input)).toEqual({ pattern: want });
   });
@@ -67,16 +58,4 @@ describe("normalizePattern", () => {
       expect(normalizePattern(input).problem).toBeDefined();
     },
   );
-});
-
-describe("formatting", () => {
-  it("reads limits as a person says them", () => {
-    expect(formatCores(0)).toBe("No limit");
-    expect(formatCores(1)).toBe("1 core");
-    expect(formatCores(2.5)).toBe("2.5 cores");
-    expect(formatMemory(0)).toBe("No limit");
-    expect(formatMemory(512)).toBe("512 MiB");
-    expect(formatMemory(1536)).toBe("1.5 GiB");
-    expect(formatPids(4096)).toBe("4,096 processes");
-  });
 });

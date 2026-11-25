@@ -66,14 +66,15 @@ it needs with `session.replay`.
 | Field | Type | Meaning |
 |---|---|---|
 | `type` | string | Event type name, for example `tool.call`. |
-| `topic` | string | `global`, `computer:<id>`, or `session:<id>`. |
+| `topic` | string | `global`, `inbox`, `skills`, `computer:<id>`, or `session:<id>`. |
 | `time` | RFC 3339 timestamp, UTC | When the event was created. |
 | `payload` | object, optional | Type-specific body. |
 
-There are three kinds of topic: `global`, `computer:<id>`, and
-`session:<id>`. Agent run events, question and elicitation events, and replay
+There are five kinds of topic: `global`, `computer:<id>`, `session:<id>`,
+`inbox`, and `skills`. Agent run events, question and elicitation events, and replay
 events are published on `session:<id>`; computer lifecycle events on
-`computer:<id>`; MCP server state and session titles and edits on `global`. A
+`computer:<id>`; MCP server state and session titles and edits on `global`;
+memory and Inbox changes on `inbox`; skill changes on `skills`. A
 `bus.dropped` event reaches one connection only and carries the topic
 `global`, whatever that connection subscribed to.
 
@@ -158,6 +159,7 @@ so a replay delivers it too.
 | `is_error` | boolean | The call failed in a way the model can act on. |
 | `details` | object, optional | Structured data for the interface only, for example a command's exit code. |
 | `duration_ms` | number | How long the call took. |
+| `removed` | number, optional | How many windows ingest removed from `content` (a `web_fetch` or `web_search` result); absent when none. The stored `tool_result` entry's message carries the same `removed`. |
 
 ### `turn.progress`
 
@@ -269,7 +271,7 @@ from a run that `POST /api/sessions/{id}/compact` started and that has no
 | Field | Type | Meaning |
 |---|---|---|
 | `run_id` | string | The turn, or the compaction's own id when it is a run of its own. |
-| `reason` | string | `manual` (asked for), `threshold` (the next request would leave less of the window free than the reserve), or `overflow` (the endpoint refused a request as larger than its window; it is sent again after). |
+| `reason` | string | `manual` (asked for), `idle` (maintenance), `threshold` (the next request would leave less of the window free than the reserve), or `overflow` (the endpoint refused a request as larger than its window; it is sent again after). |
 | `tokens_before` | number | The estimated size of the context being compacted. |
 
 ### `compaction.end`
@@ -294,15 +296,17 @@ lets the turn go on with the conversation as it was.
 
 ### `question.asked`
 
-The run called `ask_user` and is blocked until
-`POST /api/questions/{id}/answer` delivers an answer or the run is aborted.
+For a subagent, this event is read-only: Eika answers through
+`subagent_message`, and the question is absent from the HTTP broker.
+
+The wait ends when the subagent run is cancelled.
 
 | Field | Type | Meaning |
 |---|---|---|
 | `run_id` | string | Identifies the turn. |
 | `session_id` | string | The session that is waiting. |
 | `call_id` | string | The `ask_user` call the answer completes. |
-| `question_id` | string | What to POST the answer to. |
+| `question_id` | string | The question id in the home notice. |
 | `question` | string | The question to put to the user. |
 | `options` | string array, optional | The answers to choose from. Absent for an open question. |
 | `allow_free_text` | boolean | An answer outside `options` is accepted. |
@@ -351,6 +355,61 @@ and refetches `GET /api/computers`.
 | `computer_id` | string | The computer. |
 | `state` | string | `creating`, `running`, `stopped`, or `gone`. |
 
+## Halt events
+
+### `halt.state`
+
+Published on `global` when Eika is halted or resumed, and only when the state
+changes. A client shows its banner from it and reads `GET /api/halt` on connect.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `halted` | boolean | The state now. |
+| `at` | string, optional | When it was halted, RFC 3339. Only while halted. |
+| `reason` | string, optional | The note given with the halt. Only while halted. |
+
+## Memory events
+
+Published on topic `inbox`, after the change is durable, whoever made it (the
+agent's memory tools, the user's routes, or startup repair). Any authenticated
+client may subscribe; there is one user. They carry no memory text: the client
+refetches. Events are not replayed, so a client refetches `GET /api/inbox/count`
+and whatever list it shows when it connects, reconnects or sees `bus.dropped`.
+No push is sent and no run waits on them.
+
+### `memory.changed`
+
+A memory was written, changed or removed.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `name` | string | The memory's name. |
+| `state` | string, optional | `active`, `pending` or `archived` now. Absent when it was purged. |
+
+### `inbox.count`
+
+Follows every `memory.changed`, with the number of pending memories now. A
+client may show it as the badge without another request.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `pending` | integer | Memories in state `pending`. |
+
+## Skills events
+
+### `skills.changed`
+
+Published on topic `skills`, after the change is durable, whoever made it. Any
+authenticated client may subscribe. It carries no skill text: the client
+refetches `GET /api/skills` (and the skill it shows). Events are not replayed,
+so a client refetches when it connects, reconnects or sees `bus.dropped`. No push
+is sent.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `name` | string | The skill's name. |
+| `change` | string | `installed` (new, or reinstalled with changes, which returns it to disabled), `enabled`, `disabled` or `deleted`. |
+
 ## MCP events
 
 ### `mcp.server`
@@ -374,7 +433,7 @@ page stays current without polling.
 
 Published on `global` when an untitled session is named after its first
 message by the model of the `fast` class (the `model_classes` setting).
-It goes to every client, since every sidebar lists every session; a client
+It goes to every client, since any client may list any session; a client
 refetches its session lists.
 
 | Field | Type | Meaning |
@@ -386,13 +445,18 @@ refetches its session lists.
 ### `session.updated`
 
 Published on `global` when `PATCH /api/sessions/{id}` renames, pins, or
-archives a session. Like `session.title` it goes to every client, which
-refetches its session lists.
+archives a session. Subagent creation and each lifecycle state or waiting
+reason change and each stored subagent report also publish it, after the store
+write. Each client refetches its session lists and the session to read the state
+and optional `waiting_reason`. After an assignment ends idle with a report, a
+second update carries its report id. It is also published on the session topic after
+a run releases the session, so clients can recover a missed turn-end event.
 
 | Field | Type | Meaning |
 |---|---|---|
 | `session_id` | string | The session. |
 | `computer_id` | string, optional | Its computer, absent for a chat. |
+| `report_id` | string, optional | Identifies the completed subagent report. |
 
 ## Stream events
 
@@ -407,10 +471,12 @@ renders a message it watched arrive live.
 |---|---|---|
 | `session_id` | string | The session replayed. |
 | `entry_id` | string | The entry. Pass the last one you saw as `since` to resume. |
+| `run_id` | string, optional | The agent turn that wrote the entry, when known. |
 | `parent_id` | string, optional | The entry it follows. |
-| `kind` | string | `user`, `assistant`, `tool_call`, `tool_result`, `system`, `event`, or `compaction`. |
+| `channel` | string, optional | Source or destination channel, absent when unset. |
+| `kind` | string | `user`, `assistant`, `tool_call`, `tool_result`, `system`, `event`, `compaction`, `preamble` or `notice`. |
 | `created_at` | time | When the entry was written. |
-| `message` | object | The entry's stored payload: a provider message for the conversation kinds. An assistant message can include `reasoning` and `metrics`; `metrics` holds `run_id`, turn `usage`, last-call `context`, `generation_ms`, `context_window`, and optional `timings`, so replay restores the context view and the speed the answer was produced at. Metrics are not sent to the provider. For a `compaction` entry it is the compaction: `summary`, `kept`, `tokens_before`, `tokens_after`, `reason`, and `usage`. It stands for the conversation before it, which stays in the path; the model reads the summary and the last `kept` messages in its place. |
+| `message` | object | The entry's stored payload: a provider message for the conversation kinds. For `preamble` and `notice`, the payload is `{"text": string}` with the stored text; a `preamble` can also hold `definition`, `{"prompt": string, "tools": [string]}`, the base prompt and tool names its runs use until a compaction replaces it. An assistant message can include `reasoning` and `metrics`; `metrics` holds `run_id`, turn `usage`, last-call `context`, `generation_ms`, `context_window`, and optional `timings`, so replay restores the context view and the speed the answer was produced at. Metrics are not sent to the provider. For a `compaction` entry it is the compaction: `summary`, `kept`, `tokens_before`, `tokens_after`, `reason`, `usage`, and on home `board_as_of`. It stands for the conversation before it, which stays in the path; the model reads the summary and the last `kept` messages in its place. |
 
 ### `bus.dropped`
 

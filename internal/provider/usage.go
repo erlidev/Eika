@@ -144,9 +144,6 @@ func (t *Tally) AddTally(o Tally) {
 // Total returns the tally's total, with nothing reported before the first call.
 func (t Tally) Total() Usage { return t.total }
 
-// Calls returns how many calls the tally has added.
-func (t Tally) Calls() int { return t.calls }
-
 // ChatUsage reads what one Chat Completions stream chunk (or a whole response
 // body) states about the tokens the call cost. It reports false when the chunk
 // states none, which is the common case: most chunks carry no usage.

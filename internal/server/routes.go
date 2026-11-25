@@ -23,6 +23,7 @@ func (s *Server) routes() {
 		s.mux.HandleFunc("POST /api/auth/setup", s.handleSetup)
 		s.mux.HandleFunc("POST /api/auth/login", s.handleLogin)
 		s.resourceRoutes(api)
+		s.liveRoutes(api)
 	}
 	s.mux.Handle("/api/", s.authenticated(api))
 
@@ -40,23 +41,51 @@ func (s *Server) routes() {
 
 // resourceRoutes registers the routes that read or write the database.
 func (s *Server) resourceRoutes(api *http.ServeMux) {
+	api.HandleFunc("GET /api/instructions", s.handleInstructions)
+	api.HandleFunc("PUT /api/instructions", s.handlePutInstructions)
+	api.HandleFunc("DELETE /api/instructions", s.handleDeleteInstructions)
+	api.HandleFunc("GET /api/projects/{id}/instructions", s.handleProjectInstructions)
+	api.HandleFunc("PUT /api/projects/{id}/instructions", s.handlePutProjectInstructions)
+	api.HandleFunc("DELETE /api/projects/{id}/instructions", s.handleDeleteProjectInstructions)
+
+	api.HandleFunc("GET /api/projects", s.handleListProjects)
+	api.HandleFunc("POST /api/projects", s.handleCreateProject)
+	api.HandleFunc("GET /api/projects/{id}", s.handleProject)
+	api.HandleFunc("PATCH /api/projects/{id}", s.handleUpdateProject)
+
 	api.HandleFunc("POST /api/auth/logout", s.handleLogout)
 	api.HandleFunc("PUT /api/auth/password", s.handleChangePassword)
 
 	api.HandleFunc("GET /api/computers", s.handleListComputers)
 
+	api.HandleFunc("GET /api/memories", s.handleListMemories)
+	api.HandleFunc("GET /api/memories/{name}", s.handleMemory)
+	api.HandleFunc("PATCH /api/memories/{name}", s.handleEditMemory)
+	api.HandleFunc("POST /api/memories/{name}/pin", s.handlePinMemory(true))
+	api.HandleFunc("POST /api/memories/{name}/unpin", s.handlePinMemory(false))
+	api.HandleFunc("POST /api/memories/{name}/archive", s.handleArchiveMemory)
+	api.HandleFunc("DELETE /api/memories/{name}", s.handlePurgeMemory)
+	api.HandleFunc("GET /api/inbox/count", s.handleInboxCount)
+	api.HandleFunc("GET /api/inbox/memories", s.handleInboxMemories)
+	api.HandleFunc("POST /api/inbox/memories/{name}/accept", s.handleAcceptMemory)
+	api.HandleFunc("POST /api/inbox/memories/{name}/reject", s.handleRejectMemory)
+
+	api.HandleFunc("POST /api/skills", s.handleInstallSkill)
+	api.HandleFunc("GET /api/skills", s.handleListSkills)
+	api.HandleFunc("GET /api/skills/{name}", s.handleSkill)
+	api.HandleFunc("POST /api/skills/{name}/enable", s.handleSetSkillEnabled(true))
+	api.HandleFunc("POST /api/skills/{name}/disable", s.handleSetSkillEnabled(false))
+	api.HandleFunc("DELETE /api/skills/{name}", s.handleDeleteSkill)
+
+	api.HandleFunc("GET /api/home", s.handleHomeSession)
 	api.HandleFunc("GET /api/sessions", s.handleListSessions)
-	api.HandleFunc("POST /api/sessions", s.handleCreateSession)
 	api.HandleFunc("GET /api/sessions/{id}", s.handleSession)
 	api.HandleFunc("PATCH /api/sessions/{id}", s.handleUpdateSession)
 	api.HandleFunc("DELETE /api/sessions/{id}", s.handleDeleteSession)
 	api.HandleFunc("GET /api/sessions/{id}/outline", s.handleSessionOutline)
+	api.HandleFunc("GET /api/sessions/{id}/entries", s.handleSessionEntries)
 	api.HandleFunc("GET /api/sessions/{id}/path", s.handleSessionPath)
 	api.HandleFunc("POST /api/sessions/{id}/head", s.handleSetSessionHead)
-	api.HandleFunc("PUT /api/sessions/{id}/tools", s.handleSetSessionTools)
-	api.HandleFunc("GET /api/sessions/{id}/configuration", s.handleSessionConfiguration)
-	api.HandleFunc("PUT /api/sessions/{id}/profile", s.handleSetSessionProfile)
-	api.HandleFunc("PUT /api/sessions/{id}/overrides", s.handleSetSessionOverrides)
 	api.HandleFunc("GET /api/sessions/{id}/context", s.handleSessionContext)
 	api.HandleFunc("GET /api/sessions/{id}/prediction", s.handleSessionPrediction)
 	api.HandleFunc("GET /api/sessions/{id}/calls", s.handleSessionCalls)
@@ -65,9 +94,24 @@ func (s *Server) resourceRoutes(api *http.ServeMux) {
 	api.HandleFunc("POST /api/sessions/{id}/messages", s.handlePostMessage)
 	api.HandleFunc("GET /api/sessions/{id}/run", s.handleSessionRun)
 	api.HandleFunc("POST /api/sessions/{id}/compact", s.handleCompact)
+	api.HandleFunc("POST /api/sessions/{id}/cancel", s.handleCancelSubagent)
 	api.HandleFunc("POST /api/runs/{id}/abort", s.handleAbortRun)
 	api.HandleFunc("POST /api/questions/{id}/answer", s.handleAnswerQuestion)
 	api.HandleFunc("GET /api/tools", s.handleListTools)
+
+	api.HandleFunc("GET /api/guard", s.handleGuard)
+	api.HandleFunc("GET /api/halt", s.handleHalt)
+	api.HandleFunc("POST /api/halt", s.handleSetHalt)
+	api.HandleFunc("POST /api/halt/resume", s.handleResume)
+	api.HandleFunc("GET /api/blocked-hosts", s.handleBlockedHosts)
+	api.HandleFunc("POST /api/blocked-hosts", s.handleAddBlockedHost)
+	api.HandleFunc("DELETE /api/blocked-hosts/{host}", s.handleRemoveBlockedHost)
+	api.HandleFunc("GET /api/trusted-sources", s.handleTrustedSources)
+	api.HandleFunc("POST /api/trusted-sources", s.handleAddTrustedSource)
+	api.HandleFunc("DELETE /api/trusted-sources/{host}", s.handleRemoveTrustedSource)
+	api.HandleFunc("POST /api/withheld/{id}/trust", s.handleTrustWithheld)
+	api.HandleFunc("GET /api/withheld", s.handleListWithheld)
+	api.HandleFunc("GET /api/withheld/{id}", s.handleWithheld)
 
 	api.HandleFunc("GET /api/providers", s.handleListProviders)
 	api.HandleFunc("POST /api/providers", s.handleCreateProvider)
@@ -81,11 +125,10 @@ func (s *Server) resourceRoutes(api *http.ServeMux) {
 	api.HandleFunc("PATCH /api/models/{id}", s.handleUpdateModel)
 	api.HandleFunc("DELETE /api/models/{id}", s.handleDeleteModel)
 
-	api.HandleFunc("GET /api/profiles", s.handleListProfiles)
-	api.HandleFunc("GET /api/profiles/inherited", s.handleInheritedProfile)
-	api.HandleFunc("POST /api/profiles", s.handleCreateProfile)
-	api.HandleFunc("PUT /api/profiles/{id}", s.handleUpdateProfile)
-	api.HandleFunc("DELETE /api/profiles/{id}", s.handleDeleteProfile)
+	api.HandleFunc("GET /api/agents", s.handleListAgents)
+	api.HandleFunc("GET /api/agents/{name}", s.handleAgent)
+	api.HandleFunc("PUT /api/agents/{name}", s.handlePutAgent)
+	api.HandleFunc("DELETE /api/agents/{name}", s.handleResetAgent)
 
 	if s.deps.Search != nil {
 		api.HandleFunc("POST /api/search", s.handleSearch)
@@ -108,6 +151,7 @@ func (s *Server) resourceRoutes(api *http.ServeMux) {
 		api.HandleFunc("POST /api/elicitations/{id}/answer", s.handleAnswerElicitation)
 	}
 
+	api.HandleFunc("POST /api/notifications/test", s.handleTestNotification)
 	api.HandleFunc("GET /api/settings", s.handleSettings)
 	api.HandleFunc("PUT /api/settings", s.handlePutSettings)
 	api.HandleFunc("GET /api/system", s.handleSystem)
@@ -135,6 +179,13 @@ func (s *Server) handleWeb(dir string) http.Handler {
 			w.Header().Set("Allow", "GET, HEAD")
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
+		}
+		w.Header().Set("Cache-Control", "no-cache")
+		switch r.URL.Path {
+		case "/manifest.webmanifest":
+			w.Header().Set("Content-Type", "application/manifest+json")
+		case "/service-worker.js":
+			w.Header().Set("Content-Type", "application/javascript")
 		}
 		// Anything that is not a regular file is a client-side route, not a
 		// static asset. Directories included: the UI never wants a listing.

@@ -16,7 +16,7 @@ func CountingConversation(nonce string) Scenario {
 		Name: "counting_conversation",
 		Run: func(ctx context.Context, t *Target) ([]Call, error) {
 			if !t.Server.Flags.Vision {
-				return nil, fmt.Errorf("counting conversation requires the bench's vision model")
+				return nil, ErrNoVision
 			}
 			req := toolsAndReasoningRequest(nonce)
 			var calls []Call

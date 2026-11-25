@@ -15,6 +15,20 @@ import type { Node } from "@/api/types";
  */
 export function rewindTarget(nodes: Node[], entryId: string): string | null {
   const byId = new Map(nodes.map((n) => [n.id, n]));
+  return target(byId, entryId);
+}
+
+/** rewindableEntries finds user messages that can be rewound. */
+export function rewindableEntries(nodes: Node[]): Set<string> {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  return new Set(
+    nodes
+      .filter((node) => node.kind === "user" && target(byId, node.id) !== null)
+      .map((node) => node.id),
+  );
+}
+
+function target(byId: Map<string, Node>, entryId: string): string | null {
   const node = byId.get(entryId);
   if (node === undefined) return null;
   const parentId = node.parent_id;

@@ -8,6 +8,11 @@ this file says why, so neither repeats the other.
 
 ## Scope
 
+- **Live worker tests use controlled Docker networks** (2026-11-22). The Core
+  process reaches its sandbox by container IP and the live-only proxy control
+  permits the fixture's loopback port. This lets the suite test the real egress
+  proxy without weakening the public-address rule in normal builds.
+
 - **Eika is a personal assistant that runs on hardware the user owns.** One
   person talks to it, and it works in sandboxed computers on their behalf.
   Memory, plugins, a scheduler, skills and a permission authority (Sentry) are
@@ -166,6 +171,32 @@ labelled session's `web_fetch` and `bash`. Design: `design/sentry.md`.
   fetch a URL with private data in it. `design/sentry.md` 6 lists them,
   `evals/injection` counts them with the screen on and off, and `DEFERRED.md` has
   the rules to add if the counts are bad. None of them is an ask.
+- **An ask stores the call and does not stop the run** (2026-11-13). A parked call
+  held a run for up to a day and died with a restart, and a routine had nobody
+  to answer it. The approval now holds the whole call, Core runs it as stored
+  when the user confirms, and the model is told only that it is queued. Rejected:
+  asking the model again after approval, since what runs must be what the user
+  read.
+- **Plugin tools ask once per destination, not once per call** (2026-11-13). The
+  list of what asks stays closed at two. A tool with a destination argument is
+  `known` by default: a recipient the user named in the conversation, or has
+  approved before, does not ask. The cost is that an injected message to someone
+  the user already writes to goes out, and the journal is where it shows.
+  Rejected: an outbox delay on every send, which slows every honest send to
+  cover a rare one.
+- **Tripwires act on chains, not events** (2026-11-13). Reads, commands and egress
+  still never ask, so something has to watch them. A single event (a `.env` read,
+  an upload, a link followed from a page) is ordinary work and alerting on it is
+  fatigue again. Sentry records each as a mark and acts only when a source,
+  access and a sink join on one run: it blocks that action, holds that run, and
+  sends one push. Holding is a state of a run made by its own actions, not a
+  label on a session, and it ends with the run. A tripwire ships only if it
+  fires on no honest session in `evals/injection`. Rejected: default-allowlist
+  egress and a budget on composed fetch URLs, which stop the same attacks by
+  refusing honest work every day. Rejected: a model as the monitor on every
+  run, for the latency and because text in the trajectory can steer it.
+- **File changes are checkpointed, not gated** (2026-11-13). A shadow git commit
+  per run makes a destructive command recoverable without a question.
 - **Approvals, grants and the Inbox's cards move to the phases that first use
   them**: phase 11 for approvals, phase 5 for the Inbox page. Phase 4 would
   otherwise have built an approval flow with no caller and tested it with a
@@ -173,6 +204,28 @@ labelled session's `web_fetch` and `bash`. Design: `design/sentry.md`.
 - **The plan's log is its own file**, `PLAN_LOG.md`, and closed phases are a
   paragraph in the plan. Every agent that starts an item reads the plan, and most
   of it had become history.
+- **The `open` egress mode becomes `public`, and a host without egress control
+  keeps direct routes** (2026-11-21). Phase 4 puts every computer behind the proxy,
+  so the mode that reached any host is renamed `public`: any public host not on the
+  blocklist. The wire value and stored settings change, and `open` or a missing
+  value migrates to `public`. A host with no sandbox networks (`make dev`, the live
+  harness, some Docker tests) cannot proxy; there computers keep direct routes as a
+  development state with no setting, a warning at start, and no blocklist or
+  allowlist. Rejected: giving dev and live a real internal network, which needs a
+  host-run Core reachable from it for a state that is not a deployment.
+- **Sandbox egress uses exact blocked hosts** (2026-11-22). The proxy asks
+  Sentry before each connection. A blocklist entry matches the normalized host,
+  and takes precedence over a computer's allowlist. Netguard still checks the
+  resolved address at dial time. Halt closes active proxy connections and refuses
+  new ones. Core checks each fetch and hosted search request through the same gate,
+  including redirects and reused connections. The configured local SearXNG origin
+  is exempt; redirects to other origins are checked.
+- **Fixtures reach `web_fetch` through a config key of exact private hostnames**
+  (2026-11-21). Core's fetch refuses private addresses, so smoke and live fixtures
+  need one exception. The key is empty by default, takes exact hostnames only, is
+  logged at start, and is absent from settings and the UI; only `compose.smoke.yaml`
+  and the live harness set it. Rejected: a public fixture host, which makes both
+  suites depend on the internet.
 
 ## The coding layer is removed
 
@@ -293,8 +346,8 @@ labelled session's `web_fetch` and `bash`. Design: `design/sentry.md`.
   per-computer, secret, and recoverable after restart, so no grant table. It
   was the hub token until the hub was due to go, and it stays.
 - Proxy variables go through eikad's `PUT /environment`, because a
-  container's env is immutable and egress can change while it runs. Open
-  sandboxes get no proxy, so they keep private addresses.
+  container's env is immutable and egress can change while it runs. All
+  sandboxes on a host with egress control use the proxy.
 - **Previews, the terminal and eikad `/pty` are gone.** They let a person
   work in a sandbox by hand, which a coding harness needs and an assistant
   does not: the agent is the only thing that uses a computer, and the user
@@ -416,11 +469,11 @@ labelled session's `web_fetch` and `bash`. Design: `design/sentry.md`.
   calls stays one entry, so the tree never gains a branch point the loop
   cannot resume from.
 - Entry kinds `user`, `assistant`, `tool_call`, `tool_result`, `system`,
-  `event` are fixed vocabulary shared with the frontend.
+  `event`, `compaction`, `preamble` and `notice` are fixed vocabulary shared
+  with the frontend.
 - **Only a resumable entry can be a head**: one whose path leaves no tool
   call unanswered. `session.PathResumable` is the one rule.
-- `sessions.kind` (today only `user`) is a column, not a join, because it is
-  what the session is.
+- `sessions.kind` is a column, not a join, because it is what the session is.
 - A chat is a session with `computer_id` NULL: same tree, run manager, and
   view. Created explicitly (`chat: true`), and a computer's sessions cascade
   with it rather than becoming chats.
@@ -447,6 +500,60 @@ labelled session's `web_fetch` and `bash`. Design: `design/sentry.md`.
 - Malformed tool arguments keep their exact text, quoted, with
   `arguments_malformed: true`, so the entry is always writable and the tool
   reports a normal argument error.
+
+## Retire profiles and direct sessions
+
+- Migration 0021 saves all profile rows, each session's original kind and
+  profile choices, and the default profile setting in `retired_profiles`,
+  `retired_session_profiles`, and `retired_profile_defaults`. These tables are
+  snapshots. The runtime does not read them. The live profile table and session
+  profile, override and tool-choice columns are removed.
+- Existing user sessions become routines with agent `eika`. Their name is the
+  title, or the session ID when the title is blank. IDs, computer associations,
+  heads, entry trees and payloads stay unchanged. They do not become home.
+  Their archived configuration does not grant tools or select a model.
+- Old entry kinds and payloads stay unchanged. A `NOT VALID` check keeps those
+  rows readable and rejects new entries with retired kinds. A later migration
+  must not validate this constraint without first preserving those rows.
+- Agent definitions and model classes replace configuration layers. Agent runs
+  do not connect MCP tools. The MCP pool remains for later work.
+
+## Phase 2 session storage
+
+- Migration 0014 keeps `user` sessions and their configuration unchanged. New
+  kinds are `home`, `subagent` and `routine`. The local owner's key is `local`;
+  it is a storage identity, not the bearer token. Home names are unique per
+  owner. Subagent names are unique per parent, including cancelled sessions.
+- New sessions start `idle`. Existing rows get `last_active_at` from `updated_at`.
+  Activity updates belong to lifecycle code; metadata edits do not change it.
+  Parent and project references restrict deletion to retain session history.
+  Subagents require a parent and a name; home sessions have no parent.
+- Entries store an optional channel separately from their exact JSON payload.
+  Preamble and notice entries use a `text` payload. Storage and API expose them;
+  preamble assembly and notice delivery are added by their own packages.
+
+## Phase 2 upgrade policy
+
+- **Upgrade the existing database in place.** Migrations are forward-only and
+  append-only. Migration 0010 is the Phase 2 baseline. The schedule reserves
+  0011 through 0017 for later packages, but each package must check the current
+  sequence after its predecessor merges before it chooses a number. No package
+  resets the database or rewrites an applied migration.
+- **Keep old conversations readable.** Add the new session and entry shapes before
+  moving their consumers. Preserve existing session IDs, entry trees, content and
+  computer associations, including null `computer_id`. Old chats do not become the
+  new home conversation by implication. Retire creation and old fields only after
+  the UI and API callers move, with a populated upgrade test that reads the old
+  history. Do not delete old chats to satisfy a new constraint.
+- **Preserve profile settings through the transition.** Keep profile rows and the
+  existing resolution path while callers still use them. Before removing them,
+  explicitly migrate or retain their user-set values so they remain recoverable;
+  do not silently replace them with agent defaults or discard them. Test an upgrade
+  with multiple populated profiles and session overrides. Agent definitions have
+  fixed capabilities, so old tool selections do not grant new agents MCP access.
+- **Ensure home on start.** Find it by owner and name and create it idempotently,
+  without waiting for Docker. Existing conversations remain separate. This also
+  covers installations that completed setup before the home-session feature.
 
 ## Agent loop and providers
 
@@ -539,7 +646,8 @@ labelled session's `web_fetch` and `bash`. Design: `design/sentry.md`.
   lines and nothing about the shape changes: `time: Sat 2026-10-31 14:05 +00:00
   (UTC)` today. A message that already has its block keeps it: a message read
   back from the store, or given back to its queue by a turn that failed, is
-  never stamped again.
+  never stamped again. An unstored question notice can be replaced before
+  delivery; the stamped time and stored messages stay unchanged.
 - **Why stored, and why apart from the text.** The time is read once and
   written once. A block computed when a request is built would give every
   earlier user message a different time on every call, the serialised prefix
@@ -562,19 +670,10 @@ labelled session's `web_fetch` and `bash`. Design: `design/sentry.md`.
   compaction leaves. The images-in-tool-results message of the design (phase
   2) is a user message the harness writes after a tool result; it will be
   stamped like any other.
-- **The zone is UTC until the preamble exists.** The design puts the user's
-  time zone and locale in the preamble entry (phase 2), and the zone the block
-  states its time in is that zone. Nothing records the user's zone before then:
-  the browser knows it, but no setting carries it, and a setting for one value
-  the preamble item would replace is the speculative option the style guide
-  forbids. So `Options.Location` is UTC by default, the block states the
-  zone's name and offset beside the time, so the model never reads a UTC time
-  as local, and the preamble item passes the stored zone. Messages already
-  stored keep the zone they were written in. Rejected: the harness
-  container's local zone (a container's zone is UTC unless someone set it, and
-  says nothing of the user); a guess from the browser at each message (a
-  zone that can change between messages is a changed prefix, and the block
-  would disagree with the preamble).
+- **The preamble fixes the user's zone.** Settings `time_zone` and `locale`
+  feed new snapshots. The zone defaults to UTC and the locale to unspecified.
+  A message uses the snapshot's zone and retains its stamped time on replay.
+  The harness does not infer a zone from its container or from each browser.
 - **Counting.** The block is part of what is sent, so the counter counts it:
   the endpoint's own rendering sees it under `exact`, and the census of the
   anchored and estimated methods, the context breakdown and the part sizes
@@ -658,10 +757,9 @@ labelled session's `web_fetch` and `bash`. Design: `design/sentry.md`.
 
 - **A run is bounded in model calls and in wall time.** `Options.Limits` holds
   `MaxCalls` (default 40) and `MaxWall` (default 24 hours). 40 is the home
-  session's limit in `runtime.md` section 5; the design gives a subagent 200, and
-  the agent definitions of phase 2 set each agent's own. Until they exist every
-  session is a chat on one computer, which is the home session's case, so 40 is
-  the one default. A run is one `Agent.Run`, however many turns its follow-ups
+  session's limit in its agent definition; a subagent has 200, and
+  agent definitions set each agent's own limit. Legacy profile sessions keep
+  the default of 40. A run is one `Agent.Run`, however many turns its follow-ups
   start. A model call is a step of the loop: a retried attempt is the same call,
   and the summary a compaction asks for is not one, since neither is the
   model's own choice to go on.
@@ -1246,9 +1344,8 @@ verified against `/slots` while a call ran, on b11942). Current behavior is in
 - **An exact prediction with any drift is shown as a bug.** The inspector
   raises an error notice for a recorded call whose `prediction` is `exact` and
   `drift` is not 0; the loop already logs it.
-- **The preamble is not a part yet.** The system prompt's sections are the base
-  prompt and the instructions; the preamble item (Phase 1) adds its own.
-  Nothing is invented for it.
+- **The preamble is a separate part.** The context inspector reports the
+  stored snapshot as its own system prompt section.
 
 ### The token counter
 
@@ -1671,8 +1768,15 @@ verified against `/slots` while a call ran, on b11942). Current behavior is in
 
 ## Tools
 
-- **bash is the only file tool.** Models chain steps in one shell call, and
-  one tool is less to describe than seven.
+- **File tools use the executor** (2026-11-14, P2-05). Small local models
+  make exact text edits more reliably than shell heredocs. `file_read` returns
+  up to 32 KiB; `file_write` and `file_edit` accept files up to 1 MiB. Larger
+  work uses `bash`. An edit requires one exact match and validates the whole
+  result before writing. Executor writes use a temporary sibling and rename,
+  preserving file permissions and the old file on failure. Data is synced
+  before the rename, and a read-only file is refused as a permission error. This replaces the
+  bash-only choice. Edits do not lock out concurrent shell or external writes;
+  callers must coordinate changes to the same file. No new dependency is needed.
 - One shared, stateless tool registry; the executor arrives per call.
 - The built-in registry is `tool/builtin/registry.go` and provider kinds are
   `NewRegistry` parameters: both avoid import cycles.
@@ -1733,11 +1837,8 @@ verified against `/slots` while a call ran, on b11942). Current behavior is in
   password exists; the stack binds 127.0.0.1 so only this machine can claim
   it. Tokens are stored as SHA-256, valid 30 days; changing the password ends
   every session. Attempts are serialised, not locked out.
-- **Profiles**: named, all-nullable run configurations; null falls through.
-  One function resolves a run: request model → session overrides →
-  profile → model row → provider default. `default_profile` is a setting; the
-  last profile cannot be deleted. A profile's prompt, when set (even empty),
-  replaces the built-in one.
+- **Run configuration**: agent definitions choose the prompt, tools and model
+  class. The selected model row sets sampling and thinking options.
 - Sampling fields are pointers; nil means the endpoint's default, so
   non-standard fields (top_k, min_p) are sent only when set. An effort the
   model does not offer falls through and is reported as dropped.
@@ -1750,8 +1851,8 @@ verified against `/slots` while a call ran, on b11942). Current behavior is in
 - Remote servers connect from the harness (a network call; tools reach
   chats). Stdio servers are processes, so they run in the session's
   computer via eikad `/process`, one per computer.
-- Tools are `mcp__<server>__<tool>`, cut to 64 characters. Renaming a server
-  rewrites tool choices in the same transaction; names hold no `__`.
+- Tools are `mcp__<server>__<tool>`, cut to 64 characters. Server names hold
+  no `__`.
 - OAuth 2.1 per the MCP spec. The redirect lands on a frontend route that
   posts to the authenticated API, so no unauthenticated route receives the
   code. Registration order: user client id, Client ID Metadata Document (needs
@@ -1759,9 +1860,8 @@ verified against `/slots` while a call ran, on b11942). Current behavior is in
 - Elicitation is supported; roots, sampling, and logging are deprecated in
   `2026-07-28` and not declared.
 - **No agent can use a plugin from phase 2 until phase 11 (accepted).** Today
-  a chat gets MCP tools through its tool choice, which a profile or the
-  session sets. Phase 2 replaces profiles with agent definitions that have
-  fixed tool lists, and a plugin call must be decided by Sentry (phase 4). Phase 11
+  agent definitions have fixed tool lists, and a plugin call must be decided by
+  Sentry (phase 4). Phase 11
   now comes right after memory, so the gap is short. The pool, the MCP screens, OAuth
   and the server logs stay in Core and keep working: a server can be added and
   connected, and no agent calls it. Rejected: a stopgap for choosing plugin tools in
@@ -1785,9 +1885,29 @@ verified against `/slots` while a call ran, on b11942). Current behavior is in
 
 ## Frontend
 
-- Three panes; one session at a time, addressed by `/sessions/<id>`.
-- Panel and tool-renderer registries are single arrays/maps. Panel `id`s
-  never change once shipped. Unknown tools render as JSON.
+- **Cache only the built shell.** The build writes an explicit file list and a
+  content-derived cache name into the worker. Navigation tries the network first;
+  data requests never enter the cache. A new worker waits for old clients to
+  close before it replaces their cache, so an update does not interrupt a chat.
+  The worker is not registered in development.
+- **Toasts use live events, not a stored notification list.** A completed
+  report adds its id to a `session.updated` event after the child goes idle.
+  The earlier update only says that the report was stored, and a refetch can
+  miss a fast state transition. Home replies use the live turn stream. The
+  page forgets the queue on reload and does not create toasts from catch-up.
+- **Touch density follows the primary pointer.** On `(pointer: coarse)`, the
+  type tokens rise one step and controls have 44 px targets. Rewind and the
+  rename hint stay visible without hover. Fine-pointer layouts keep their
+  existing density, even at phone width.
+- **No list virtualiser (P3-16).** Chromium mobile emulation at 390x844, with
+  5,000 entries: the first load took 539 ms, loading 99 pages one after another
+  took 19 s, a page took 91 to 246 ms with 24 to 33 ms of React render and no long
+  task, and a 3 s scroll gave 187 frames, one over 20 ms. Rows are stable and
+  the rewind callback is memoised, which removed most of the cost. Return to a
+  virtualiser if a physical phone shows long tasks. It was not measured on one.
+
+- The shell uses a page list and routes, with Chat bound to home. Unknown
+  tools render as JSON.
 - **The transcript is a pure reducer** (`transcript.ts`) keyed by `run_id`
   for live turns and `entry_id` for stored entries, so content arriving twice
   draws once and a scripted event list is the whole test.
@@ -1796,8 +1916,8 @@ verified against `/slots` while a call ran, on b11942). Current behavior is in
 - One WebSocket per page with reference-counted topics.
 - Token in localStorage via `api/connection.ts`, a plain module (`api/` may
   not depend on a feature). Any 401 forgets it.
-- Moving the head rebuilds the transcript, since replay only adds; the
-  composer text lives in the session store so a rewind can refill it.
+- The transcript pages entries in write order across branches. Moving the head
+  reloads its newest page; the composer state stays so a rewind can refill it.
 - Rewind is in the transcript. Nothing is deleted.
 - Destructive actions confirm in `ConfirmDialog`, not `window.confirm`.
 - A sidebar row's quick buttons always show; hiding them until hover made
@@ -1812,7 +1932,12 @@ verified against `/slots` while a call ran, on b11942). Current behavior is in
   never a glyph's width: a code block is coloured, not set in mono, and the
   composer spec fails on any run that moves. Italic stays only while no
   italic face is loaded.
-- **The composer's keys are a browser preference, `chat` by default.** Enter
+- **Touch uses a plain textarea and a rendered preview.** A coarse pointer keeps
+  native input and Enter inserts a newline; the send button sends. The keyboard
+  modes and source overlay remain for a fine pointer. Neither sends during an
+  input method composition. Appearance can override the primary pointer for
+  devices that use both touch and a keyboard.
+- **The composer's keyboard keys are a browser preference, `chat` by default.** Enter
   sends, as every chat app does; the `markdown` mode trades that for an
   editor's Enter (list and quotation continuation) and sends on Ctrl+Enter.
   Its Tab nests list items and indents code, and elsewhere moves focus as
@@ -1875,7 +2000,7 @@ verified against `/slots` while a call ran, on b11942). Current behavior is in
   operations for the live suites live in `evals/bench`, behind a `Transport`
   (one SSH ControlMaster per run) so tests drive a fake host. A run records
   the GPU's holders and the running containers first and refuses with a
-  `BusyError` unless only `llama-qwen` holds the GPU; a container is stopped
+  `BusyError` unless only `llama-server` holds the GPU; a container is stopped
   only when named in `Options.Take`, and nothing else ever is. A changed
   model is a container of its own (`eika-bench-<run>`, `--restart no`, the
   chat container's image, mounts and network, the key through `--env-file` so
@@ -1894,3 +2019,898 @@ verified against `/slots` while a call ran, on b11942). Current behavior is in
   repeat), and no watchdog (a killed process or a lost connection would leave
   the GPU swapped). Built and tested on a fake host only; not yet run against
   the server.
+
+## Agent definitions
+
+- **The session's agent selects its runtime path** (2026-11-15, P2-08).
+  A nonempty agent name resolves its definition and overrides, then its model
+  class with the existing fallback rules. Profile settings, session overrides,
+  tool choices and requested models cannot replace that configuration. An
+  explicit model request is refused. Sessions with no agent keep profile
+  resolution. This keeps existing callers working without giving new agents
+  legacy permissions.
+- Agent runs and previews use the same built-in tool registry, filtered to the
+  definition's fixed list. MCP tools are excluded, and no MCP server connects
+  for an agent run. An agent gets an executor only when one of its fixed tools
+  needs a computer (today, the worker). Agent definitions set the
+  model-call limit and compaction prompts; global compaction budgets still
+  apply. Stage A has no subagent questions, so `ask_user` is added to the fixed
+  lists only with P2-16. Profile sessions retain their current question tool.
+  Rejected: using a profile as an agent's base, which would let profile edits
+  change agent capabilities and prompts.
+- Built-in definitions are code with embedded Markdown prompts. Only class and
+  system prompt can be overridden. A null override uses the built-in value;
+  an empty prompt is an explicit value. DELETE resets both fields. Only the
+  chat classes `deep`, `main` and `fast` are valid. No model must be configured
+  to edit a definition.
+- Migration 0011 adds override rows without changing profiles or conversations.
+  The agent API and runtime share these definitions. Fixed tool lists
+  include only shipped tools. Later packages extend them when those tools exist;
+  neither future tool names nor MCP wildcards are accepted from the API.
+- Compaction prompts are built-in per agent and are not override fields. Home
+  compaction changes in P2-20 to P2-22; see "Home compaction summary". These
+  definitions do not change existing runs.
+
+## Project records
+
+- **Slugs are stable and unique.** A project has an ID and a lowercase slug.
+  Creation requires both a name and a slug. Updates keep the slug, so links and
+  the default directory do not change when the name changes. Archive a project
+  with its status; there is no delete route.
+- **Directories name sandbox paths.** Store a clean absolute POSIX path other
+  than `/`, with no control characters, backslashes or `..` components. The
+  default is `/home/eika/projects/<slug>`. This is metadata only: the API does
+  not create directories or access files. Executor confinement applies when a
+  later tool uses the path. Restricting paths to the default subtree would
+  prevent users from selecting existing directories on the home computer.
+- **Project metadata excludes instructions.** Migration 0012 adds metadata only.
+  The create and update shapes cannot carry instructions. P2-03 adds a separate
+  user instruction path; project tools use only the metadata store methods.
+
+## User instructions
+
+- **Instruction writes have separate APIs and store methods.** Migration 0013
+  stores global About me and rules in one row, and project text in rows keyed
+  by project ID. Project metadata types have no instruction field. Future
+  project tools use those metadata methods and cannot write instructions.
+  A shared metadata update with a caller flag would weaken this boundary.
+- **PUT replaces text; DELETE clears it.** Both global fields are required on
+  PUT, so a missing or null field cannot erase stored text by accident. Empty
+  text is valid. Each field is limited to 64 KiB of UTF-8 without NUL. Reads
+  return empty text before a first write; an unknown project returns 404.
+- **Legacy profile instructions stay separate.** Migration 0013 does not copy
+  them into global rules: several profiles can have different rules. Current
+  runs still use profiles. P2-07 adds instruction snapshots to the preamble.
+
+- **Home starts with the server** (2026-11-15, P2-09). The local home session
+  is created by its `(owner, name)` identity before the API serves. It does not
+  wait for the home computer. User and assistant home messages record `web`,
+  and user context blocks name that channel. Existing direct chats remain.
+
+## App shell and Chat
+
+- **The shell has a page list, not a workbench** (2026-11-15, P3-04). The rail
+  and bottom bar are built from `app/pages.ts`; Chat at `/` is the only page,
+  and a page no phase has built is absent, not disabled. Settings stays the
+  existing dialog, opened from the shell. Chat renders `SessionView` for the
+  session `GET /api/home` names, unchanged. The earlier workbench stays in the
+  tree with no route, and old `/sessions/...` links land on Chat, so P3-17
+  removes dead code rather than a second way in. Rejected: routing the
+  workbench at another path for the visual suite, which keeps a second
+  workbench alive; its specs for the chat list and panels went with its route.
+## Activity
+
+- **Cancel is a session route over the lifecycle service** (2026-11-15, P3-09).
+  The board reads `GET /api/sessions` and keeps the sessions of kind `subagent`,
+  but Cancel is `POST /api/sessions/{id}/cancel`, which calls
+  `Service.Cancel`. Aborting the run (`POST /api/runs/{id}/abort`) needs a run
+  id, and the service holds an assignment before its run exists and between its
+  first run and the report-draft retry, so Cancel would be disabled while the
+  subagent is running. The route refuses a session that is not a subagent with
+  `409`, and cancelling one with nothing to stop changes nothing.
+- **A row says what the wire knows.** The line under a name is the waiting reason,
+  else the first line of the report, else of the brief. The design's "last tool
+  call" needs a per-subagent activity field or the `activity` topic (P2-17,
+  only if `session.updated` proved too coarse); a row would otherwise subscribe to
+  every subagent's session. The open view streams every call.
+- **The read-only view is `SessionView` with a flag, and the store is guarded.**
+  `readOnly` drops the composer, status bar, abort key and rewind, and reaches
+  the tool cards, so an `ask_user` or MCP request shows what is asked with no
+  control to answer it: no control moves or stops a session Eika owns beyond Cancel. The session store holds one
+  session and opens the next in an effect, so `Transcript` renders nothing from
+  a store that holds another session than its own; switching subagents never
+  flashes the last one.
+- **Opening a session mid-turn misses the start of the turn, as Chat does.**
+  A replay sends stored entries only, and the run status carries no partial
+  text, so a view opened while a subagent is answering shows the deltas from then
+  on, and the whole answer once its entry is stored. Chat reloaded mid-turn
+  behaves the same. No mechanism was invented for it: a per-turn event replay
+  would be a server change for both views. Rejected for P3-09.
+- **A session's draft is parked while another session is open.** The store holds
+  one session's transcript; `open` parks the composer state (draft, images,
+  model choice) under the session it leaves and restores it on return, so
+  watching a subagent does not clear Chat's unsent message. Rejected: moving the
+  draft out of the store, which rewind and the composer both read through it.
+- **A reconnect or a drop refreshes every session query.** An event lost while
+  the socket was down says nothing about which state changed, so
+  `useSessionUpdates` invalidates the session lists and open sessions on
+  `onReopen` and `bus.dropped`, as the open transcript already replays.
+
+- **The keyboard is handled by padding, not by moving the composer.** The shell
+  is `100dvh`, and the meta viewport asks for `interactive-widget=resizes-content`,
+  which resizes the page where the browser honours it. Where it does not
+  (Safari), `useViewportAnchor` writes the covered height to `--keyboard-inset`
+  from `visualViewport` and the shell pads its bottom with it. A cover under
+  100px is a browser toolbar and ignored, as is any pinch zoom.
+
+## Preamble snapshots
+
+Agent sessions store the rendered preamble as an entry on their current path.
+The first run writes it and compaction writes a replacement with the summary
+in one transaction. This keeps edits out of a live prefix and lets a restart
+replay the same bytes. Legacy profile sessions do not get a preamble. The
+locale is unspecified until the user sets it; no browser locale is inferred.
+
+- **Project tools use a narrow store interface and a home executor callback.**
+  Eika has no computer in its session, but opening a project needs the home
+  computer. The callback keeps computer lifecycle code in the server and file
+  access in the executor.
+
+## Subagent lifecycle
+
+- **Delegation returns immediately.** Waiting for a child would leave the home
+  context idle during its work and, on a pool with few slots, could evict it
+  and require another prefill.
+
+- **One service owns child runs** (2026-11-15, P2-12). Names are unique under
+  the home session. Starting an existing name returns its stored status and
+  does not change its brief, agent or project. Resume accepts only idle, failed
+  or cancelled children. The service keeps the run reservation until execution
+  and the final state write end. Creation stores the child and its initial
+  `running` state in one write, so a failed write leaves no idle child whose
+  brief never ran. Cancel signals the run and waits for it to end.
+- The service takes a blocking run callback. P2-13 binds it to the existing
+  server run manager; it does not add a second agent loop. A child uses the
+  service lifetime, not the request or home reply lifetime. Each stored state
+  change emits the existing `session.updated` event on `global`. Clients refetch
+  the session. Migration 0015 adds the waiting reason; question relay stays in
+  P2-16. Legacy sessions and tool registries are unchanged.
+- **Delegation binds to the existing run manager** (2026-11-15, P2-13). A
+  subagent's message is an ordinary run on its own session, so steering,
+  compaction, preambles, accounting and abort work as for any session. The
+  callback waits for the run and maps an abort to `cancelled`. The service
+  takes the run priority from the caller: a home run at `interactive` makes
+  its subagents `foreground`, any other caller `background`. The ten-minute
+  decay of `foreground` in `runtime.md` waits for a caller that needs it, since
+  `Rank` can only rise today. Start and Message report whether they started
+  work, so the tools tell Eika that a name exists or a subagent is busy
+  instead of claiming they acted.
+- **A report is stored on the child, and the code makes sure there is one**
+  (2026-11-15, P2-14). `report {summary, outputs, follow_ups}` renders to text
+  in the session's `result`, replacing the last report; it ends no run itself,
+  so the model finishes with its own short reply. A run that ends on its own
+  without calling it is sent one draft request, and then its last assistant
+  message is stored, so Eika always gets something to read. A failed or
+  cancelled run is not asked for one. The retry and fallback live in the service
+  rather than the run callback because the service alone knows whether this
+  assignment has reported. Rejected: ending the loop at `report`, which needs a
+  terminating-tool concept in the agent loop for no gain, since the extra turn
+  is one short reply.
+- **`subagent_max_running` counts executions, under the lock that starts them**
+  (2026-11-15, P2-14). Default 4, settable from 1 to 32 in Settings, read at
+  each start so a change applies at once. The check and the registration share
+  one lock hold, so concurrent starts cannot oversubscribe, and a refused start
+  creates no row. A refusal is a tool error telling Eika to wait or cancel.
+  Waiting retains the execution reservation: an answer continues the same run.
+  This carries over the reserve-under-lock rule of the removed spawner
+  (`478ce9c`) without its depth limit, since only home delegates.
+- **Aborting a home reply does not cancel its subagents.** Their runs are owned
+  by the service, bound to the server, so the user stopping a reply leaves them
+  working; cancel and shutdown are the ways to stop them.
+- **Only the home session delegates.** The tools are in the `eika`
+  definition alone, and the binding refuses any caller that is not a home
+  session, so an `eika` session elsewhere cannot start children either.
+  Messages and compactions posted to a subagent's session through the API
+  are refused: a run outside the service would race its state.
+- **A worker works in its project's directory.** Its session uses the home
+  computer, the run creates the directory, and an executor wrapper starts
+  commands and resolves relative paths there. The executor still confines
+  every path to the computer root, and a directory outside the root refuses
+  the run. Rejected: naming the directory only in the preamble, which leaves
+  small models working in the root. A researcher gets no computer.
+
+## Notices
+
+- **A notice is an entry first, and delivering it is storing the message that
+  carries it** (2026-11-15, P2-15). A report is written to home as a `notice`
+  entry before anything else, so a crash cannot lose it. The user-side message
+  whose `<context>` carries it lists its id (`Message.Notices`) in the same
+  stored payload, so "delivered" and "the model saw it" are one write, and a
+  notice no stored user entry lists is undelivered after any restart. Rejected:
+  a `notices` table or a delivered flag on the entry, a second write that can
+  disagree with the conversation; and appending the notice text to the
+  conversation as its own message, which is not what the context layout says.
+- **The next user-side message takes every waiting notice, whoever sent it.**
+  A steering or follow-up message the user sends during a run carries the
+  notices that arrived meanwhile; only a home with no run, or a run that ends
+  with notices still waiting, gets a background turn whose message is the
+  context block alone. Which notices are waiting or in an unstored message is
+  kept in memory per process and read from the store on the session's first
+  run, so a message never takes a notice twice. A run gives its untaken
+  notices back before it releases the session, since the next run's are
+  indistinguishable in the book once it holds the session.
+- **A notice whose write fails is retried in the background** with backoff,
+  owned by the book and stopped at shutdown. Its entry id derives from the
+  report (the stored report notice id), and the write adds an entry with that
+  id only once, so a retry after a commit whose answer was lost, or a rescan
+  at start (P2-18), never makes a second notice. The report itself is already the
+  child's `result`. Startup rescans it with that id (see "Startup recovery").
+- **A background turn is bounded by what caused it.** It runs at `background`.
+  A home run the user aborted, or a background turn that failed, starts no new
+  one: the notices wait for the next message, so a failing endpoint is not
+  called in a loop. A message posted with mode `run` during a background turn
+  steers it, because the client may not know of the turn, and joining any run
+  raises its next calls to `interactive` (`Rank.Raise`), which is the rule
+  `runtime.md` set for a user joining a background home turn.
+- **The notice is created when the child goes idle, not when it calls
+  `report`.** Eika's turn then sees the child idle and resumable. A child
+  cancelled after reporting, including by shutdown, posts none; its report is
+  still its `result`, and P2-18 reconciles interrupted runs.
+
+## Startup recovery
+
+- **Recovery commits each session as one unit** (2026-11-15, P2-18).
+  Before serving requests, Core fills unanswered tool calls with an error
+  result, ends interrupted runs, sets interrupted children to idle, and stores
+  their home notice in the same transaction. A crash cannot leave the state
+  changed without the notice. Recovery never executes a tool or resumes a
+  child. Legacy profile and chat sessions get the missing results and aborted
+  runs without an agent notice or state change.
+- **A report has a stored notice id.** Migration 0016 adds an internal
+  `report_notice_id` to sessions. New reports receive a fresh id with their
+  result, in the same write. For an old report with no stored id, startup
+  identifies its report entry and matches only ids from that assignment. An
+  old result without a report anchor reuses an existing child notice, or gets
+  one fixed recovery id for that child. Startup pins the chosen id before it
+  repairs the session. Old rows without an anchor cannot distinguish later
+  identical results; once noticed, they get no second recovery notice. Report
+  text never decides whether a notice exists. The id is internal; the API does
+  not change.
+- **A failed assignment is a notice too.** The child's
+  `waiting_reason` holds why it ended (the error, trimmed), and the notice id
+  is derived from the child, its head and the state, so the live write and
+  startup reconcile add one entry between them.
+- Startup stores recovered notices without starting a home turn. The next user
+  message, or a later background turn caused by a new report, delivers them.
+  This prevents a restart from retrying work whose outcome is unknown. A
+  recovery write error stops startup. Computer inspection remains best effort.
+
+## Subagent questions (P2-16)
+
+- `ask_user` parks the current tool call in memory. The lifecycle service sets
+  `waiting` with the question as its reason before it posts a home notice.
+  `subagent_message` validates the answer and sets `running` before delivering
+  it through a buffered channel, under the same lock as cancel. One answer
+  wins; a rejected answer leaves the question waiting. The run keeps its
+  execution reservation but holds no inference lease while it waits.
+- Questions use the existing notice writer and retry path, with an id derived
+  from the child, run and tool call. The legacy question broker never registers
+  these questions, so its HTTP answer route cannot answer them. There is no
+  new table or route. A restart ends the run; P2-18 repairs its tool call.
+
+- **Question answers name the specific wait** (2026-11-15). A notice carries a
+  stable question id, and `subagent_message` accepts an answer only for the
+  current id. A stale id cannot start a run or answer a later question. An
+  unstored message is checked just before delivery and marks ended questions
+  as no longer pending; this includes queued messages and notice retries. The
+  id check also covers a question that ends while the model is replying.
+  Options use JSON so a delimiter inside an option cannot change the choices.
+  The check runs again after inference admission, and a changed request is
+  measured again and stored as sent, so a queue wait cannot hide the change.
+
+## Agents and instructions settings (P3-07)
+
+- **Agents and Instructions are tabs of the Settings dialog, and Profiles
+  has no tab.** The dialog stays as it is until P3-11 reorganises it. The
+  profile editor's prompt field (`PromptEditor`, with its reset and diff against
+  the built-in text) and its chip, reset and segmented-choice parts are reused;
+  the profile list, the session profile dialog and the Tools panel (the session
+  overrides) are gone. The UI makes no profile request. The server's profile
+  routes, sessions' columns and the client's wire types stay until P2-11.
+- **An agent editor sets exactly the two override fields.** Class is a
+  segmented choice (`main`, `fast`, `deep`) that can be unset; the prompt is
+  unset (the built-in text is shown) or set, empty included. Both unset is a
+  reset. Tools, limits and compaction prompts are shown or left out: the API
+  refuses them. The editor checks the 64 KiB byte limit and NUL as the server
+  does, so a text it would refuse is not sent. A save of the class applies from
+  the next run; a save of the prompt reaches a session at its next compaction
+  (P2-21, "Home compaction cut and snapshot refresh").
+- **Instructions are saved together.** The API replaces both texts at once, so
+  the tab has one Save for About me and Rules. A save changes the stored text
+  only: a running session keeps its preamble snapshot until compaction rebuilds it.
+- **The Context inspector's Edit link follows the layer.** A value the agent
+  sets opens Agents, one the class sets opens General, and one from a legacy
+  layer has no link, since its editor is gone.
+
+## Home compaction summary (P2-20)
+
+- **Rolling summary before chapters.** Frozen chapters would limit how often a
+  fact is rewritten, but need a separate current state and add a concept. The
+  rolling summary is simpler. Ledger and recent turns remain deferred unless
+  evaluation shows commitments are lost. Entry references are planned for
+  phase 13.
+
+
+- **Code writes the board, the model writes the conversation** (2026-11-15).
+  Home's summary is a `[Subagents]` board, then a `[Conversation]` section.
+  The board is rendered from the children's rows (`subagent.Board`) when the
+  summary is assembled, after the model has answered, so it states what holds
+  at that moment and is never carried from one summary to the next. Running
+  and waiting children come first, then those active since the previous
+  board was read; the rest are a counted line that points to `subagent_status`.
+  The read time is stored with the compaction (`board_as_of`), not taken from
+  the entry: a report made between the read and the store would otherwise be
+  shown by no board.
+  Reports and waiting reasons are clipped on the board; the whole text stays
+  on the child. Rejected: asking the model to keep subagent state in its
+  summary, which paraphrases ids and states that the rows already hold.
+- **The conversation rolls.** The first compaction asks Eika's summary prompt
+  for the section, each later one Eika's update prompt with the previous
+  summary in the cached prefix, board included. Only the conversation part
+  carries forward when a split turn adds nothing complete; a summary from
+  before this change is all conversation. The prompts use the assistant
+  home summary sections instead of Pi's coding sections.
+- **The hook is `CompactionSettings.Board`, set only for home** in
+  `newAgent`. Subagent and routine sessions keep Pi's summary with their
+  definition's prompts. A board that cannot be read fails the compaction like
+  a failed summary call: nothing is stored and the conversation stays as it
+  was. The summary tag now states the board time, compacted entry span and
+  compaction count. Its footer points to the history tools (P2-23, P2-24).
+
+## Home compaction cut and snapshot refresh (P2-21)
+
+- **Home cuts at a user-turn boundary, keeping a share of the window**
+  (2026-11-15). `CompactionSettings.KeepRecentShare` (15%, set by `newAgent`
+  for home only) keeps from the oldest user message whose tail fits the share,
+  and always the newest whole turn. Every user message is a boundary, steering
+  included: the calls before it are answered. A newest turn larger than the
+  share falls back to Pi's cut with the share as its budget, which splits it.
+  The share is a constant, not a setting. P2-22 adds
+  the idle settings, and the share can join them if use asks for it. The
+  `keep_recent_tokens` setting still applies to subagent, routine and legacy
+  sessions, and to a home model whose window is unknown. Rejected: deriving
+  the share from `keep_recent_tokens`, which would make one setting mean two
+  things.
+- **The snapshot pins the definition's prompt and tools**, in the preamble
+  entry's payload (`definition: {prompt, tools}`), not a new entry kind or
+  table: the entry is already replaced only by compaction, in the same
+  transaction as the summary, so the three parts of the prefix change together
+  and never mix. Runs and the previews build from it; the class and model do
+  not snapshot, since a model change misses the cache anyway. A pinned tool
+  list only narrows the definition's: a tool a build adds waits for the next
+  compaction, one it drops is gone at once, and an agent never gets a tool
+  its definition lacks. A snapshot stored before this change has text alone;
+  the next run stores it again with the same text and the definition as it is
+  then, so the prefix it sent stays and later edits wait for a compaction.
+  The entries API still returns a preamble's text alone.
+- **A compaction inside a run swaps the definition in at once.** The refresh
+  callback returns the new preamble, prompt and tool registry, and the agent's
+  next call is built from them (`Agent.useSnapshot`); the summary call still
+  uses the prefix it shares. The callback builds the snapshot before it stores
+  the compaction, so `tokens_after` is measured against the replacement
+  snapshot, not the one it replaces. Rejected: keeping the old prompt and tools until
+  the run ends, which would send a new preamble beside an old prompt for the
+  rest of the run and miss the cache once more at the next run.
+
+## Entry pagination
+
+Page entries by session sequence across branches, with an entry ID as the cursor.
+Sequence order stays stable when entries are appended and preserves old history.
+The current branch remains available through the path endpoint. The transcript
+uses the outline to exclude entries outside the current branch from write-order
+pages, merges catch-up by entry ID, and keeps a result
+without its call hidden until the call's page is loaded. Entries written by an
+agent turn carry its `run_id`, so a client can merge stored and live rows
+without relying on timestamps. Older entries can lack the field. A run release
+publishes `session.updated` to its session topic; catch-up reads run state before
+entries so it can retire a turn whose end event was lost.
+
+## History recall (P2-23, P2-24)
+
+- **Keep entries and search the stored text.** A generated PostgreSQL
+  full-text index covers messages, tool-call names and arguments, notices and
+  compaction summaries. Tool results are not indexed; `history_read` can read
+  them by ID. The index bounds its input, but the original payload stays intact.
+- **Give recall to home.** `history_search` searches across sessions, with
+  project, subagent and time filters. It returns five ranked groups per page;
+  without a query it browses the compacted history of the selected session.
+  `history_read` returns one entry or a window, with an option for full text.
+  Context groups have entry and byte limits and keep the hit, so large worker
+  turns do not fill the model window. A truncated group points to the read
+  tool for the rest. Views return readable message text and tool calls without
+  reasoning or usage metadata. A long matching entry shows a bounded excerpt
+  around the literal query when it can be found; `history_read` returns the full
+  text. This keeps the matched text visible within the group limit.
+- **Derive summary metadata from the session path.** The same compaction fold
+  identifies the compacted span and oldest retained message. Home writes the
+  board time, span and count in the summary tag and adds the recall footer.
+  This keeps the metadata tied to the branch the session follows.
+
+### Project instruction versions
+
+Project instruction writes carry a version. The store checks it atomically and
+increments it on every write, including a clear. This prevents one browser from
+silently replacing another browser's edit. The user can reload or explicitly
+replace the newer text after a conflict.
+
+## ntfy delivery
+
+- The full topic URL is sealed in the settings table, because its path can be
+  a secret. Settings returns only whether it is set. A notification has fixed
+  text and a link to Chat at `public_url`.
+- Delivery runs outside the run. Core retries HTTP 429 while it is running, because the request was rejected.
+  It does not retry 5xx responses or network errors: a proxy or connection can
+  fail after ntfy accepts the push. It does not replay
+  notifications after a restart: ntfy has no delivery id for deduplication, so
+  replay could send the same notification twice. A notification can be lost.
+
+## Tool gate and read-only tools (P4-03)
+
+- The agent loop asks `Options.Gate` (`sentry.Gate.Decide`) before every tool
+  call. A deny, and an ask until phase 11, return `Blocked: <reason>` and the
+  tool does not run. The model is never told a gate exists.
+- `tool.ReadOnlyTool` is an optional interface (`ReadOnly() bool`) because one
+  type serves several tools that differ by name. A tool that does not implement
+  it, or answers false, counts as side-effecting (`tool.SideEffecting`). This
+  is the safe default: a new tool, and every MCP tool, fails closed until its
+  author declares it read-only.
+- When the gate cannot answer (an error or the 5 s timeout), side-effecting
+  tools return the generic `Blocked: this is not available right now` and
+  read-only ones run.
+- `web_search` and `web_fetch` count as side-effecting: they reach the network,
+  so the query or URL can carry data out. They stay blocked while the gate is
+  down even though they change nothing on a computer.
+
+## Never share (P4-11)
+
+- `Decide` denies `web_fetch` (its `url`) and `web_search` (its `query`) when a
+  credential pattern from `internal/sentry/scan` (the redaction list, via
+  `scan.Find`) is in them. There is one pattern list. The text is checked as
+  written and after up to three rounds of percent-decoding, with invisible
+  characters removed, so a key in the userinfo, path, query or fragment is found
+  encoded or not. Base64 and split keys are not looked for.
+- The reason names the pattern kind, never the value, and tells the agent to
+  remove it. The audit row's `detail` holds `{"pattern": kind}`.
+- `bash` and file writes are not checked: a command may hold a key the user
+  gave it. Plugin call arguments join `outbound` in phase 11.
+
+## Ingest of `web_fetch` results (P4-04)
+
+- Ingest runs in `agent.callTool`, once, right after a `web_fetch` result returns
+  and before it is emitted or stored, so the session, a replay, a compaction and
+  the history index only hold the ingested text. An `IsError` result of a tool
+  that ran is ingested too (one segment, for `web_search` as well): `web_fetch`
+  errors list the page's headings or return filtered page text. Only a result
+  that never ran the tool (a block, an unknown tool) is left alone. Order: invisible characters,
+  redaction, the screen on exactly the resulting text (after the tool's own
+  truncation), then the wrapper. Redaction comes before the screen so a secret is
+  neither sent to the guard nor kept in the withheld text.
+- Adjacent windows at or over the threshold are one removal: one
+  `[removed:suspect]`, one withheld row, one audit row.
+- The guard has a 5 s limit per call (the design's figure). A page at its cap is
+  about 20 windows, 2.6 s at the 130 ms a window P4-01 measured on a busy CPU. A
+  guard that errors, times out or is not configured marks the text `unscanned`,
+  or blocks it when `screen_required` is set.
+- If a removal cannot be recorded, ingest fails and the loop returns
+  `Blocked: this is not available right now` instead of the page.
+- The `screen_threshold` runtime setting overrides the config default (0.9).
+- The `<untrusted>` line is added to the base prompt by `agent` in code when a
+  gate is set, so an overridden prompt keeps it, and it does not name the gate.
+- The wrapper's closing tag is broken inside the content so a page cannot end its
+  own wrapper, in any case and with whitespace (`</UNTRUSTED>`, `< /untrusted>`).
+- Stage A review fixes: a cancelled context makes `Ingest` return an error (the
+  result becomes Blocked), since the result is stored on a context that outlives
+  the run and a failed guard call would otherwise store it unscreened. Text is made
+  valid UTF-8 before screening so the guard's byte offsets match Go's. `cut` sorts,
+  clamps and merges windows and skips empty spans. The source name drops the query
+  string, fragment and credentials (not only redaction) before it is stored or audited.
+
+## Ingest takes segments (P4-05)
+
+- `Gate.Ingest(ctx, []Segment) ([]Ingested, error)` is the one entry point. A
+  segment is content with its own source; it is cleaned, screened, wrapped and
+  recorded on its own, so a removal never spans two pieces of content. All segments
+  go to the guard in one `/screen` call (the guard takes 64; the client chunks
+  beyond that). A `web_fetch` page is one segment, a search is one per result.
+- `Ingested.Removed` counts removals so P4-08 can mark a tool card without a second
+  lookup. The tool carries the cut as `tool.Result.Parts`; the agent ingests the
+  parts that have a `Source` and joins them again, so the model sees the same
+  format as before plus the wrappers. A notice stays unwrapped: it is the harness's.
+
+## Screening subagent reports and questions (P4-06)
+
+- A report is screened once, in the subagent service before `SetSubagentResult`, on
+  exactly the text that is stored (after the 64 KB cut). The stored `Result` is the
+  cleaned text, so the notice, the board, `subagent_status` and restart recovery
+  need no second pass. It is not wrapped: Eika's own subagent is not distrusted
+  content, and a wrapper would teach Eika to distrust it. A removal writes a withheld
+  and an audit row (source `report`, the child's session), sends no push and stops
+  nothing. The screen runs outside the service lock, since the guard may be slow.
+- A question is screened as separate segments (the text, then each option) before the
+  notice, the `question.asked` event and the answer check are built, and every later
+  step uses the cleaned `Question`. The user therefore never sees a removed span, and
+  an answer is validated against the options shown.
+- A question whose whole text is removed is not delivered: no notice, no parked
+  child, no event. The child's `ask_user` fails with a plain message to continue or
+  ask differently, so no run stops and Eika has nothing to answer that was not its
+  child's injected text. An option that is wholly removed is dropped; a closed
+  question left with no options is treated the same way. The text is in the withheld
+  list.
+- Guard failure follows P4-14: text is marked unscanned or blocked. A removal that
+  cannot be recorded fails the report tool; a report ended without one is stored as
+  a fixed "could not be delivered" line instead of its text.
+
+## History tools screen child sessions
+
+- `history_search` and `history_read` return raw text from child sessions, where a
+  child that read an injected page can repeat it, and that would bypass the P4-06
+  report screen. Entries from any session other than the caller's own are run
+  through `Gate.Ingest` before the result is built, in one batched call per tool
+  result, with the same strip, redact, screen, withheld and audit steps. The count
+  goes to `tool.Result.Removed`, so the card shows the mark. The caller's own
+  history is not screened: it is Eika's own text, already ingested when it was made.
+- Child text is wrapped in `<untrusted>` (source `history:<session name>`), unlike
+  a report. A report is the child's deliberate summary, written for Eika. A
+  transcript entry is the unedited text of the child's messages and tool results,
+  which is the page itself when a child quotes it, and the screen is one layer that
+  can miss. The wrapper is the second, and the system prompt's notice already
+  teaches the model what it means. P4-06's reason (do not teach distrust of Eika's
+  own subagent) concerns what the child reports, not its raw log.
+- Failure follows Stage A: a guard that does not answer passes the text wrapped, and
+  an Ingest error or a cancelled context returns `Blocked: this is not available
+  right now` with no history text.
+
+## Guard failure and settings (P4-14)
+
+- The guard state starts as `unknown` and follows completed screening calls.
+  The first outcome sets the state without a push. Later changes between down
+  and up send one push. Repeated outcomes send no push. Cancellation does not change the state.
+- Screening has one five-second budget for all batches. Every response must
+  have valid scores and windows that cover each input, or it counts as down.
+  The two screen settings are read in one database snapshot. A failed screen marks
+  wrapped content `unscanned`, or blocks it when `screen_required` is true.
+  Reports have an unscanned marker; their board summaries retain the marker and
+  the first line of the report. Blocks and changes to the two screen
+  settings are audited. The settings and audit writes share a transaction.
+
+
+### Trusted web sources (P4-15)
+
+Trust applies to an exact canonical host, without its port or final dot. IDNs
+use ASCII and IP addresses use their canonical form. A fetch uses the final
+content host; mixed or unknown sources cannot inherit trust. It does
+not extend to subdomains. The screen and deterministic cleaning still run. A
+suspect window on a trusted host stays in the result and writes a withheld row
+and an audit row marked `trusted`. Trust changes and their audit rows share a
+transaction. Plugin trust is deferred to phase 11.
+
+## Security setting audit (P4-22)
+
+- Changes to `screen_threshold`, `screen_required`, and `sandbox_egress`
+  write a setting audit row in the same transaction. The egress value includes
+  the mode and allowlist. Repeated writes of the same value do not add rows.
+  The home computer row follows the setting and does not add a second row.
+- Trusted source changes already write audit rows in their transaction. P4-19
+  must do the same for blocklist changes with the store's `appendAudit` function.
+- Migration 0023 already rejects audit updates, deletes, and truncation. Its
+  Postgres upgrade test checks each operation, so no new migration is needed.
+
+## Phase 5 defaults (P5-00)
+
+Applied on 2026-11-22 while the owner was away, from the planner's recommended
+defaults; any can be revisited before the package that depends on it.
+
+- **Memory files go through the executor.** The repository's source is the
+  Core volume `/var/lib/eika/memory`, but every read, write and git command runs
+  through `internal/executor` against a private sandbox computer with only that
+  directory mounted, fixed operations and no agent access. Core never runs `git`
+  or touches the files itself, which keeps the executor rule whole.
+- **State is tracked frontmatter.** `state` is `active`, `pending` or
+  `archived`, so a full reindex restores it. It is state, not provenance.
+- **Unscanned writes are pending.** When the guard does not answer, an agent
+  write is pending; with `screen_required` it is rejected with nothing written.
+  Description and body are both screened, user edits too, and only the user's
+  accept promotes flagged content. Credentials are always denied. Memory writes
+  have their own threshold, `memory_screen_threshold` (default 0.99), because the
+  live suite showed ordinary rules ("ignore emails from ...") scoring 0.9 to 0.99
+  at the shared 0.9 (P5-20). Ingest keeps `screen_threshold`.
+- **The preamble never claims an estimate is exact.** If exact counting fails
+  the new snapshot is not built and the previous one stays. A pin or edit that
+  would put the pinned section over 3,000 tokens or 12 entries is rejected.
+- **Purge keeps git history.** Purge removes the file and its index row in a
+  commit; the UI and backup docs say that history, old sessions and backups can
+  still hold the text. No history rewrite in this phase.
+- **Memory changes do not wake an idle home.** They reach the next message's
+  tail as notices, with no push.
+
+## Memory file format (P5-01)
+
+Memory files use YAML frontmatter and a Markdown body. The parser accepts at
+most 16 KiB per file and 2 KiB per body. It rejects unknown or duplicate fields,
+invalid names and file paths, and invalid types, states and dates. Descriptions
+are 20 to 200 Unicode characters. Created and updated use RFC 3339 timestamps;
+expiry is an optional calendar date. The renderer uses a fixed field order and
+preserves the body. `source` is a citation, not a trust field. State is tracked
+as `active`, `pending` or `archived`, as decided in P5-00.
+
+## Residual pending rate for ordinary memory writes (P5-22)
+
+- Accepted: at `memory_screen_threshold` 0.99 roughly one ordinary write in 150
+  (under 1%) can still be held pending by the guard, and no threshold separates
+  it from the 0.9948 attack the poison cases use. A pending ordinary memory costs
+  one Inbox tap (approve) and loses no data; raising the threshold further would
+  let attacks through. The live suite requires 30 of 30 active, and it was 30 of
+  30 in the P5-22 run. Revisit only if the guard model changes.
+
+## Memory computer (P5-02)
+
+The private memory computer is not a computer row. It exists as a container and
+volume only (label `eika.role=memory`), so nothing that lists or
+addresses computers can reach it. Its id is generated once per install and
+recorded in the `memory_computer` table (0032), so its container and volume
+(`eika-cx-<id>`) are unique to the install: a fixed id would share one volume
+across the smoke stack, tests and a real install on one Docker host, and
+`make smoke-down` or a test cleanup could delete a real memory repository. Every
+install gets a generated id when the computer is first ensured. A restore must put back the recorded id with the
+volume. Its egress is fixed to `none` in the egress
+policy and it joins the internal sandbox network; a host with no such network
+does not start it rather than give it a route out. Its volume is the host's own
+per-computer volume, not a compose volume: only its container mounts it, at
+`/var/lib/eika/memory`. Core reaches it through `server.MemoryRepository`.
+
+## Skills installer computer (P6-02)
+
+Same pattern as the memory computer. The installer is a container and volume
+only (label `eika.role=skills`, no computers row), so the computers API, UI, idle
+stopper and tools cannot reach it, and no agent run gets its executor. Its id is
+generated once per install and recorded in `skills_computer` (0033); its
+container and volume are `eika-cx-<id>`, never a fixed name shared by stacks on
+one Docker host. A restore must put back the recorded id with the volume.
+Egress is `none` on the internal sandbox network; a host without that network
+does not start it. `server.SkillsVolume` returns `skill/volume`, whose only
+operations are Stage (to `.stage/<name>`), Replace (move the old directory to
+`.old/`, rename the staged one in, drop the old), Remove and Hash (SHA-256 over
+paths, modes and contents). Names must match the skill name rule and file paths
+must be clean and relative, checked again in the volume; scripts take them as
+positional arguments, never as script text. A crash inside Replace can leave the
+name missing with the old tree in `.old/`; P6-04's Reconcile marks that skill
+broken.
+
+## Skills mount (P6-03)
+
+Agent computers mount the installer's volume (`eika-cx-<skills id>`) read-only at
+`/skills` (`computer.Spec.ReadOnly`); with no capabilities, a remount fails. The
+installer is ensured first so Docker never invents an empty volume under that name. A
+host that cannot run the installer, or one that is down, makes the computer without
+the mount and logs it; the computer is not recreated until there is a mount to give.
+Docker cannot add a mount to a container, so `startComputer` replaces a stopped
+computer's container with `Host.Recreate`: the container is removed without volumes,
+and Create mounts the existing data volume again, so home's files are untouched.
+Tokens are new and the egress proxy forgets the old ones. A running computer is never
+recreated; the mount appears when the idle stopper next stops it and it starts again.
+The memory and skills computers are created without the mount and never recreated.
+
+## Skills store and installer (P6-04)
+
+`skills` (0034) mirrors what the install parsed, so the catalog and install screen
+never read the volume. `skill.Installer` is the only writer: one mutex covers stage,
+a hash check of the staged tree against the zip, Replace, a hash check of the
+installed tree, then the row. Rows are created disabled; an identical reinstall of a
+sound row is a no-op, a changed one replaces directory and row and returns to
+disabled (question 6). A failure after the swap leaves the directory ahead of the
+row; a reinstall repairs it. `Reconcile` on start lets the directory's hash decide: a
+row whose directory is missing (including a crash inside Replace) or whose hash
+differs gets `broken` set and is never loaded (`Record.Loadable` is `enabled` and not
+broken; `enabled` is kept so a restored directory repairs it); an unknown directory
+is reported and never adopted. `volume.List` names top-level entries other than the
+dot directories. The screen is `Installer.SetScreener` (P6-05); the default stores
+`unscanned`. `server.SkillInstaller()` is nil until the reconcile has run.
+
+## Skill install screen (P6-05)
+
+`sentry.SkillChecker` is the install screen, separate from `Gate` like
+`MemoryChecker` and never `Gate.Ingest`, so a skill stays intact. A credential pattern
+in the description or any text file (valid UTF-8, no NUL) rejects the install with the
+pattern and file named, never the value. The description and SKILL.md body are screened
+with the memory threshold (`memory_screen_threshold`, P5-20) when set, since skill text
+reaches the model's context as a memory does. Body spans are byte offsets into the stored
+SKILL.md, mapped back past removed invisible characters (`scan.StripInvisibleMap`);
+description spans are offsets into the description. A hit never blocks and never enables;
+a guard that did not answer stores `unscanned`, and `screen_required` does not reject a
+skill. Audit rows (`deny` for a credential, `skill_screen` otherwise) carry pattern, file,
+counts and score, no text. `server.skillScreener` adapts it to `Installer.SetScreener`.
+
+## Skills API (P6-06)
+
+The API goes through `skill.Installer` only, so there is no second write path. The
+upload is a stream: one multipart part named `file`, the zip bounded to 5 MiB and the
+body to that plus 64 KiB; the route has no JSON request shape in the contract and the
+mock harness stands in for the zip (name from the file name). `skill.InvalidError` marks
+what the archive caused (400); everything else from the installer is the harness's (500).
+`Installer.SetEnabled` takes a check that sees every row as it would be after the change,
+under the installer's lock, so two enables cannot both pass a budget one fits in; the
+check is `skill.CheckCatalogBudget`, which counts `skill.Catalog` (heading plus one
+`- name: description` line per enabled, sound skill, whitespace collapsed) with the model's
+own counter, the one pins use (`server.exactCounter`). Question 5's default applies: over
+2,000 tokens is a 409, an inexact count a 503, and disabling is never refused. A broken
+skill cannot be enabled (409); a reinstall repairs it. Enabling an enabled skill is a
+no-op with no event. Event name is `skills.changed` (dotted, like every other event; the
+plan wrote `skills_changed`), topic `skills`, payload `{name, change}`, carrying no text.
+
+**Skill catalog in the snapshot (P6-08).** `skill.BuildCatalog` renders the loadable
+skills (enabled, not broken) by name, one line each, whole entries only, inside
+2,000 exact tokens counted with the model's counter (`textCounter`, as for memory); an
+overflow line, inside the budget, covers what cannot fit. `buildPreamble` puts it
+before the memory section for the home session and `worker` sessions (researchers
+have no `skill_use`); no loadable skill means no section. It is plain preamble text,
+so it is frozen with the snapshot, and the inspector shows it inside the `preamble`
+section (no new kind, no wire change). `refreshSnapshot` rebuilds it at compaction;
+if the count is not exact it keeps the previous snapshot's catalog (read back from
+the stored text), and a first snapshot without an exact count has none until the first
+compaction. A new worker builds it at start. A preview of a not-yet-stored snapshot
+omits it.
+
+## Memory writer and index (P5-03)
+
+`memory.Writer` is the only writer of memory files. It depends on two small
+interfaces, `memory.Files` (the P5-02 repository) and `memory.Index` (the
+store), so it never touches a path. One mutex serialises file write, commit and
+row upsert. The file decides whether a name exists; the `memories` row (0029)
+mirrors frontmatter plus `body`, `content_sha` and a generated `body_tsv`
+(name weight A, description B, first 4 KiB of body C). Replace keeps `created`
+and `pinned`. Pinning is not a writer operation yet. Index failure after the
+commit returns an error and leaves the file ahead of the row until P5-04.
+
+## Memory-write check (P5-05)
+
+`sentry.MemoryChecker` is separate from `Gate` so the many `Gate` fakes keep
+compiling; the real gate implements both. Credentials deny first, then the
+description and body are screened intact with the ingest threshold and
+`screen_required`. Outcomes: `active`, `pending` (hit, or guard unavailable),
+`deny`, `reject` (unavailable and required). The verdict's spans are for the
+Inbox, which stores them with the pending memory in a later item.
+
+## Memory tools (P5-06)
+
+The four tools are standalone and agent-only, so only `eika` lists them and a
+subagent or legacy profile cannot select them. Only search and read are
+`ReadOnly`; a write or forget fails closed when the gate cannot answer. A write
+is validated, checked by `CheckMemory`, then written, and never asks. The
+pending verdict (spans, max score, unscanned) is stored in `memories.screen`
+(0030), not in the file; an archive keeps it and records `archive_reason`
+(also index-only). Pending memories show in search and read with `pending` and
+a note, and are never part of the index or preamble. The source of a memory
+written by a tool is `session <id>`. Only the user pins; no tool sets it.
+
+Merged with P5-04: one writer, made and published by `recoverMemory`, so the
+tools get `errNoMemory` until recovery is done. Its screen hook
+(`Writer.SetScreen`) is `Server.screenMemoryFile`, Sentry's `CheckMemory`:
+an outside edit found by reconcile becomes active only on an `active` verdict
+and is otherwise held pending (no spans are stored for it). The stored verdict
+type is `memory.ScreenResult`. Reconcile and Reindex keep `screen` and
+`archive_reason` of a row whose content is unchanged; a row rebuilt from a file
+with no row (lost table) has no verdict and a pending one is not re-screened
+until the user acts. `Files.Commit` takes a message; forget commits
+`Forget memory: <reason>`.
+
+## Memory recovery (P5-04)
+
+`Reconcile` treats the files as the truth. A file that is committed and whose
+bytes differ from its row (or has no row) is indexed as is: git holds it. An
+uncommitted file whose bytes differ from its row was changed outside the writer,
+or its own write was cut off before the commit; the two cannot be told apart, so
+`memory.Screen` decides its state, and an active file becomes pending (rewritten,
+committed, indexed) while pending and archived keep their state. The default
+screen is `HoldPending`; P5-05 replaces it through `Writer.SetScreen`. A file
+deleted from the tree is restored from HEAD; a row with no file, or whose file
+does not parse, is removed (invalid files stay on disk unserved). `Reindex`
+rewrites every row, so a lost table is rebuilt with states intact and nothing
+screened, because every file is committed. A commit made outside Eika by another
+author is trusted; the memory computer has no other writer. The screen is now Sentry's check (P5-06). `make memory-reindex`
+runs in a separate process from the server, so run it while Eika is idle; a race
+only leaves a row the next restart repairs.
+
+## Memory API and user mutations (P5-11)
+
+`GET /api/memories` (list or search), `GET/PATCH/DELETE /api/memories/{name}`
+and `POST .../pin|unpin|archive` go through the one writer; the new writer
+operations are `Edit`, `SetPinned`, `ArchiveIf`, `Purge`, `List` and `Get`, and
+`Files.Remove` (`git rm` then a commit). Stale protection is `content_sha`, the
+digest of the file bytes, checked again inside the writer's lock: 409, nothing
+written. Edit requires it; the other changes check it when given. A user edit
+is screened with `CheckMemory` as an agent write is (default 3): credential is
+400, a flag makes an active memory pending and unpins it, an unavailable
+required screen is 503; a pending memory stays pending whatever an edit's
+verdict (only P5-12's accept promotes) and an archived one stays archived. Only
+an active memory can be pinned, so accepting a pending one never needs a pin
+decision. A pin or an edit of a pinned memory is checked with
+`CheckPinBudget` under the lock, counting with the exact counter of the model
+the `eika` class resolves to (a held counter under the pseudo session
+`memory-pins`); an estimate or no model is 503, never a guess. The pin check is
+built lazily so editing an unpinned memory needs no model. Purge removes the
+file and row in a commit and keeps history (default 5): the API docs say that
+history, old sessions and backups can still hold the text. User changes are
+audited as `setting` events of kind `memory` (no text), after the change.
+Pages are keyset on (`updated`, `name`) with an opaque cursor; search is ranked
+and bounded, with no cursor. Memory events and invalidation came with P5-12:
+see "Inbox API and events (P5-12)", topic `inbox`. A new error status: memory routes answer 503 (code
+`internal`) when memory cannot be judged now.
+
+## Inbox API and events (P5-12)
+
+`GET /api/inbox/count`, `GET /api/inbox/memories` (pending in full, keyset
+paged, limit 50) and `POST /api/inbox/memories/{name}/accept|reject`. Accept
+takes the same optional edit fields as PATCH, so edit-and-accept is one atomic
+writer step (`Writer.Accept`); `PATCH` on a pending memory still edits it
+without promoting. Reject is `Writer.Reject`, an archive that requires a
+pending memory and keeps the screen verdict. `content_sha` is required for both
+and checked in the writer's lock; a non-pending memory is `ErrNotPending`, 409,
+so repeated and cross-client answers are refused. Accept always runs
+`CheckMemory`: a credential denies (400) whatever the memory's history, a flag
+does not block (explicit promotion), and an unavailable required screen is 503,
+so a memory held pending because the guard was down waits until it is back.
+Events come from the writer, not the handlers: `Writer.SetOnChange` is called
+after each durable row write or delete (agent writes, user changes, repair), and
+the server publishes `memory.changed` then `inbox.count` on topic `inbox`
+(`Server.publishMemoryChange`). A count that cannot be read is logged and the
+count event skipped; clients refetch on connect and on `bus.dropped`, since
+events are not replayed. Topics have no per-topic authorization: every
+authenticated connection is the one user. Notifications and parking stay out.
+
+## Phase 4 close (P4-27)
+
+- The exit checks run as live scenarios, not by hand (2026-11-22), because they are
+  repeatable and the owner could not be present. They drive the real Core, guard and
+  sandbox through the public API. What they cannot see is the rendered UI: the halt
+  button, banner and card mark stay covered by the visual specs and the `removed`
+  count on the stored result.
+- Home has no `bash` or `web_fetch`, so a check that needs them starts a worker or a
+  researcher. A halt that a worker's call causes writes its deny audit row a moment
+  after the halt is visible, because the run is aborted in the background; a reader
+  of the audit log must not assume the row is there at the instant of the halt.
+- With the screen on, an injected page loses its useful fact too: the whole scored
+  window is removed. This is the accepted cost of screening a window, not a defect.
+
+P5-11 and the P5-10 change log: user operations log through `UpsertMemory` and
+`DeleteMemory` like any write, so no separate path exists. An edit is `edited`
+(or `archived` for archive), a purge is `purged`. Pin and unpin rewrite the
+file's `pinned` field, so they change `content_sha` and are logged as `edited`:
+the pinned section of the next snapshot differs, so Eika should hear of it.
+
+## Phase 6 defaults (P6-00)
+
+Applied on 2026-11-22 while the owner was away, from the planner's recommended
+defaults ("Schedule for phase 6"); any can be revisited before the package that
+depends on it. The owner asked for phases 4, 5 and 6 to be done now, so phase 6
+runs after phase 5 and before phases 11, 7, 4b, 12 and 13, with no condition that a
+skill be worth installing first. Its only dependency is phase 5's backup.
+
+- **Skill files reach computers only through a read-only mount.** A volume of its own,
+  named from a generated per-install id (as the memory volume is), is filled by a
+  private installer computer through `internal/executor` and mounted read-only at
+  `/skills`. No tool opens a file on the harness; `eika-data` is never mounted.
+  Existing computers are recreated, keeping their data volume, to gain the mount.
+- **`skill_use` reads the stored row,** not the volume, and goes to `eika` and the
+  worker definitions with the catalog. It takes no enum of names.
+- **The install screen marks and never blocks.** A credential in any text file
+  rejects the install; the guard classifies the description and `SKILL.md`; hits are
+  shown in the text and enabling is the user's click. Guard failure shows
+  `unscanned`. `skill_use` output is not re-screened.
+- **Limits:** zip 5 MiB, 20 MiB expanded, 200 files, 5 levels, `SKILL.md` 64 KiB;
+  regular files only, no symlinks or escaping paths.
+- **The catalog is capped at 2,000 exact tokens;** enabling past it is refused.
+- **A changed reinstall returns to disabled;** an identical one is a no-op. Delete
+  removes directory and row. `skill_use` queries are a substring match.
+- **Skill name handling (P6-01).** A missing `name` falls back to the directory name
+  with a warning; an invalid name skips the skill, because it becomes a directory path.
+  Other fault classes in the design table stay warnings.

@@ -50,10 +50,7 @@ export function SessionHeading({ session }: SessionHeadingProps) {
             className="group hover:bg-accent focus-visible:ring-ring -mx-1 flex min-w-0 items-center gap-1.5 rounded-md px-1 transition-colors focus-visible:ring-1 focus-visible:outline-none"
           >
             <span className="truncate">{session.title}</span>
-            <Pencil
-              aria-hidden
-              className="text-muted-foreground size-3.5 shrink-0 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 max-sm:hidden"
-            />
+            <Pencil aria-hidden className="rename-hint text-muted-foreground size-3.5 shrink-0" />
           </button>
         )}
       </h2>

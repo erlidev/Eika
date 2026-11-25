@@ -7,7 +7,7 @@
 
 import type { Model, ModelClass, ModelClassName, Provider, SettingsState } from "@/api/types";
 import { modelClassNames } from "@/api/types";
-import { ActionError } from "@/components/Notice";
+import { ActionError, LoadError } from "@/components/Notice";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -32,6 +32,7 @@ export function ModelClasses({ state }: ModelClassesProps) {
   const providers = useProviders();
   const save = useSaveSettings();
   const stored = modelClassAssignments(state);
+  const loadError = models.error ?? providers.error;
 
   // What each class may be given: a decision model for the decision class and
   // a chat model for the rest. A stored name outside that, such as a deleted
@@ -54,6 +55,17 @@ export function ModelClasses({ state }: ModelClassesProps) {
           contend for the same slots.
         </p>
       </div>
+      {loadError && (
+        <LoadError
+          what="the models and providers"
+          error={loadError}
+          retrying={models.isFetching || providers.isFetching}
+          retry={() => {
+            if (models.isError) void models.refetch();
+            if (providers.isError) void providers.refetch();
+          }}
+        />
+      )}
       {modelClassNames.map((name) => (
         <ClassRow
           key={name}
@@ -138,12 +150,16 @@ function ClassRow({
               : "Add a model under Models to choose one."}
           </p>
         )}
-        {assigned === "" && resolved !== undefined && resolved.model !== "" && (
-          <p>
-            Uses <span className="font-medium">{resolved.model}</span>, the {resolved.via ?? "main"}{" "}
-            model.
-          </p>
-        )}
+        {assigned === "" &&
+          resolved !== undefined &&
+          resolved.model !== "" &&
+          resolved.via !== "default" && (
+            <p>
+              Uses <span className="font-medium">{resolved.model}</span>, the{" "}
+              {resolved.via ?? "main"} model.
+            </p>
+          )}
+        {name === "main" && assigned === "" && <p>Choose the model for the main class.</p>}
         {name === "fast" && <p>{titlesStatus(classes, titlesModel)}</p>}
         {shared.length > 0 && (
           <p>

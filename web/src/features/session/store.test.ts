@@ -46,7 +46,13 @@ const ended: EikaEvent = {
 
 describe("opening a session", () => {
   beforeEach(() => {
-    useSessionStore.setState({ ...newTranscript(""), model: "", draft: "", draftImages: [] });
+    useSessionStore.setState({
+      ...newTranscript(""),
+      model: "",
+      draft: "",
+      draftImages: [],
+      parked: {},
+    });
   });
 
   it("leaves nothing of the session that was open", () => {
@@ -70,6 +76,26 @@ describe("opening a session", () => {
     expect(after.draftImages).toEqual([]);
   });
 
+  it("keeps a session's draft, images and model for when it opens again", () => {
+    const store = useSessionStore.getState();
+    store.open("home");
+    store.edit("an unsent message");
+    store.editImages([image]);
+    store.chooseModel("gpt-5");
+
+    store.open("subagent");
+    expect(useSessionStore.getState().draft).toBe("");
+    store.edit("not the home draft");
+    store.open("home");
+
+    const back = useSessionStore.getState();
+    expect(back.draft).toBe("an unsent message");
+    expect(back.draftImages).toEqual([image]);
+    expect(back.model).toBe("gpt-5");
+    store.open("subagent");
+    expect(useSessionStore.getState().draft).toBe("not the home draft");
+  });
+
   it("keeps the transcript when the session that is open opens again", () => {
     const store = useSessionStore.getState();
     store.open("s1");
@@ -81,7 +107,13 @@ describe("opening a session", () => {
 
 describe("rewinding", () => {
   beforeEach(() => {
-    useSessionStore.setState({ ...newTranscript(""), model: "", draft: "", draftImages: [] });
+    useSessionStore.setState({
+      ...newTranscript(""),
+      model: "",
+      draft: "",
+      draftImages: [],
+      parked: {},
+    });
   });
 
   it("drops the transcript and asks for the path again", () => {

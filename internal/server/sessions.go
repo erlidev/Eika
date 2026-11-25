@@ -2,12 +2,16 @@ package server
 
 import (
 	"context"
+	"errors"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/erlidev/eika/internal/agent"
+	"github.com/erlidev/eika/internal/agentdef"
 	"github.com/erlidev/eika/internal/event"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/session"
@@ -16,24 +20,27 @@ import (
 
 // sessionBody is one session on the wire.
 type sessionBody struct {
-	ID string `json:"id"`
+	ID              string             `json:"id"`
+	Owner           string             `json:"owner"`
+	Agent           string             `json:"agent,omitempty"`
+	Name            string             `json:"name,omitempty"`
+	ProjectID       string             `json:"project_id,omitempty"`
+	ParentSessionID string             `json:"parent_session_id,omitempty"`
+	WaitingReason   string             `json:"waiting_reason,omitempty"`
+	State           store.SessionState `json:"state"`
+	Brief           string             `json:"brief,omitempty"`
+	Result          string             `json:"result,omitempty"`
+	LastActiveAt    time.Time          `json:"last_active_at"`
 	// ComputerID is the computer the session's runs act in, absent for a
 	// chat.
 	ComputerID string `json:"computer_id,omitempty"`
 	Title      string `json:"title"`
-	// Kind is who opened the session.
+	// Kind identifies the conversation.
 	Kind        string `json:"kind"`
 	HeadEntryID string `json:"head_entry_id,omitempty"`
 	// Tools names the tools the session's next run offers the model,
-	// ordered by name: what the session or its profile chose, narrowed to
-	// what it can run.
+	// ordered by name, as the agent definition permits.
 	Tools []string `json:"tools"`
-	// ProfileID is the profile the session chose, absent when it runs with
-	// whichever profile is the default.
-	ProfileID string `json:"profile_id,omitempty"`
-	// Overridden reports whether the session sets anything of its own over
-	// its profile: its overrides or its tool choice.
-	Overridden bool `json:"overridden"`
 	// Pinned sessions are listed before the others.
 	Pinned bool `json:"pinned"`
 	// Archived sessions are set aside under a heading of their own; they
@@ -45,25 +52,21 @@ type sessionBody struct {
 
 // entryBody is one session entry on the wire, payload included.
 type entryBody struct {
-	ID        string           `json:"id"`
-	ParentID  string           `json:"parent_id,omitempty"`
-	Seq       int64            `json:"seq"`
-	Kind      string           `json:"kind"`
-	CreatedAt time.Time        `json:"created_at"`
-	Message   provider.Message `json:"message"`
+	ID       string  `json:"id"`
+	ParentID string  `json:"parent_id,omitempty"`
+	RunID    string  `json:"run_id,omitempty"`
+	Channel  string  `json:"channel,omitempty"`
+	Text     *string `json:"text,omitempty"`
+	// Question is the structured question of a notice a subagent asked,
+	// absent on every other entry.
+	Question  *session.QuestionNotice `json:"question,omitempty"`
+	Seq       int64                   `json:"seq"`
+	Kind      string                  `json:"kind"`
+	CreatedAt time.Time               `json:"created_at"`
+	Message   provider.Message        `json:"message"`
 	// Compaction is what a compaction entry records, and absent on the
 	// others.
 	Compaction *agent.Compaction `json:"compaction,omitempty"`
-}
-
-// createSessionRequest is the body of POST /api/sessions: a session in a
-// computer, or with Chat a session in none.
-type createSessionRequest struct {
-	ComputerID string `json:"computer_id"`
-	Chat       bool   `json:"chat"`
-	// Title is what to call the session. Empty leaves it untitled until its
-	// first run names it.
-	Title string `json:"title"`
 }
 
 // updateSessionRequest is the body of PATCH /api/sessions/{id}. An absent
@@ -125,23 +128,9 @@ type pathResponse struct {
 	Messages  []provider.Message `json:"messages"`
 }
 
-// handleListSessions lists the sessions, of one computer when the query
-// names one. `chats=true` lists the chats instead.
+// handleListSessions lists sessions, optionally filtered by computer.
 func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
-	query := r.URL.Query()
-	var (
-		sessions []store.Session
-		err      error
-	)
-	if query.Get("chats") == "true" {
-		if query.Get("computer_id") != "" {
-			s.fail(w, r, invalidf("a chat has no computer; ask for chats or for a computer's sessions"))
-			return
-		}
-		sessions, err = s.deps.Store.Chats(r.Context())
-	} else {
-		sessions, err = s.deps.Store.Sessions(r.Context(), query.Get("computer_id"))
-	}
+	sessions, err := s.deps.Store.Sessions(r.Context(), r.URL.Query().Get("computer_id"))
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -161,51 +150,6 @@ func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
 		out = append(out, body)
 	}
 	writeJSON(w, s.log, http.StatusOK, sessionsResponse{Sessions: out})
-}
-
-// handleCreateSession opens a session in a computer, or a chat in none. A
-// chat is asked for by name rather than by leaving the computer out, so a
-// client that forgets a computer gets an error, not a chat. A session
-// created without a title shows a placeholder and is named after its first
-// message.
-func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
-	req, err := decodeJSON[createSessionRequest](r)
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	title := strings.TrimSpace(req.Title)
-	untitled := title == ""
-	if untitled {
-		title = untitledSession
-		if req.Chat {
-			title = untitledChat
-		}
-	} else if title, err = checkName("title", title); err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	switch {
-	case req.Chat && req.ComputerID != "":
-		s.fail(w, r, invalidf("a chat has no computer; send chat or computer_id, not both"))
-		return
-	case !req.Chat:
-		if _, err := s.deps.Store.Computer(r.Context(), req.ComputerID); err != nil {
-			s.fail(w, r, err)
-			return
-		}
-	}
-	sess, err := s.deps.Store.CreateSession(r.Context(), store.Session{
-		ComputerID: req.ComputerID,
-		Title:      title,
-		Untitled:   untitled,
-	})
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	s.log.Info("session created", "session_id", sess.ID, "computer_id", sess.ComputerID, "chat", sess.Chat())
-	s.writeSession(w, r, http.StatusCreated, sess)
 }
 
 // handleSession returns a session and the entry it continues from.
@@ -240,6 +184,17 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		body.Head = &entry
 	}
 	writeJSON(w, s.log, http.StatusOK, body)
+}
+
+// handleHomeSession returns the local home conversation and its head.
+func (s *Server) handleHomeSession(w http.ResponseWriter, r *http.Request) {
+	sess, err := s.deps.Store.HomeSession(r.Context(), store.LocalOwner, "home")
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	r.SetPathValue("id", sess.ID)
+	s.handleSession(w, r)
 }
 
 // handleUpdateSession renames, pins, or archives a session, and tells every
@@ -331,6 +286,86 @@ func (s *Server) handleSessionPath(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, s.log, http.StatusOK, body)
 }
 
+// entriesResponse is a page of entries in write order.
+type entriesResponse struct {
+	SessionID  string      `json:"session_id"`
+	Entries    []entryBody `json:"entries"`
+	NextBefore string      `json:"next_before,omitempty"`
+}
+
+const maxEntryCursorBytes = 1024
+
+func entryPageQuery(r *http.Request) (string, int, error) {
+	q, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil {
+		return "", 0, invalidf("invalid pagination query")
+	}
+	for key, values := range q {
+		if (key != "before" && key != "limit") || len(values) != 1 {
+			return "", 0, invalidf("invalid pagination query")
+		}
+	}
+	limit := 50
+	if values, ok := q["limit"]; ok {
+		n, err := strconv.Atoi(values[0])
+		if err != nil || n < 1 || n > 100 || strconv.Itoa(n) != values[0] {
+			return "", 0, invalidf("limit must be an integer from 1 to 100")
+		}
+		limit = n
+	}
+	before := q.Get("before")
+	if _, ok := q["before"]; ok && (before == "" || len(before) > maxEntryCursorBytes || !utf8.ValidString(before) || strings.ContainsRune(before, 0)) {
+		return "", 0, invalidf("invalid before cursor")
+	}
+	return before, limit, nil
+}
+
+func (s *Server) handleSessionEntries(w http.ResponseWriter, r *http.Request) {
+	before, limit, err := entryPageQuery(r)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	id := r.PathValue("id")
+	if _, err = s.deps.Store.Session(r.Context(), id); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	var seq int64
+	if before != "" {
+		var cursor store.Entry
+		cursor, err = s.deps.Store.Entry(r.Context(), before)
+		if errors.Is(err, store.ErrNotFound) || (err == nil && cursor.SessionID != id) {
+			s.fail(w, r, invalidf("invalid before cursor"))
+			return
+		}
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		seq = cursor.Seq
+	}
+	entries, err := s.deps.Store.EntriesBefore(r.Context(), id, seq, limit+1)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	body := entriesResponse{SessionID: id, Entries: make([]entryBody, 0, limit)}
+	if len(entries) > limit {
+		entries = entries[1:]
+		body.NextBefore = entries[0].ID
+	}
+	for _, e := range entries {
+		entry, err := asEntry(e)
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		body.Entries = append(body.Entries, entry)
+	}
+	writeJSON(w, s.log, http.StatusOK, body)
+}
+
 // handleSetSessionHead moves the head to one of the session's entries, which
 // branches the tree in place: the next run continues from there.
 func (s *Server) handleSetSessionHead(w http.ResponseWriter, r *http.Request) {
@@ -366,16 +401,20 @@ func (s *Server) handleSetSessionHead(w http.ResponseWriter, r *http.Request) {
 	s.writeSession(w, r, http.StatusOK, sess)
 }
 
-// checkResumable refuses an entry a run cannot continue from. A path that
-// stops with tool calls unanswered is a conversation no endpoint accepts, so
-// a head placed there would produce a session that fails on its next run
-// rather than one that branches.
+// checkResumable refuses a preamble or a path with unanswered tool calls.
 func (s *Server) checkResumable(ctx context.Context, sessionID, entryID string) error {
 	ok, err := s.tree.Resumable(ctx, sessionID, entryID)
 	if err != nil {
 		return err
 	}
 	if !ok {
+		entry, err := s.deps.Store.Entry(ctx, entryID)
+		if err != nil {
+			return err
+		}
+		if entry.Kind == store.KindPreamble {
+			return invalidf("entry %s is a preamble and cannot be a branch point", entryID)
+		}
 		return invalidf("entry %s leaves tool calls unanswered, so a run cannot continue from it; "+
 			"choose the entry that answers the last of them", entryID)
 	}
@@ -385,6 +424,15 @@ func (s *Server) checkResumable(ctx context.Context, sessionID, entryID string) 
 // handleDeleteSession removes a session and its entries.
 func (s *Server) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	sess, err := s.deps.Store.Session(r.Context(), id)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if sess.Kind == store.SessionHome {
+		s.fail(w, r, conflictf("the home session cannot be deleted"))
+		return
+	}
 	// The run has to stop before the rows it writes to go away, whether or
 	// not the client is still waiting for the answer.
 	stopCtx, cancel := teardown(r.Context())
@@ -414,27 +462,40 @@ func (s *Server) writeSession(w http.ResponseWriter, r *http.Request, status int
 	writeJSON(w, s.log, status, body)
 }
 
-// asSession renders a stored session on the wire, with the tools its next
-// run offers rather than the stored choice, so a client never re-derives
-// which tools a chat may hold or what the profile chose.
+// asSession renders a stored session and its agent tools.
 func (s *Server) asSession(sess store.Session, base configBase) (sessionBody, error) {
-	c, err := base.resolveSession(sess, "")
-	if err != nil {
-		return sessionBody{}, err
+	// A session whose agent is not built in has no tools and no resolved
+	// configuration; rendering it must not fail the listing of the others.
+	// Starting a run on it still fails in resolveSession.
+	var tools []string
+	if _, known := agentdef.Lookup(sess.Agent); known {
+		c, err := base.resolveSession(sess, "")
+		if err != nil {
+			return sessionBody{}, err
+		}
+		tools = c.tools
 	}
 	return sessionBody{
-		ID:          sess.ID,
-		ComputerID:  sess.ComputerID,
-		Title:       sess.Title,
-		Kind:        string(sess.Kind),
-		HeadEntryID: sess.HeadEntryID,
-		Tools:       s.sessionToolNames(sess, c.tools),
-		ProfileID:   sess.ProfileID,
-		Overridden:  !sess.Overrides.Empty() || sess.Tools != nil,
-		Pinned:      sess.Pinned,
-		Archived:    sess.Archived,
-		CreatedAt:   sess.CreatedAt,
-		UpdatedAt:   sess.UpdatedAt,
+		ID:              sess.ID,
+		Owner:           sess.Owner,
+		Agent:           sess.Agent,
+		Name:            sess.Name,
+		ProjectID:       sess.ProjectID,
+		ParentSessionID: sess.ParentSessionID,
+		State:           sess.State,
+		WaitingReason:   sess.WaitingReason,
+		Brief:           sess.Brief,
+		Result:          sess.Result,
+		LastActiveAt:    sess.LastActiveAt,
+		ComputerID:      sess.ComputerID,
+		Title:           sess.Title,
+		Kind:            string(sess.Kind),
+		HeadEntryID:     sess.HeadEntryID,
+		Tools:           s.sessionToolNames(sess, tools),
+		Pinned:          sess.Pinned,
+		Archived:        sess.Archived,
+		CreatedAt:       sess.CreatedAt,
+		UpdatedAt:       sess.UpdatedAt,
 	}, nil
 }
 
@@ -443,6 +504,8 @@ func (s *Server) asSession(sess store.Session, base configBase) (sessionBody, er
 func asEntry(e store.Entry) (entryBody, error) {
 	body := entryBody{
 		ID:        e.ID,
+		RunID:     e.RunID,
+		Channel:   e.Channel,
 		ParentID:  e.ParentID,
 		Seq:       e.Seq,
 		Kind:      string(e.Kind),
@@ -454,6 +517,20 @@ func asEntry(e store.Entry) (entryBody, error) {
 	}
 	if ok {
 		body.Message = m
+	}
+	if e.Kind == store.KindPreamble || e.Kind == store.KindNotice {
+		text, err := session.TextOf(e)
+		if err != nil {
+			return entryBody{}, err
+		}
+		body.Text = &text
+	}
+	if e.Kind == store.KindNotice {
+		q, err := session.QuestionOf(e)
+		if err != nil {
+			return entryBody{}, err
+		}
+		body.Question = q
 	}
 	if e.Kind == store.KindCompaction {
 		c, err := session.CompactionOf(e)

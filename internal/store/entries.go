@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -11,8 +12,7 @@ import (
 // EntryKind names what one session entry holds. The kinds are the vocabulary
 // the whole system agrees on, in the same way internal/event fixes the event
 // names: internal/session writes user, assistant, and tool_result entries
-// from provider messages, compaction entries for summaries, system entries
-// for prompt-level notes, and event entries for questions.
+// from provider messages and compaction entries for summaries.
 type EntryKind string
 
 // The kinds an entry can have.
@@ -21,19 +21,15 @@ const (
 	KindUser EntryKind = "user"
 	// KindAssistant is a model response: text, tool calls, or both.
 	KindAssistant EntryKind = "assistant"
-	// KindToolCall is one tool call recorded on its own.
-	KindToolCall EntryKind = "tool_call"
 	// KindToolResult is the result of one tool call.
 	KindToolResult EntryKind = "tool_result"
-	// KindSystem is a note that belongs to the conversation's framing rather
-	// than to a turn.
-	KindSystem EntryKind = "system"
-	// KindEvent is something that happened around the session, such as a
-	// question.
-	KindEvent EntryKind = "event"
 	// KindCompaction is a summary that replaces the conversation before it,
 	// except its newest messages, from then on.
 	KindCompaction EntryKind = "compaction"
+	// KindPreamble is a stored context snapshot.
+	KindPreamble EntryKind = "preamble"
+	// KindNotice is harness text for the user and a later context block.
+	KindNotice EntryKind = "notice"
 )
 
 // Entry is one node of a session tree. Entries form a tree through ParentID
@@ -47,23 +43,27 @@ type Entry struct {
 	// across every branch.
 	Seq  int64
 	Kind EntryKind
+	// Channel names the source or destination of a home message, empty if unset.
+	Channel string
+	// RunID identifies the agent turn that wrote this entry, if known.
+	RunID string
 	// Payload is the entry's content. For an entry that carries a message it
 	// is the provider.Message JSON; internal/session owns the shapes. It is
-	// stored as jsonb, which keeps the document and not its spelling: the
-	// bytes that come back are equal as JSON to the bytes that went in, but
-	// key order, whitespace, and number formatting are the database's.
+	// stored as json, which preserves its exact spelling.
 	Payload   json.RawMessage
 	CreatedAt time.Time
 }
 
 // entryColumns is the column list every entry query selects, in the order
 // scanEntry reads them.
-const entryColumns = `id, session_id, parent_id, seq, kind, payload, created_at`
+const entryColumns = `id, session_id, parent_id, seq, kind, payload, created_at, channel, run_id`
 
 // AppendEntry appends e to the session's head and moves the head to it, in
-// one transaction. ID, SessionID, ParentID, Seq, and CreatedAt are assigned
-// here and ignored on input; Kind and Payload are the caller's.
+// one transaction. SessionID, ParentID, Seq, and CreatedAt are assigned here
+// and ignored on input, and so is ID, which gets a fresh value; Kind, Payload
+// Channel, and RunID are the caller's.
 func (s *Store) AppendEntry(ctx context.Context, sessionID string, e Entry) (Entry, error) {
+	e.ID = ""
 	var out Entry
 	err := s.tx(ctx, func(q querier) error {
 		head, err := lockSessionHead(ctx, q, sessionID)
@@ -81,16 +81,71 @@ func (s *Store) AppendEntry(ctx context.Context, sessionID string, e Entry) (Ent
 	return out, nil
 }
 
+// AppendEntryOnce appends e with the id e.ID gives it, unless an entry with
+// that id exists: then it returns that entry and false, and changes nothing.
+// A write retried after its response was lost thus adds one entry, not two.
+func (s *Store) AppendEntryOnce(ctx context.Context, sessionID string, e Entry) (Entry, bool, error) {
+	if e.ID == "" {
+		return Entry{}, false, wrap("append entry once to session "+sessionID, errors.New("the entry has no id"))
+	}
+	var out Entry
+	added := false
+	err := s.tx(ctx, func(q querier) error {
+		head, err := lockSessionHead(ctx, q, sessionID)
+		if err != nil {
+			return err
+		}
+		out, err = scanEntry(q.QueryRow(ctx, `SELECT `+entryColumns+` FROM session_entries WHERE id = $1`, e.ID))
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+		if out, err = insertEntry(ctx, q, sessionID, head, e); err != nil {
+			return err
+		}
+		added = true
+		return setHead(ctx, q, sessionID, out.ID)
+	})
+	if err != nil {
+		return Entry{}, false, wrap("append entry once to session "+sessionID, err)
+	}
+	if out.SessionID != sessionID {
+		return Entry{}, false, wrap("append entry once to session "+sessionID, ErrConflict)
+	}
+	return out, added, nil
+}
+
+// AppendEntries appends entries under one lock and commits them together.
+func (s *Store) AppendEntries(ctx context.Context, sessionID string, entries ...Entry) error {
+	return s.tx(ctx, func(q querier) error {
+		head, err := lockSessionHead(ctx, q, sessionID)
+		if err != nil {
+			return err
+		}
+		for _, entry := range entries {
+			entry.ID = ""
+			added, err := insertEntry(ctx, q, sessionID, head, entry)
+			if err != nil {
+				return err
+			}
+			head = added.ID
+		}
+		return setHead(ctx, q, sessionID, head)
+	})
+}
+
 // SetSessionHead points a session's head at one of its own entries, which is
 // how a branch starts: the next append hangs off that entry instead of the
 // one that was last written. An empty entryID clears the head, so the session
-// starts again from its root.
+// starts again from its root. Preamble entries cannot be branch points.
 func (s *Store) SetSessionHead(ctx context.Context, sessionID, entryID string) error {
 	// The entry check is part of the update, so that no head can be set from
 	// a row that another connection deleted in between.
 	const q = `UPDATE sessions SET head_entry_id = $2, updated_at = now()
 		WHERE id = $1 AND ($2::text IS NULL OR EXISTS (
-			SELECT 1 FROM session_entries WHERE id = $2 AND session_id = $1))`
+			SELECT 1 FROM session_entries WHERE id = $2 AND session_id = $1 AND kind <> 'preamble'))`
 	tag, err := s.pool.Exec(ctx, q, sessionID, nullable(entryID))
 	if err != nil {
 		return wrap("set head of session "+sessionID, err)
@@ -117,13 +172,12 @@ func (s *Store) Entries(ctx context.Context, sessionID string) ([]Entry, error) 
 	return s.queryEntries(ctx, "list entries of session "+sessionID, q, sessionID)
 }
 
-// ChildEntries returns the entries whose parent is entryID, oldest first. An
-// empty entryID returns the session's roots.
-func (s *Store) ChildEntries(ctx context.Context, sessionID, entryID string) ([]Entry, error) {
-	const q = `SELECT ` + entryColumns + ` FROM session_entries
-		WHERE session_id = $1 AND parent_id IS NOT DISTINCT FROM $2
-		ORDER BY seq`
-	return s.queryEntries(ctx, "list children of entry "+entryID, q, sessionID, nullable(entryID))
+// EntriesBefore returns up to limit entries in write order before seq. A zero
+// seq starts at the newest entry. Entries from all branches are included.
+func (s *Store) EntriesBefore(ctx context.Context, sessionID string, seq int64, limit int) ([]Entry, error) {
+	const q = `SELECT ` + entryColumns + ` FROM (SELECT ` + entryColumns + ` FROM session_entries
+ WHERE session_id = $1 AND ($2::bigint = 0 OR seq < $2) ORDER BY seq DESC LIMIT $3) page ORDER BY seq`
+	return s.queryEntries(ctx, "page entries of session "+sessionID, q, sessionID, seq, limit)
 }
 
 // EntryPath returns the entries from the session's root down to entryID,
@@ -154,29 +208,33 @@ func (s *Store) SessionPath(ctx context.Context, sessionID string) ([]Entry, err
 const pathQuery = `WITH RECURSIVE up AS (
 		SELECT ` + entryColumns + ` FROM session_entries WHERE id = $1
 		UNION ALL
-		SELECT e.id, e.session_id, e.parent_id, e.seq, e.kind, e.payload, e.created_at
+		SELECT e.id, e.session_id, e.parent_id, e.seq, e.kind, e.payload, e.created_at, e.channel, e.run_id
 		FROM session_entries e JOIN up ON e.id = up.parent_id
 	)
 	SELECT ` + entryColumns + ` FROM up ORDER BY seq`
 
 // insertEntry writes one entry under parent, giving it the next sequence
-// number of its session.
+// number of its session, and e.ID, or a fresh id when that is empty.
 //
 // The caller must hold the session row lock that lockSessionHead takes:
 // max(seq) + 1 is only unique while one writer at a time reads it. Two
 // concurrent appends without the lock would pick the same number and one of
 // them would lose the (session_id, seq) uniqueness check.
 func insertEntry(ctx context.Context, q querier, sessionID, parentID string, e Entry) (Entry, error) {
-	const insert = `INSERT INTO session_entries (id, session_id, parent_id, seq, kind, payload)
+	const insert = `INSERT INTO session_entries (id, session_id, parent_id, seq, kind, payload, channel, run_id)
 		VALUES ($1, $2, $3,
 			(SELECT coalesce(max(seq), 0) + 1 FROM session_entries WHERE session_id = $2),
-			$4, $5)
+			$4, $5, $6, $7)
 		RETURNING ` + entryColumns
 	payload := e.Payload
 	if len(payload) == 0 {
 		payload = json.RawMessage(`{}`)
 	}
-	row := q.QueryRow(ctx, insert, NewID(), sessionID, nullable(parentID), e.Kind, []byte(payload))
+	id := e.ID
+	if id == "" {
+		id = NewID()
+	}
+	row := q.QueryRow(ctx, insert, id, sessionID, nullable(parentID), e.Kind, []byte(payload), e.Channel, nullable(e.RunID))
 	return scanEntry(row)
 }
 
@@ -251,14 +309,28 @@ func scanEntry(row pgx.Row) (Entry, error) {
 	var (
 		e       Entry
 		parent  *string
+		runID   *string
 		payload []byte
 	)
-	err := row.Scan(&e.ID, &e.SessionID, &parent, &e.Seq, &e.Kind, &payload, &e.CreatedAt)
+	err := row.Scan(&e.ID, &e.SessionID, &parent, &e.Seq, &e.Kind, &payload, &e.CreatedAt, &e.Channel, &runID)
 	if err != nil {
 		return Entry{}, err
 	}
 	e.ParentID = text(parent)
+	e.RunID = text(runID)
 	e.Payload = json.RawMessage(payload)
 	e.CreatedAt = e.CreatedAt.UTC()
 	return e, nil
+}
+
+// UndeliveredNotices returns a session's notice entries, on any branch, that
+// no user entry of the session lists among the notices it delivered (the
+// `notices` array of its message payload), oldest first.
+func (s *Store) UndeliveredNotices(ctx context.Context, sessionID string) ([]Entry, error) {
+	const q = `SELECT ` + entryColumns + ` FROM session_entries n
+		WHERE n.session_id = $1 AND n.kind = 'notice' AND NOT EXISTS (
+			SELECT 1 FROM session_entries u
+			WHERE u.session_id = $1 AND u.kind = 'user' AND (u.payload::jsonb -> 'notices') ? n.id)
+		ORDER BY n.seq`
+	return s.queryEntries(ctx, "list undelivered notices of session "+sessionID, q, sessionID)
 }

@@ -181,8 +181,10 @@ func (s *Server) replaySession(ctx context.Context, conn *websocket.Conn, sessio
 			continue
 		}
 		replayed, err := event.New(event.TypeSessionMessage, event.SessionTopic(sessionID), event.SessionMessage{
+			Channel:   e.Channel,
 			SessionID: sessionID,
 			EntryID:   e.ID,
+			RunID:     e.RunID,
 			ParentID:  e.ParentID,
 			Kind:      string(e.Kind),
 			CreatedAt: e.CreatedAt,

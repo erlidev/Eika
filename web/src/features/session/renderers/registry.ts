@@ -14,6 +14,11 @@ import type { ToolItem } from "@/features/session/transcript";
 export type ToolRendererProps = {
   /** call is the tool call with everything known about it so far. */
   call: ToolItem;
+  /**
+   * readOnly says the transcript is watched, not steered: a card that would
+   * take an answer from the user shows what is asked and offers no control.
+   */
+  readOnly?: boolean;
 };
 
 /** ToolRenderer is how one tool's calls are drawn. */

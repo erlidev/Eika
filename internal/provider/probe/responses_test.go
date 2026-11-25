@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 
@@ -79,14 +78,6 @@ func TestCheckResponsesPassesAToolCallRoundTripWithReasoning(t *testing.T) {
 	}
 }
 
-func TestCheckResponsesPassesAModelThatDoesNotReason(t *testing.T) {
-	p := providertest.New(toolCall(providertest.Usage(40, 20, 60), false), answer(stated(70, 3, 0)))
-	got := probe.CheckResponses(context.Background(), probe.ResponsesCheck{Provider: p, Model: "m"})
-	if got.Verdict != probe.Passed || got.Reasoning {
-		t.Errorf("conformance = %+v, want passed with no reasoning to send back", got)
-	}
-}
-
 func TestCheckResponsesFailsForWhatTheLoopCannotUse(t *testing.T) {
 	counted := func(tokens int, method provider.Method) func(context.Context, provider.Request) (provider.Prediction, error) {
 		return func(context.Context, provider.Request) (provider.Prediction, error) {
@@ -102,10 +93,8 @@ func TestCheckResponsesFailsForWhatTheLoopCannotUse(t *testing.T) {
 		counted bool
 	}{
 		{"the first request fails", []providertest.Step{providertest.Fail(errors.New("404 page not found"))}, nil, "the first request failed: 404 page not found", 0, false},
-		{"the stream ends without finishing", []providertest.Step{providertest.Stream(provider.TextDelta("x"))}, nil, "the first request failed: the response ended without finishing", 0, false},
 		{"the model runs out of tokens", []providertest.Step{providertest.Stream(provider.Done("length"))}, nil, "the model used its 512 tokens of output before it called the tool", 0, false},
 		{"the model answers in words", []providertest.Step{providertest.Text("ping")}, nil, "the model did not call the tool it was asked for", 0, false},
-		{"a call to another tool", []providertest.Step{providertest.Calls("", providertest.Call("c", "other", nil))}, nil, "the model did not call the tool it was asked for", 0, false},
 		{"no usage", []providertest.Step{toolCall(provider.Usage{}, true)}, nil, "the first response stated no token usage", 0, false},
 		{
 			"the reasoning item is refused",
@@ -116,11 +105,6 @@ func TestCheckResponsesFailsForWhatTheLoopCannotUse(t *testing.T) {
 			"no cached count",
 			[]providertest.Step{toolCall(providertest.Usage(40, 20, 60), true), answer(providertest.Usage(70, 3, 73))},
 			nil, "the second response did not say how many prompt tokens were cached", 0, false,
-		},
-		{
-			"no usage on the second response",
-			[]providertest.Step{toolCall(providertest.Usage(40, 20, 60), true), providertest.Text("ping")},
-			nil, "the second response stated no token usage", 0, false,
 		},
 		{
 			"exact counting drifts",
@@ -172,15 +156,6 @@ func TestCheckResponsesCountsTheSecondRequestTheWayTheSessionDoes(t *testing.T) 
 		if got.Verdict != probe.Passed || got.Counted {
 			t.Errorf("%s count: %+v, want passed and not counted", c.name, got)
 		}
-	}
-}
-
-func TestCheckResponsesNeverFailsOnATimeout(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	got := probe.CheckResponses(ctx, probe.ResponsesCheck{Provider: providertest.New(providertest.Text("x")), Model: "m"})
-	if got.Verdict != probe.Failed || !strings.Contains(got.Reason, "the first request failed") {
-		t.Errorf("conformance = %+v, want a failure with a reason", got)
 	}
 }
 

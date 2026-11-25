@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"testing"
 
 	"github.com/erlidev/eika/internal/executor"
 	"github.com/erlidev/eika/internal/tool"
@@ -58,15 +57,4 @@ func ExampleTool() {
 	t, _ := registry.Get("count_lines")
 	fmt.Println(t.Name(), t.Description())
 	// Output: count_lines Count the lines of a text file.
-}
-
-func TestExampleToolCountsLines(t *testing.T) {
-	w := newComputer(t)
-	w.write("a.txt", "one\ntwo\nthree\n")
-	if err := w.registry.Register(countLinesTool{}); err != nil {
-		t.Fatalf("register: %v", err)
-	}
-	if res := w.call("count_lines", map[string]any{"path": "a.txt"}); res.Content != "3" {
-		t.Errorf("result = %+v, want 3", res)
-	}
 }

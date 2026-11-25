@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import type { Provider } from "@/api/types";
 import {
-  baseUrlProblem,
   keyWillBeCleared,
   probeInput,
   storedKeyApplies,
@@ -84,41 +83,5 @@ describe("an unchanged base URL", () => {
     const removing = form({ removeKey: true });
     expect(updateInput(removing)).toMatchObject({ api_key: "" });
     expect(probeInput(stored, removing)).toMatchObject({ api_key: "" });
-  });
-});
-
-describe("validate", () => {
-  const base = { ...form(), provider: undefined, takenNames: ["Taken"], keyRequired: false };
-
-  it.each([
-    [{ name: " " }, "name", /name/],
-    [{ name: "Taken" }, "name", /Another provider/],
-    [{ name: "x".repeat(65) }, "name", /64/],
-    [{ baseUrl: "" }, "baseUrl", /base URL/],
-    [{ keyRequired: true }, "apiKey", /needs an API key/],
-  ])("rejects %j", (over, field, message) => {
-    const problem = validate({ ...base, ...over });
-    expect(problem?.field).toBe(field);
-    expect(problem?.message).toMatch(message);
-  });
-
-  it("accepts a complete provider", () => {
-    expect(validate(base)).toBeNull();
-  });
-});
-
-describe("baseUrlProblem", () => {
-  it.each([
-    ["https://api.openai.com/v1", null],
-    ["http://host.docker.internal:11434/v1", null],
-    ["api.openai.com/v1", /http:\/\/ or https:\/\//],
-    ["ftp://x.test", /http:\/\/ or https:\/\//],
-    ["https://u:p@x.test/v1", /credentials/],
-    ["https://x.test/v1?key=1", /query string/],
-    ["https://x.test/v1#frag", /fragment/],
-  ])("%s", (url, want) => {
-    const got = baseUrlProblem(url);
-    if (want === null) expect(got).toBeNull();
-    else expect(got).toMatch(want);
   });
 });

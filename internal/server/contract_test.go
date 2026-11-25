@@ -16,11 +16,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/erlidev/eika/internal/agentdef"
 	"github.com/erlidev/eika/internal/event"
 	"github.com/erlidev/eika/internal/mcp"
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/search"
 	"github.com/erlidev/eika/internal/server/servertest"
+	"github.com/erlidev/eika/internal/store"
 )
 
 // update rewrites the contract file instead of comparing it: `make contract`.
@@ -49,6 +51,41 @@ type searchKeysResponse struct {
 // a type this table names wrongly fails the handler tests, which check every
 // response they get against the contract.
 var routeWire = map[string]wire{
+	"POST /api/notifications/test":           {status: http.StatusNoContent},
+	"GET /api/home":                          {status: http.StatusOK, response: sessionResponse{}},
+	"GET /api/instructions":                  {status: http.StatusOK, response: store.GlobalInstructions{}},
+	"PUT /api/instructions":                  {status: http.StatusOK, request: putInstructionsRequest{}, response: store.GlobalInstructions{}},
+	"DELETE /api/instructions":               {status: http.StatusNoContent},
+	"GET /api/projects/{id}/instructions":    {status: http.StatusOK, response: projectInstructionsBody{}},
+	"PUT /api/projects/{id}/instructions":    {status: http.StatusOK, request: putProjectInstructionsRequest{}, response: projectInstructionsBody{}},
+	"DELETE /api/projects/{id}/instructions": {status: http.StatusNoContent},
+	"GET /api/memories":                      {status: http.StatusOK, response: memoriesResponse{}},
+	"GET /api/memories/{name}":               {status: http.StatusOK, response: memoryBody{}},
+	"PATCH /api/memories/{name}":             {status: http.StatusOK, request: editMemoryRequest{}, response: memoryBody{}},
+	"POST /api/memories/{name}/pin":          {status: http.StatusOK, request: memoryPreconditionRequest{}, response: memoryBody{}},
+	"POST /api/memories/{name}/unpin":        {status: http.StatusOK, request: memoryPreconditionRequest{}, response: memoryBody{}},
+	"POST /api/memories/{name}/archive":      {status: http.StatusOK, request: archiveMemoryRequest{}, response: memoryBody{}},
+	"DELETE /api/memories/{name}":            {status: http.StatusNoContent},
+	"GET /api/inbox/count":                   {status: http.StatusOK, response: inboxCountResponse{}},
+	"GET /api/inbox/memories":                {status: http.StatusOK, response: inboxResponse{}},
+	"POST /api/inbox/memories/{name}/accept": {status: http.StatusOK, request: editMemoryRequest{}, response: memoryBody{}},
+	"POST /api/inbox/memories/{name}/reject": {status: http.StatusOK, request: archiveMemoryRequest{}, response: memoryBody{}},
+	"POST /api/skills":                       {status: http.StatusCreated, response: skillInstallResponse{}},
+	"GET /api/skills":                        {status: http.StatusOK, response: skillsResponse{}},
+	"GET /api/skills/{name}":                 {status: http.StatusOK, response: skillBody{}},
+	"POST /api/skills/{name}/enable":         {status: http.StatusOK, response: skillBody{}},
+	"POST /api/skills/{name}/disable":        {status: http.StatusOK, response: skillBody{}},
+	"DELETE /api/skills/{name}":              {status: http.StatusNoContent},
+	"GET /api/projects":                      {status: http.StatusOK, response: projectsResponse{}},
+	"POST /api/projects":                     {status: http.StatusCreated, request: createProjectRequest{}, response: projectBody{}},
+	"GET /api/projects/{id}":                 {status: http.StatusOK, response: projectBody{}},
+	"PATCH /api/projects/{id}":               {status: http.StatusOK, request: store.ProjectUpdate{}, response: projectBody{}},
+
+	"GET /api/agents":           {status: http.StatusOK, response: agentsResponse{}},
+	"GET /api/agents/{name}":    {status: http.StatusOK, response: agentBody{}},
+	"PUT /api/agents/{name}":    {status: http.StatusOK, request: agentdef.Override{}, response: agentBody{}},
+	"DELETE /api/agents/{name}": {status: http.StatusNoContent},
+
 	"GET /api/healthz":       {status: http.StatusOK, response: health{}},
 	"GET /api/auth/status":   {status: http.StatusOK, response: authStatusResponse{}},
 	"POST /api/auth/setup":   {status: http.StatusCreated, request: passwordRequest{}, response: signInResponse{}},
@@ -56,36 +93,42 @@ var routeWire = map[string]wire{
 	"POST /api/auth/logout":  {status: http.StatusNoContent},
 	"PUT /api/auth/password": {status: http.StatusOK, request: changePasswordRequest{}, response: signInResponse{}},
 
+	"GET /api/guard":                     {status: http.StatusOK, response: guardResponse{}},
+	"GET /api/halt":                      {status: http.StatusOK, response: haltResponse{}},
+	"POST /api/halt":                     {status: http.StatusOK, request: haltRequest{}, response: haltResponse{}},
+	"POST /api/halt/resume":              {status: http.StatusOK, response: haltResponse{}},
+	"GET /api/blocked-hosts":             {status: http.StatusOK, response: blockedHostsResponse{}},
+	"POST /api/blocked-hosts":            {status: http.StatusNoContent, request: blockedHostRequest{}},
+	"DELETE /api/blocked-hosts/{host}":   {status: http.StatusNoContent},
+	"GET /api/trusted-sources":           {status: http.StatusOK, response: trustedSourcesResponse{}},
+	"POST /api/trusted-sources":          {status: http.StatusNoContent, request: trustedSourceRequest{}},
+	"DELETE /api/trusted-sources/{host}": {status: http.StatusNoContent},
+	"POST /api/withheld/{id}/trust":      {status: http.StatusNoContent},
+	"GET /api/withheld":                  {status: http.StatusOK, response: withheldResponse{}},
+	"GET /api/withheld/{id}":             {status: http.StatusOK, response: withheldBody{}},
+
 	"GET /api/events": {websocket: true},
 
 	"GET /api/computers": {status: http.StatusOK, response: computersResponse{}},
 
 	"GET /api/sessions":              {status: http.StatusOK, response: sessionsResponse{}},
-	"POST /api/sessions":             {status: http.StatusCreated, request: createSessionRequest{}, response: sessionBody{}},
 	"GET /api/sessions/{id}":         {status: http.StatusOK, response: sessionResponse{}},
 	"PATCH /api/sessions/{id}":       {status: http.StatusOK, request: updateSessionRequest{}, response: sessionBody{}},
 	"DELETE /api/sessions/{id}":      {status: http.StatusNoContent},
 	"GET /api/sessions/{id}/outline": {status: http.StatusOK, response: outlineResponse{}},
+	"GET /api/sessions/{id}/entries": {status: http.StatusOK, response: entriesResponse{}},
 	"GET /api/sessions/{id}/path":    {status: http.StatusOK, response: pathResponse{}},
 	"POST /api/sessions/{id}/head":   {status: http.StatusOK, request: setHeadRequest{}, response: sessionBody{}},
-	"PUT /api/sessions/{id}/tools":   {status: http.StatusOK, request: setToolsRequest{}, response: sessionBody{}},
 
-	"GET /api/sessions/{id}/configuration":   {status: http.StatusOK, response: sessionConfigurationResponse{}},
-	"PUT /api/sessions/{id}/profile":         {status: http.StatusOK, request: setSessionProfileRequest{}, response: sessionConfigurationResponse{}},
-	"PUT /api/sessions/{id}/overrides":       {status: http.StatusOK, request: profileSettingsBody{}, response: sessionConfigurationResponse{}},
 	"GET /api/sessions/{id}/context":         {status: http.StatusOK, response: contextResponse{}},
 	"GET /api/sessions/{id}/prediction":      {status: http.StatusOK, response: predictionResponse{}},
 	"GET /api/sessions/{id}/calls":           {status: http.StatusOK, response: callsResponse{}},
 	"GET /api/sessions/{id}/calls/{call_id}": {status: http.StatusOK, response: contextResponse{}},
-	"GET /api/profiles":                      {status: http.StatusOK, response: profilesResponse{}},
-	"GET /api/profiles/inherited":            {status: http.StatusOK, response: configurationBody{}},
-	"POST /api/profiles":                     {status: http.StatusCreated, request: profileRequest{}, response: profileBody{}},
-	"PUT /api/profiles/{id}":                 {status: http.StatusOK, request: profileRequest{}, response: profileBody{}},
-	"DELETE /api/profiles/{id}":              {status: http.StatusNoContent},
 
 	"POST /api/sessions/{id}/messages": {status: http.StatusAccepted, request: messageRequest{}, response: runBody{}},
 	"GET /api/sessions/{id}/run":       {status: http.StatusOK, response: runStateResponse{}},
 	"POST /api/sessions/{id}/compact":  {status: http.StatusAccepted, request: compactRequest{}, response: runBody{}},
+	"POST /api/sessions/{id}/cancel":   {status: http.StatusOK, response: sessionBody{}},
 	"POST /api/runs/{id}/abort":        {status: http.StatusOK, response: runBody{}},
 	"POST /api/questions/{id}/answer":  {status: http.StatusNoContent, request: answerRequest{}},
 	"GET /api/tools":                   {status: http.StatusOK, response: toolsResponse{}},
@@ -141,7 +184,11 @@ var eventPayloads = map[string]any{
 	event.TypeSessionTitle:    event.SessionTitle{},
 	event.TypeSessionUpdated:  event.SessionUpdated{},
 	event.TypeSessionMessage:  event.SessionMessage{},
+	event.TypeHaltState:       event.HaltState{},
 	event.TypeBusDropped:      event.BusDropped{},
+	event.TypeMemoryChanged:   event.MemoryChanged{},
+	event.TypeInboxCount:      event.InboxCount{},
+	event.TypeSkillsChanged:   event.SkillsChanged{},
 	event.TypeCompactionStart: event.CompactionStart{},
 	event.TypeCompactionEnd:   event.CompactionEnd{},
 }

@@ -34,19 +34,19 @@ export type SandboxProblems = Partial<Record<"cpus" | "memoryMb" | "pids" | "all
 /** egressModes are the modes in the order the editor offers them. */
 export const egressModes: readonly { value: EgressMode; label: string; hint: string }[] = [
   {
-    value: "open",
-    label: "Open",
-    hint: "The sandbox reaches the internet directly, as any container does.",
+    value: "public",
+    label: "Public",
+    hint: "The computer can reach public internet hosts. It cannot reach private network addresses.",
   },
   {
     value: "allowlist",
     label: "Allowlist",
-    hint: "The sandbox reaches only the hosts listed below, through the harness's proxy. Tools that ignore HTTP_PROXY reach nothing.",
+    hint: "The computer can reach only the public hosts listed below.",
   },
   {
     value: "none",
     label: "None",
-    hint: "The sandbox reaches the harness and its git hub, and nothing on the internet.",
+    hint: "The computer cannot reach the internet.",
   },
 ];
 
@@ -137,7 +137,7 @@ export function normalizePattern(input: string): { pattern?: string; problem?: s
     }
   }
   if (p === "" || p === "*") {
-    return { problem: "Enter a host such as github.com; to allow every host, choose Open." };
+    return { problem: "Enter a host such as github.com; to reach public hosts, choose Public." };
   }
   if (p.length > 253) return { problem: "A host name is at most 253 characters." };
   if (ipv4.test(p) || (p.includes(":") && /^[0-9a-f:.]+$/.test(p))) return { pattern: p };
@@ -168,9 +168,4 @@ export function formatMemory(mb: number): string {
   if (mb === 0) return "No limit";
   if (mb < 1024) return `${String(mb)} MiB`;
   return `${String(Math.round((mb / 1024) * 100) / 100)} GiB`;
-}
-
-/** formatPids reads a process limit. */
-export function formatPids(pids: number): string {
-  return pids === 0 ? "No limit" : `${pids.toLocaleString("en-US")} processes`;
 }

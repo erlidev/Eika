@@ -79,25 +79,12 @@ func (w *computer) record(_ context.Context, e event.Event) {
 	w.outputs = append(w.outputs, payload.Text)
 }
 
-func TestRegistryHoldsEveryBuiltinTool(t *testing.T) {
+// Every tool must offer a description and an object schema, or providers
+// refuse the whole request.
+func TestEveryBuiltinToolHasAValidSchema(t *testing.T) {
 	r, err := builtin.Registry(builtin.Deps{})
 	if err != nil {
 		t.Fatalf("Registry: %v", err)
-	}
-	want := []string{
-		"ask_user", "bash", "web_fetch", "web_search",
-	}
-	got := make([]string, 0, len(want))
-	for _, tl := range r.List() {
-		got = append(got, tl.Name())
-	}
-	if len(got) != len(want) {
-		t.Fatalf("tools = %v, want %v", got, want)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("tools = %v, want %v", got, want)
-		}
 	}
 	for _, def := range r.Schemas() {
 		if def.Description == "" {
@@ -114,7 +101,7 @@ func TestRegistryHoldsEveryBuiltinTool(t *testing.T) {
 }
 
 // A chat offers the standalone tools alone. Every tool that reads or changes
-// files or runs a command must stay out of it.
+// files or runs a command needs explicit access through its dependencies.
 func TestOnlyToolsThatNeedNoComputerAreStandalone(t *testing.T) {
 	r, err := builtin.Registry(builtin.Deps{})
 	if err != nil {
@@ -126,7 +113,8 @@ func TestOnlyToolsThatNeedNoComputerAreStandalone(t *testing.T) {
 			standalone = append(standalone, tl.Name())
 		}
 	}
-	want := []string{"ask_user", "web_fetch", "web_search"}
+	want := []string{"ask_user", "history_read", "history_search", "memory_forget", "memory_read", "memory_search", "memory_write", "project_create", "project_list", "project_open", "project_update",
+		"report", "skill_use", "subagent_cancel", "subagent_message", "subagent_start", "subagent_status", "web_fetch", "web_search"}
 	if !slices.Equal(standalone, want) {
 		t.Errorf("standalone tools = %v, want %v", standalone, want)
 	}

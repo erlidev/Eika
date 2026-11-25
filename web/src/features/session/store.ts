@@ -7,16 +7,27 @@
 import { create } from "zustand";
 
 import type { EikaEvent } from "@/api/events";
+import type { Entry, SessionOutline } from "@/api/types";
 import type { DraftImage } from "@/features/session/attachments";
-import { applyEvent, newTranscript } from "@/features/session/transcript";
+import {
+  applyEntries,
+  applyEvent,
+  applyOutline,
+  newTranscript,
+} from "@/features/session/transcript";
 import type { TranscriptState } from "@/features/session/transcript";
+
+/** Composing is what a session's composer holds: its model choice, its draft and the draft's images. */
+type Composing = { model: string; draft: string; draftImages: DraftImage[] };
+
+const noComposing: Composing = { model: "", draft: "", draftImages: [] };
 
 /** SessionStore is the open session's transcript and the ways it changes. */
 export type SessionStore = TranscriptState & {
   /**
    * model is the model this session's next run uses, empty for the default.
-   * It is here rather than in the session view because the status bar sets it
-   * and the run panel reads it, and neither owns the other.
+   * It is here rather than in the session view because `open` parks it with
+   * the draft when another session opens, and restores it on return.
    */
   model: string;
   /**
@@ -27,7 +38,16 @@ export type SessionStore = TranscriptState & {
   draft: string;
   /** draftImages are the images attached in the composer, kept beside draft for the same reason. */
   draftImages: DraftImage[];
-  /** open points the store at a session, discarding the previous one. */
+  /**
+   * parked is what the composer of each session that is not open holds, so
+   * that watching another session (a subagent in Activity) and coming back
+   * leaves an unsent message and its images where they were.
+   */
+  parked: Record<string, Composing>;
+  /**
+   * open points the store at a session, discarding the previous one's
+   * transcript and parking its composer state for when it opens again.
+   */
   open: (sessionId: string) => void;
   /** edit replaces the composer's text. */
   edit: (draft: string) => void;
@@ -44,6 +64,10 @@ export type SessionStore = TranscriptState & {
   chooseModel: (model: string) => void;
   /** apply folds one stream event in. */
   apply: (e: EikaEvent) => void;
+  /** addEntries merges stored pages into the transcript. */
+  addEntries: (sessionId: string, entries: Entry[], completed?: readonly string[]) => void;
+  /** setOutline removes entries outside the current branch from the view. */
+  setOutline: (sessionId: string, outline: SessionOutline) => void;
   /** replayRequested records that the replay the state asked for is on its way. */
   replayRequested: () => void;
   /** replayNeeded asks for a catch-up, for a reconnect that lost live events. */
@@ -59,12 +83,25 @@ export const useSessionStore = create<SessionStore>((set) => ({
   model: "",
   draft: "",
   draftImages: [],
+  parked: {},
   open: (sessionId) => {
-    set((state) =>
-      state.sessionId === sessionId
-        ? state
-        : { ...newTranscript(sessionId), model: "", draft: "", draftImages: [] },
-    );
+    set((state) => {
+      if (state.sessionId === sessionId) return state;
+      const { [sessionId]: restored, ...others } = state.parked;
+      const leaving: Composing = {
+        model: state.model,
+        draft: state.draft,
+        draftImages: state.draftImages,
+      };
+      const empty =
+        leaving.model === "" && leaving.draft === "" && leaving.draftImages.length === 0;
+      return {
+        ...newTranscript(sessionId),
+        ...(restored ?? noComposing),
+        parked:
+          state.sessionId === "" || empty ? others : { ...others, [state.sessionId]: leaving },
+      };
+    });
   },
   edit: (draft) => {
     set({ draft });
@@ -75,6 +112,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
   rewound: () => {
     set((state) => ({
       ...newTranscript(state.sessionId),
+      revision: state.revision + 1,
       model: state.model,
       draft: state.draft,
       draftImages: state.draftImages,
@@ -86,6 +124,14 @@ export const useSessionStore = create<SessionStore>((set) => ({
   },
   apply: (e) => {
     set((state) => applyEvent(state, e));
+  },
+  addEntries: (sessionId, entries, completed) => {
+    set((state) =>
+      state.sessionId === sessionId ? applyEntries(state, entries, completed) : state,
+    );
+  },
+  setOutline: (sessionId, outline) => {
+    set((state) => (state.sessionId === sessionId ? applyOutline(state, outline) : state));
   },
   replayRequested: () => {
     set({ needsReplay: false });

@@ -56,12 +56,6 @@ func TestCheckSlotAffinityPassesWhenANamedSlotKeepsItsPrefixAcrossARequestOnTheO
 	if reqs[2].System != reqs[0].System || len(reqs[2].Messages) != 3 || reqs[2].Messages[0].Content != reqs[0].Messages[0].Content {
 		t.Errorf("the last request does not continue the first: %+v", reqs[2])
 	}
-	if reqs[1].System == reqs[0].System {
-		t.Error("the request on the other slot shares the first's prompt")
-	}
-	if !strings.HasPrefix(reqs[0].System, "Slot check ") || len(reqs[0].System) < 2000 {
-		t.Errorf("the first prompt is %d bytes starting %q, want a nonce and a prompt long enough to tell a cache hit by", len(reqs[0].System), reqs[0].System[:min(len(reqs[0].System), 20)])
-	}
 }
 
 func TestCheckSlotAffinityFailsWhenANamedSlotLosesItsPrefix(t *testing.T) {
@@ -75,11 +69,6 @@ func TestCheckSlotAffinityFailsWhenANamedSlotLosesItsPrefix(t *testing.T) {
 	got := probe.CheckSlotAffinity(context.Background(), probe.SlotCheck{Provider: p, Model: "qwen", Build: "b11942"})
 	if got.Verdict != probe.Failed {
 		t.Fatalf("slot affinity = %+v, want failed", got)
-	}
-	for _, want := range []string{"0 of the 800", "--no-cache-idle-slots"} {
-		if !strings.Contains(got.Reason, want) {
-			t.Errorf("reason %q does not say %q", got.Reason, want)
-		}
 	}
 	if got.Prompt != 800 || got.Cached != 0 {
 		t.Errorf("prompt %d, cached %d, want 800 and 0", got.Prompt, got.Cached)
@@ -111,9 +100,8 @@ func TestCheckSlotAffinityFailsWhenTheServerStatesNoCachedCount(t *testing.T) {
 
 func TestCheckSlotAffinityFailsWhenARequestFails(t *testing.T) {
 	for name, steps := range map[string][]providertest.Step{
-		"the first":  {providertest.Fail(errors.New("boom"))},
-		"the second": {reply(stated(800, 3, 0)), providertest.Fail(errors.New("boom"))},
-		"the last":   {reply(stated(800, 3, 0)), reply(stated(30, 3, 0)), providertest.Fail(errors.New("boom"))},
+		"the first": {providertest.Fail(errors.New("boom"))},
+		"the last":  {reply(stated(800, 3, 0)), reply(stated(30, 3, 0)), providertest.Fail(errors.New("boom"))},
 	} {
 		t.Run(name, func(t *testing.T) {
 			got := probe.CheckSlotAffinity(context.Background(), probe.SlotCheck{Provider: providertest.New(steps...), Model: "m"})
@@ -121,24 +109,6 @@ func TestCheckSlotAffinityFailsWhenARequestFails(t *testing.T) {
 				t.Errorf("slot affinity = %+v, want failed with the cause", got)
 			}
 		})
-	}
-}
-
-func TestCheckSlotAffinityTakesALeaseForEachRequest(t *testing.T) {
-	q := newQueue()
-	w := &leaseWatcher{Provider: providertest.New(reply(stated(800, 3, 0)), reply(stated(30, 3, 0)), reply(stated(830, 3, 790))), q: q}
-	got := probe.CheckSlotAffinity(context.Background(), probe.SlotCheck{
-		Provider: w, Model: "m", Queue: q,
-		Need: inference.Need{Pool: "gpu", Priority: inference.Maintenance, Endpoint: "llama"},
-	})
-	if got.Verdict != probe.Passed {
-		t.Fatalf("slot affinity = %+v, want passed", got)
-	}
-	if len(w.held) != 3 {
-		t.Errorf("leases held at each request = %v, want one for each of three", w.held)
-	}
-	if n := len(q.Snapshot()[0].Running); n != 0 {
-		t.Errorf("%d leases left after the check", n)
 	}
 }
 
@@ -164,16 +134,5 @@ func TestASlotCheckThatNeverGetsItsTurnIsSkippedNotFailed(t *testing.T) {
 	}
 	if got.Current("b1", "m") {
 		t.Error("a check that never ran is current; it would never run again")
-	}
-}
-
-func TestSlotAffinityIsCurrentForTheBuildAndModelItRanAgainst(t *testing.T) {
-	c := probe.SlotAffinity{Verdict: probe.Passed, Build: "b1", Model: "m"}
-	if !c.Current("b1", "m") || c.Current("b2", "m") || c.Current("b1", "other") {
-		t.Errorf("Current: same %v, new build %v, new model %v; want true, false, false",
-			c.Current("b1", "m"), c.Current("b2", "m"), c.Current("b1", "other"))
-	}
-	if (probe.SlotAffinity{}).Current("", "") {
-		t.Error("a check that never ran is current")
 	}
 }

@@ -9,6 +9,13 @@ import (
 // Every bound the built-in tools apply lives here, so that one file answers
 // "how much can a tool return".
 const (
+	// maxFileBytes bounds the original and result of a text write or edit.
+	maxFileBytes = 1 << 20
+	// maxFilePathBytes bounds a path before executor validation.
+	maxFilePathBytes = 4096
+	// maxFileArgsBytes permits two fully escaped 1 MiB edit strings and a path.
+	maxFileArgsBytes = 12*maxFileBytes + 6*maxFilePathBytes + 1024
+
 	// maxOutputBytes is the most any command-running tool returns.
 	maxOutputBytes = 32 * 1024
 	// outputHeadBytes is how much of the start of a long output survives
@@ -88,3 +95,10 @@ func (o *output) String() string {
 	b.Write(o.tail)
 	return b.String()
 }
+
+// The bounds of Eika's delegation tools: a subagent's handle, and a brief or
+// message, which the lifecycle service also enforces.
+const (
+	maxSubagentNameBytes = 64
+	maxSubagentTextBytes = 64 << 10
+)

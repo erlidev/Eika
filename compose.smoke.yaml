@@ -3,7 +3,7 @@
 # model in place of a real provider. The harness image is tagged eika:smoke
 # and the sandbox image eika-sandbox:smoke, so a running stack's images are
 # left alone (a stack's computers start from eika-sandbox:latest), and the
-# sandbox networks have names of their own so the two stacks' sandboxes never
+# sandbox and guard networks have names of their own so the two stacks' sandboxes never
 # meet.
 #
 #   docker compose -p eika-smoke -f compose.yaml -f compose.smoke.yaml up -d --build
@@ -11,12 +11,17 @@ services:
   eika:
     image: eika:smoke
     environment:
+      EIKA_FETCH_FIXTURE_HOSTS: model
       EIKA_SANDBOX_IMAGE: eika-sandbox:smoke
       EIKA_SANDBOX_NETWORK: eika_smoke_sandbox
       EIKA_SANDBOX_INTERNAL_NETWORK: eika_smoke_sandbox_internal
     depends_on:
       model:
         condition: service_started
+
+  # The real guard image: `make smoke` waits for it to be healthy.
+  guard:
+    image: eika-guard:smoke
 
   # The sandbox image the harness starts computers from, built under its own tag.
   sandbox-image:
@@ -34,5 +39,7 @@ networks:
     name: eika_smoke_sandbox
   sandbox-internal:
     name: eika_smoke_sandbox_internal
+  guard:
+    name: eika_smoke_guard
   default:
     name: eika_smoke_default

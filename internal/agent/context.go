@@ -10,6 +10,7 @@ import (
 
 	"github.com/erlidev/eika/internal/provider"
 	"github.com/erlidev/eika/internal/provider/counter"
+	"github.com/erlidev/eika/internal/tool"
 )
 
 // bytesPerToken is how many bytes EstimateTokens counts as one token. It is
@@ -35,6 +36,11 @@ const (
 	SectionBase SectionKind = "base"
 	// SectionInstructions is Options.Instructions.
 	SectionInstructions SectionKind = "instructions"
+	// SectionPreamble is the session snapshot.
+	SectionPreamble SectionKind = "preamble"
+	// SectionMemory is the memory section that ends the snapshot. Its text
+	// is part of the stored preamble; it is listed apart for inspection.
+	SectionMemory SectionKind = "memory"
 )
 
 // Section is one named part of the system prompt. A system prompt is its
@@ -181,12 +187,57 @@ func (c Context) WithMessages(msgs []provider.Message) Context {
 // assemble builds the request for the next model call on s from the system
 // prompt sections of the run.
 func (a *Agent) assemble(s *Session, prompt []Section) Context {
-	return a.base(prompt).WithMessages(s.Conversation.Messages())
+	return a.sessionBase(s, prompt).WithMessages(s.Conversation.Messages())
+}
+
+func (a *Agent) sessionBase(s *Session, prompt []Section) Context {
+	c := a.base(prompt)
+	c.Sections = append(c.Sections, preambleSections(s.Preamble, s.Memory)...)
+	return c
+}
+
+// preambleSections lists a stored preamble as sections: its text, and apart
+// the memory section it ends with. Their texts joined by a blank line are the
+// stored text, so the system prompt is the same bytes either way.
+func preambleSections(preamble string, mem MemorySnapshot) []Section {
+	if preamble == "" {
+		return nil
+	}
+	if mem.Text == "" || !strings.HasSuffix(preamble, mem.Text) {
+		return []Section{newSection(SectionPreamble, preamble)}
+	}
+	rest := strings.TrimSuffix(strings.TrimSuffix(preamble, mem.Text), "\n\n")
+	if rest == "" {
+		return []Section{newSection(SectionMemory, mem.Text)}
+	}
+	return []Section{newSection(SectionPreamble, rest), newSection(SectionMemory, mem.Text)}
 }
 
 // base returns the request the run's model calls share, with no messages:
 // the system prompt sections, the tool schemas, and the parameters.
 func (a *Agent) base(prompt []Section) Context {
+	return a.baseWith(prompt, a.registry())
+}
+
+// snapshotBase is the request a model call on s would share once snap
+// replaced the session's snapshot: its preamble, and its prompt and tools
+// where it sets them.
+func (a *Agent) snapshotBase(snap Snapshot) Context {
+	prompt := a.prompt()
+	if snap.Prompt != nil {
+		prompt = a.promptWith(snap.Prompt)
+	}
+	tools := snap.Tools
+	if tools == nil {
+		tools = a.registry()
+	}
+	c := a.baseWith(prompt, tools)
+	c.Sections = append(c.Sections, preambleSections(snap.Preamble, snap.Memory)...)
+	return c
+}
+
+// baseWith is base with tools as the tools.
+func (a *Agent) baseWith(prompt []Section, tools *tool.Registry) Context {
 	c := Context{
 		Sections: append([]Section{}, prompt...),
 		Tools:    []ToolSchema{},
@@ -198,8 +249,8 @@ func (a *Agent) base(prompt []Section) Context {
 			ImageInput:       a.opts.ImageInput,
 		},
 	}
-	if a.tools != nil {
-		for _, def := range a.tools.Schemas() {
+	if tools != nil {
+		for _, def := range tools.Schemas() {
 			c.Tools = append(c.Tools, ToolSchema{ToolDef: def, Source: sourceOf(def.Name), Tokens: ToolTokens(def)})
 		}
 	}

@@ -3,7 +3,8 @@
  * the chosen part beside them.
  */
 
-import type { ModelContext, SessionConfiguration } from "@/api/types";
+import type { ModelContext } from "@/api/types";
+import { Button } from "@/components/ui/button";
 import { Notice } from "@/components/Notice";
 import {
   Select,
@@ -32,14 +33,10 @@ import { formatTokens } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 type InspectionProps = {
-  sessionId: string;
   context: ModelContext;
-  /** live says the request is the next one, whose parts link to their settings. */
-  live: boolean;
-  config: SessionConfiguration | undefined;
   view: View;
   onView: (view: View) => void;
-  onEdit: () => void;
+  onSettings?: ((tab: "agents" | "instructions" | "models" | "mcp") => void) | undefined;
 };
 
 /** NavItem is one row of the part column. */
@@ -109,21 +106,22 @@ function navItems(context: ModelContext): NavItem[] {
   return items;
 }
 
-export function Inspection({
-  sessionId,
-  context,
-  live,
-  config,
-  view,
-  onView,
-  onEdit,
-}: InspectionProps) {
+export function Inspection({ context, view, onView, onSettings }: InspectionProps) {
   const parts = segments(context);
   const total = barTotal(parts);
   const items = navItems(context);
   const current = items.some((i) => i.view === view) ? view : "system";
-  const edit = { sessionId, config: live ? config : undefined, onOpen: onEdit };
   const remainder = context.breakdown.remainder;
+  const tab =
+    current === "parameters"
+      ? "models"
+      : current === "section:instructions"
+        ? "instructions"
+        : current === "system" || current === "section:base"
+          ? "agents"
+          : current === "tools" || (current.startsWith("group:") && current !== "group:builtin")
+            ? "mcp"
+            : undefined;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -223,7 +221,19 @@ export function Inspection({
           </div>
         </nav>
         <div className="min-h-0 overflow-y-auto p-4" role="region" aria-label="Part detail">
-          <Pane view={current} context={context} total={total} edit={edit} onView={onView} />
+          {tab && onSettings && (
+            <Button
+              size="xs"
+              variant="outline"
+              className="mb-3"
+              onClick={() => {
+                onSettings(tab);
+              }}
+            >
+              Open {tab} settings
+            </Button>
+          )}
+          <Pane view={current} context={context} total={total} onView={onView} />
         </div>
       </div>
     </div>

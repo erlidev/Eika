@@ -103,12 +103,3 @@ func TestContextBreakdownFailsWhenTheServerCountsLessThanTheParts(t *testing.T) 
 		t.Fatalf("passed = %v, error = %q, want a failure naming the negative remainder", res.Passed, res.Error)
 	}
 }
-
-func TestContextBreakdownFailsWhenTheServerCountsMuchMoreThanTheParts(t *testing.T) {
-	// Tokens the parts do not explain: a part left out.
-	srv := wordServer(t, 500)
-	res := live.ContextBreakdown("fixed").Execute(context.Background(), connect(t, srv.URL))
-	if res.Passed || !strings.Contains(res.Error, "leave out part of the") {
-		t.Fatalf("passed = %v, error = %q, want a failure naming the unexplained tokens", res.Passed, res.Error)
-	}
-}

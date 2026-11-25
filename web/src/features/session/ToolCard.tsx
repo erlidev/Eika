@@ -3,10 +3,12 @@
  * tool; the summary line and the body come from the tool's renderer.
  */
 
-import { ChevronRight, CircleAlert, CircleCheck, Loader2 } from "lucide-react";
+import { ChevronRight, CircleAlert, CircleCheck, Loader2, ShieldAlert } from "lucide-react";
 import { useState } from "react";
 
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { SubagentStatus } from "@/features/session/renderers/HomeRenderer";
+import { stringArg } from "@/features/session/renderers/registry";
 import { rendererFor } from "@/features/session/renderers/renderers";
 import type { ToolItem } from "@/features/session/transcript";
 import { formatDuration } from "@/lib/format";
@@ -21,9 +23,11 @@ export type ToolCardProps = {
    * `question.asked` that follows it, so this has to react to the change.
    */
   open?: boolean;
+  /** readOnly draws a card that waits on the user without the controls that answer it. */
+  readOnly?: boolean;
 };
 
-export function ToolCard({ call, open = false }: ToolCardProps) {
+export function ToolCard({ call, open = false, readOnly = false }: ToolCardProps) {
   const [chosen, setChosen] = useState<boolean | null>(null);
   const expanded = chosen ?? open;
   const renderer = rendererFor(call.name);
@@ -57,10 +61,22 @@ export function ToolCard({ call, open = false }: ToolCardProps) {
             {formatDuration(call.durationMs)}
           </span>
         )}
+        {call.removed > 0 && (
+          <span
+            title="The screen removed part of this result before the model saw it. See Settings, Security."
+            className="text-warning flex shrink-0 items-center gap-1 text-2xs font-medium"
+          >
+            <ShieldAlert aria-hidden className="size-3.5" />
+            withheld
+          </span>
+        )}
         <StatusIcon call={call} />
       </CollapsibleTrigger>
+      {call.name === "subagent_start" && (
+        <SubagentStatus name={stringArg(call, "name")} project={stringArg(call, "project")} />
+      )}
       <CollapsibleContent className="border-t p-2">
-        <renderer.Body call={call} />
+        <renderer.Body call={call} readOnly={readOnly} />
       </CollapsibleContent>
     </Collapsible>
   );

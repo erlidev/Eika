@@ -13,13 +13,16 @@ Its design stays here, marked deferred, as the target if it returns: most of
 | Document | Covers |
 |---|---|
 | `README.md` | Goals, principles, vocabulary, topology, threat model, and what is kept or removed |
-| `runtime.md` | Remaining context layout and loop changes, agents, the home session, projects, subagents, durability, compaction and history recall |
+| `runtime.md` | Remaining runtime changes for later phases |
 | `sentry.md` | The permission authority: policy, what asks, ingest and the injection screen, approvals and grants, egress, halting; deferred: vault, surrogates, review, monitoring |
 | `memory.md` | Instructions, memories, the index, search, episodic recall, screened writes, dreaming |
 | `skills-and-plugins.md` | Agent Skills and MCP plugins |
 | `scheduler.md` | Routines and wakeups |
 | `browser.md` | The browser container, the browser agent, live view and takeover |
-| `interface.md` | The web app, mobile, notifications, external chat channels, remote access |
+| `web-fetch.md` | What `web_fetch` shows the model, reading further by line, section and search, conversion to Markdown, site readers, and the reader that answers a question about a page |
+| `compaction.md` | Compaction in every session: the record code writes, the state the model writes, stubs in the kept tail, preparing a compaction while the cache is warm, recall for every agent, and `evals/compaction` |
+| `interface.md` | Future pages, notifications, testing and external chat channels |
+| `ui.md` | Future visual design, pages, presence, avatar and speech |
 
 Phase 1's implemented runtime is in
 [Architecture](../ARCHITECTURE.md#endpoints-models-and-classes), with reasons in
@@ -218,10 +221,10 @@ Current caveats:
 
 | Area | Today | Becomes |
 |---|---|---|
-| `agent` loop, compaction, retries, overflow, queues | Pi port, well tested | Kept, with the additions in `runtime.md`. Home compaction gains deterministic sections, idle runs and history recall (`runtime.md` 11) |
+| `agent` loop, compaction, retries, overflow, queues | Pi port, well tested | Kept, with the additions in `runtime.md`. Home compaction and recall are built ([Architecture](../ARCHITECTURE.md#context-layout-and-prefix-stability)) |
 | `provider`, `provider/openai`, timings | OpenAI-compatible streaming | Kept. Adds the Responses API as the preferred protocol, backend probing, exact token counting, cache metrics, slot hints, the System One kind |
 | `tool`, registry, `ask_user` broker | Stateless tools, in-memory broker | Kept. A subagent's questions go to Eika, who asks the user in chat when needed |
-| `event` bus, WebSocket, replay | Topics global, computer, session | Kept. Adds topics `inbox` and `activity`; drops `computer` |
+| `event` bus, WebSocket, replay | Topics global, computer, session | Kept. Adds topic `inbox`, and `activity` if `session.updated` proves too coarse; drops `computer` |
 | `computer`, `executor`, `eikad` | Built in phase 0 (`ARCHITECTURE.md`) | Kept. A shared plugin computer is added (`runtime.md` 10) |
 | `egress`, `netguard` | Proxy in Core | Kept in Core, with the `open` mode removed (`sentry.md` 10) |
 | `secret` | Seals everything in Core | Kept |
@@ -230,7 +233,7 @@ Current caveats:
 | `session` tree, entries, runs | Branching tree | Kept. Adds `preamble` and `notice` entry kinds and session kinds; the UI shows it linear |
 | `profiles` | Run configurations | Replaced by agent definitions |
 | `utility` models | Task-to-model map | Replaced by model classes |
-| Subagents | Removed in phase 0 | Named, persistent, asynchronous subagents (`runtime.md` 9) |
+| Subagents | Removed in phase 0 | Named, persistent, asynchronous subagents are built ([Architecture](../ARCHITECTURE.md#subagent-lifecycle)) |
 | Frontend | Chats workbench, without the coding UI | New mobile-first shell; client, stream, reducer, Markdown, composer, settings and MCP screens kept |
 
 ## Decisions this design rests on

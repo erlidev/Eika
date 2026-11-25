@@ -6,18 +6,6 @@ import (
 	"github.com/erlidev/eika/internal/provider"
 )
 
-// QueueMode decides how many queued follow-up messages one turn delivers.
-type QueueMode string
-
-// The queue modes, following Pi.
-const (
-	// QueueOneAtATime starts a new turn with a single queued message and
-	// leaves the rest for the turns after it. It is the default.
-	QueueOneAtATime QueueMode = "one-at-a-time"
-	// QueueAll delivers every queued message at the start of the next turn.
-	QueueAll QueueMode = "all"
-)
-
 // queue is a first-in, first-out list of user messages waiting to join the
 // conversation. Steering messages and follow-up messages each have one.
 type queue struct {
@@ -52,18 +40,16 @@ func (q *queue) drain() []provider.Message {
 	return out
 }
 
-// take removes up to n messages from the front. A non-positive n takes all.
-func (q *queue) take(n int) []provider.Message {
-	if n <= 0 {
-		return q.drain()
-	}
+// shift removes the message at the front, returning it alone, or nothing
+// when the queue is empty.
+func (q *queue) shift() []provider.Message {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	if n > len(q.messages) {
-		n = len(q.messages)
+	if len(q.messages) == 0 {
+		return nil
 	}
-	out := append([]provider.Message(nil), q.messages[:n]...)
-	q.messages = q.messages[n:]
+	out := q.messages[:1:1]
+	q.messages = q.messages[1:]
 	return out
 }
 

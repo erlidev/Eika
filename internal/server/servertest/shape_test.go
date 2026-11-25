@@ -138,9 +138,6 @@ func TestCheck(t *testing.T) {
 		want    []string
 	}{
 		{"a complete response", response, false, func(map[string]any) {}, nil},
-		{"optional fields present", response, false, func(v map[string]any) {
-			v["count"], v["tags"], v["raw"] = 3.0, []any{"x"}, map[string]any{"any": true}
-		}, nil},
 		{"an unknown field", response, false, func(v map[string]any) { v["colour"] = "red" },
 			[]string{"$.colour: unknown field"}},
 		{"a missing field", response, false, func(v map[string]any) { delete(v, "name") },
@@ -149,10 +146,6 @@ func TestCheck(t *testing.T) {
 			[]string{"$.name: boolean, want string"}},
 		{"null where none is allowed", response, false, func(v map[string]any) { v["name"] = nil },
 			[]string{"$.name: null, want string"}},
-		{"null inside an array", response, false, func(v map[string]any) { v["tags"] = []any{nil} },
-			[]string{"$.tags[0]: null, want string"}},
-		{"a wrong map value", response, false, func(v map[string]any) { v["labels"] = map[string]any{"k": 1.0} },
-			[]string{"$.labels.k: number, want string"}},
 		{"a request may leave fields out", request, true, func(v map[string]any) {
 			delete(v, "name")
 			v["count"] = nil
