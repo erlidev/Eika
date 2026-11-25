@@ -21,9 +21,31 @@ test("the list shows state, warning and hit counts", async ({ open, expectShot }
   const digest = list.getByRole("link", { name: /web-digest/ });
   await expect(digest).toContainText("Disabled");
   await expect(digest).toContainText("2 warnings");
-  await expect(digest).toContainText("1 screen hit");
+  await expect(digest).toContainText("3 screen hits");
   await expect(list.getByRole("link", { name: /old-report/ })).toContainText("Broken");
   await expectShot(eika, "skills-desktop");
+});
+
+test("the detail shows the SKILL.md with its hits marked, the fields, files and warnings", async ({
+  open,
+  expectShot,
+}) => {
+  const eika = await open({ scenario: "skills", path: "/skills/web-digest" });
+  const source = eika.page.getByRole("region", { name: "SKILL.md" });
+  await expect(source.locator("mark")).toHaveText(["Ignore", "✓"]);
+  await expect(eika.page.getByRole("region", { name: "Fields" }).locator("mark")).toHaveText(
+    "following its links",
+  );
+  await expect(eika.page.getByText("Flagged in the description:")).toBeVisible();
+  await expect(eika.page.getByText("scripts/run.py is not executable")).toBeVisible();
+  await expect(eika.page.getByRole("region", { name: "Files" })).toContainText("scripts/run.py");
+  await expectShot(eika, "skills-detail-desktop");
+});
+
+test("a broken skill that was not screened says both", async ({ open }) => {
+  const eika = await open({ scenario: "skills", path: "/skills/old-report" });
+  await expect(eika.page.getByRole("alert")).toContainText("SKILL.md is missing on disk");
+  await expect(eika.page.getByText("The injection screen did not run")).toBeVisible();
 });
 
 test("a zip chosen with the picker installs disabled, and a poisoned one shows its hit", async ({

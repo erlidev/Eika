@@ -704,7 +704,7 @@ in a zip is rejected; a planted instruction is returned as a span, not a block.
       `World` routes in the mock harness; topic `skills` invalidates the list. No
       second upload component if one exists. Inspect desktop and coarse-pointer phone
       shots before accepting baselines.
-- [ ] **P6-10**: Add skill detail: the full `SKILL.md` shown as source text with the
+- [x] **P6-10**: Add skill detail: the full `SKILL.md` shown as source text with the
       screen's spans marked in it (the `<mark>` pattern of `MemoryDetail`, driven by
       byte offsets, with `Flagged in the description` text for the description), the
       file list with sizes, the six fields, warnings and any `unscanned` notice. The

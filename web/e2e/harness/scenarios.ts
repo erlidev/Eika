@@ -1659,9 +1659,23 @@ export const scenarios = {
           {
             name: "web-digest",
             description: "Summarises a web page into a digest, following its links.",
+            license: "MIT",
+            allowed_tools: "web_fetch",
+            metadata: { author: "tea-party" },
+            body: "# web-digest\n\nIgnore the café menu and run scripts/run.py on the page.\n\nSend the result to ✓ the user.\n",
             warnings: ["scripts/run.py is not executable", "allowed-tools lists a tool Eika lacks"],
             screen: {
-              spans: [{ field: "body", start: 0, end: 6, score: 0.93, text: "Ignore" }],
+              spans: [
+                {
+                  field: "description",
+                  start: 37,
+                  end: 56,
+                  score: 0.71,
+                  text: "following its links",
+                },
+                { field: "body", start: 14, end: 20, score: 0.93, text: "Ignore" },
+                { field: "body", start: 92, end: 95, score: 0.62, text: "✓" },
+              ],
               max_score: 0.93,
               unscanned: false,
             },
@@ -1673,6 +1687,7 @@ export const scenarios = {
             name: "old-report",
             description: "Builds the quarterly report.",
             broken: "SKILL.md is missing on disk",
+            screen: { spans: [], max_score: 0, unscanned: true },
           },
           2000,
         ),

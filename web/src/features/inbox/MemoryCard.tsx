@@ -12,9 +12,9 @@ import { TypeChip } from "@/features/memory/Chips";
 import { memoryTypes, sourceParts, typeLabel } from "@/features/memory/state";
 import { answerFailure } from "@/features/inbox/state";
 import type { Answer } from "@/features/inbox/state";
-import { segments } from "@/features/inbox/state";
 import { useAccept, useReject } from "@/features/inbox/queries";
 import { formatAgo } from "@/lib/format";
+import { segments } from "@/lib/segments";
 
 /** Flagged shows a field's text with the screened spans marked. */
 function Flagged({ memory, field }: { memory: Memory; field: "description" | "body" }) {
