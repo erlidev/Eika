@@ -744,13 +744,13 @@ a skill from `EXTENDING.md` alone.
 
 ### Stage D: live suite, measure, close
 
-- [ ] **P6-15**: Extend `evals/live`'s server harness with a skills installer and
+- [x] **P6-15**: Extend `evals/live`'s server harness with a skills installer and
       volume, and add the phase exit scenario: install and enable the fixture, ask
       Eika for the task, and record delegation, `skill_use` before the script run,
       the path executed, the answer against the script's own output, asks and pushes
       (zero), and task completion. Fakes stay in `make check`; bounded fixtures and
       cleanup.
-- [ ] **P6-16**: Add the negative live cases: the benign fixtures produce no hits with
+- [x] **P6-16**: Add the negative live cases: the benign fixtures produce no hits with
       the real guard and the poisoned fixture's planted sentence is marked; a
       disabled skill is not in the catalog and `skill_use` refuses it; a skill
       enabled mid-session is absent from the prefix until compaction (prefix bytes
@@ -1091,6 +1091,9 @@ worth installing" condition no longer applies. Design: `design/skills-and-plugin
 - [x] (P6-11) Skills UI: enable, disable and delete.
 - [x] (P6-13) Skills smoke flow and computer isolation check.
 - [x] (P6-14) `EXTENDING.md`: writing a skill for Eika (the spec fields only).
+
+- [x] (P6-15, P6-16) Add the skills live scenarios, including screen, catalog,
+      isolation and poisoned-skill measurements.
 
 **Exit** (P6-15 to P6-18): drop a skill zip into the UI and enable it, then ask Eika for something
 that needs it. Eika delegates, the worker loads the skill with `skill_use`, and it

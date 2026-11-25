@@ -173,6 +173,13 @@ func newLiveCoreWith(t *testing.T, target *live.Target, guard string, configure 
 				}
 			}
 		}
+		if id, err := st.SkillsComputerID(ctx); err == nil {
+			for _, args := range [][]string{{"rm", "-f", computer.ContainerName(id)}, {"volume", "rm", "-f", computer.VolumeName(id)}} {
+				if out, err := exec.CommandContext(ctx, "docker", args...).CombinedOutput(); err != nil {
+					t.Errorf("remove skills resource: %v: %s", err, out)
+				}
+			}
+		}
 		row, err := st.HomeComputer(ctx)
 		if err != nil {
 			return
