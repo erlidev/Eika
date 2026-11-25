@@ -1,6 +1,6 @@
 /** The pure part of the Skills page: how an install and a list row are worded. */
 
-import type { SkillInstall, SkillItem } from "@/api/types";
+import type { Skill, SkillInstall, SkillItem } from "@/api/types";
 
 const plural = (n: number, one: string, many: string) => `${String(n)} ${n === 1 ? one : many}`;
 
@@ -50,4 +50,22 @@ export function summarize(result: SkillInstall): InstallSummary {
       (counts.length > 0 ? `; ${counts.join(" and ")}.` : "."),
     details,
   };
+}
+
+/** FieldRow is one of the six SKILL.md fields, by its spec name, worded for display. */
+export type FieldRow = { label: string; value: string };
+
+/** fieldRows lists the six fields in the spec's order; an unset one has an empty value. */
+export function fieldRows(skill: Skill): FieldRow[] {
+  const metadata = Object.entries(skill.metadata)
+    .map(([k, v]) => `${k}: ${v}`)
+    .join("\n");
+  return [
+    { label: "name", value: skill.name },
+    { label: "description", value: skill.description },
+    { label: "license", value: skill.license },
+    { label: "compatibility", value: skill.compatibility },
+    { label: "metadata", value: metadata },
+    { label: "allowed-tools", value: skill.allowed_tools },
+  ];
 }

@@ -12,7 +12,7 @@ import (
 )
 
 const skillColumns = `name, enabled, sha, installed_at, description, license, compatibility,
-    metadata, allowed_tools, body, files, warnings, screen, broken`
+    metadata, allowed_tools, body, files, warnings, screen, broken, source`
 
 // UpsertSkill writes a skill's row from an install. The row is disabled and
 // sound afterwards: a changed reinstall returns to disabled, and enabling is
@@ -37,16 +37,16 @@ func (s *Store) UpsertSkill(ctx context.Context, r skill.Record) error {
 		}
 	}
 	_, err = s.pool.Exec(ctx, `INSERT INTO skills
-        (name, enabled, sha, installed_at, description, license, compatibility, metadata, allowed_tools, body, files, warnings, screen, broken)
-        VALUES ($1, false, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, '')
+        (name, enabled, sha, installed_at, description, license, compatibility, metadata, allowed_tools, body, files, warnings, screen, broken, source)
+        VALUES ($1, false, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, '', $13)
         ON CONFLICT (name) DO UPDATE SET enabled = false, sha = excluded.sha,
             installed_at = excluded.installed_at, description = excluded.description,
             license = excluded.license, compatibility = excluded.compatibility,
             metadata = excluded.metadata, allowed_tools = excluded.allowed_tools,
             body = excluded.body, files = excluded.files, warnings = excluded.warnings,
-            screen = excluded.screen, broken = ''`,
+            screen = excluded.screen, broken = '', source = excluded.source`,
 		r.Name, r.SHA, r.InstalledAt, r.Description, r.License, r.Compatibility, meta,
-		r.AllowedTools, r.Body, files, warnings, screen)
+		r.AllowedTools, r.Body, files, warnings, screen, r.Source)
 	if err != nil {
 		return wrap("record skill "+r.Name, err)
 	}
@@ -72,7 +72,7 @@ func scanSkill(row pgx.Row) (skill.Record, error) {
 	var installed time.Time
 	var meta, files, warnings, screen []byte
 	if err := row.Scan(&r.Name, &r.Enabled, &r.SHA, &installed, &r.Description, &r.License,
-		&r.Compatibility, &meta, &r.AllowedTools, &r.Body, &files, &warnings, &screen, &r.Broken); err != nil {
+		&r.Compatibility, &meta, &r.AllowedTools, &r.Body, &files, &warnings, &screen, &r.Broken, &r.Source); err != nil {
 		return skill.Record{}, err
 	}
 	r.InstalledAt = installed.UTC()

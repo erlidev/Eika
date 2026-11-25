@@ -11,6 +11,7 @@ const skill = (over: Partial<Skill> = {}): Skill => ({
   metadata: {},
   allowed_tools: "",
   body: "",
+  source: "",
   enabled: false,
   broken: "",
   sha: "s",

@@ -11,8 +11,11 @@ and a phone finds it in the More sheet.
   so; a 400, 413 or 503 is the server's message, plain.
 - `SkillList.tsx` is a row per skill: name, Enabled or Disabled, Broken, warning and
   screen-hit counts, description.
-- `SkillDetail.tsx` is a placeholder (description and counts); P6-10 adds the full
-  `SKILL.md` with marked spans and P6-11 enable, disable and delete.
+- `SkillDetail.tsx` is what the user reads before enabling: state, the broken reason,
+  warnings, an `unscanned` notice, the screen's hits (`Flagged in the description: ...`),
+  the six spec fields, the file list with sizes and the full `SKILL.md` source with
+  the screen's spans marked (`lib/segments.ts`, UTF-8 byte offsets, shared with the
+  Inbox). Older installs need a reinstall to supply the source. P6-11 adds enable, disable and delete.
 - `state.ts` words the counts and the install answer. `queries.ts` is the server state.
   `events.ts` invalidates every skills query on `skills.changed`, `bus.dropped` and
   reconnect.

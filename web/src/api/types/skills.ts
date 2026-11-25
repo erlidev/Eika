@@ -52,6 +52,7 @@ export type Skill = {
   allowed_tools: string;
   /** body is the stored SKILL.md text after the frontmatter; span offsets are bytes into it. */
   body: string;
+  source: string;
   enabled: boolean;
   broken: string;
   sha: string;

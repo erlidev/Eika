@@ -2914,3 +2914,9 @@ skill be worth installing first. Its only dependency is phase 5's backup.
 - **Skill name handling (P6-01).** A missing `name` falls back to the directory name
   with a warning; an invalid name skips the skill, because it becomes a directory path.
   Other fault classes in the design table stay warnings.
+
+## Skill source storage (P6-10)
+
+The detail needs the original `SKILL.md` for screen byte offsets. Migration 0035
+stores it alongside the body. Older rows have no source; reinstalling supplies it
+and returns the skill to disabled. The detail states when the source is unavailable.

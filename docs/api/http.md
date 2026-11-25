@@ -1478,11 +1478,12 @@ Removes the skill's directory and then its row. 204, or 404.
 |---|---|---|
 | `name`, `description`, `license`, `compatibility`, `allowed_tools` | string | The frontmatter as parsed. `allowed_tools` is shown only; it grants nothing. |
 | `metadata` | object of strings | The frontmatter `metadata` map. |
-| `body` | string | The stored `SKILL.md` text after the frontmatter. Screen span offsets into it are bytes. |
+| `body` | string | The `SKILL.md` body after the frontmatter. |
 | `enabled` | boolean | The user's choice. |
 | `broken` | string | Empty, or why the skill cannot be loaded or enabled: `directory missing` or `directory changed since install`. |
 | `sha` | string | Hash of the installed tree. |
 | `installed_at` | RFC 3339 timestamp | |
+| `source` | string | Full `SKILL.md` source. Empty for a skill installed before source storage; reinstall it to supply the source. Body screen spans use byte offsets into this source. |
 | `files` | array of `{path, size}` | Every file, `SKILL.md` included. |
 | `warnings` | array of strings | Faults the parser tolerated. |
 | `screen` | object or null | `{spans, max_score, unscanned}`; a span is `{field, start, end, score, text}` with `field` `description` or `body`. `unscanned` is true when the guard did not answer. |

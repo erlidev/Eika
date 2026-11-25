@@ -68,6 +68,7 @@ type ScreenSpan struct {
 // means the skill must not be loaded whatever Enabled says.
 type Record struct {
 	Skill
+	Source      string
 	Enabled     bool
 	SHA         string
 	InstalledAt time.Time
@@ -170,7 +171,7 @@ func (in *Installer) Install(ctx context.Context, zip []byte) (InstallResult, er
 	if err != nil && !errors.Is(err, ErrNotFound) {
 		return InstallResult{}, fmt.Errorf("read skill row: %w", err)
 	}
-	if exists && old.Broken == "" && old.SHA == want {
+	if exists && old.Broken == "" && old.SHA == want && old.Source != "" {
 		return InstallResult{Record: old, Unchanged: true}, nil
 	}
 	screen, err := in.screen(ctx, arch, sk)
@@ -194,6 +195,12 @@ func (in *Installer) Install(ctx context.Context, zip []byte) (InstallResult, er
 		return InstallResult{}, errors.New("installed skill does not match the archive")
 	}
 	rec := Record{Skill: sk, SHA: want, InstalledAt: in.now().UTC(), Screen: screen}
+	for _, f := range arch.Files {
+		if f.Path == "SKILL.md" {
+			rec.Source = string(f.Data)
+			break
+		}
+	}
 	for _, f := range arch.Files {
 		rec.Files = append(rec.Files, FileInfo{Path: f.Path, Size: len(f.Data)})
 	}

@@ -10,8 +10,8 @@ phases.
   screen's flagged spans marked, and Accept, Edit (then "Save and accept") and
   Reject. A refused answer shows its reason on the card and leaves the memory
   pending: 409 (stale or already answered), 400 (a credential) and 503.
-- `state.ts` is the pure part: `segments` (spans are UTF-8 byte offsets) and
-  `answerFailure`.
+- `state.ts` is the pure part: `answerFailure`. The byte-offset `segments` it used to hold is
+  `lib/segments.ts`, shared with the skill detail.
 - `queries.ts` is the server state. `useInboxEvents`, called once by the shell,
   keeps the badge (`inbox.count`) and the list (`memory.changed`) current and
   reads both again on `bus.dropped` and reconnect. The badge itself is drawn by

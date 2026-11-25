@@ -113,7 +113,7 @@ func TestInstallCreatesDisabledRowAndUpgradeResetsIt(t *testing.T) {
 		t.Fatalf("install: %+v, %v", res, err)
 	}
 	r := e.idx.rows["pdf-forms"]
-	if r.Enabled || r.Screen == nil || !r.Screen.Unscanned || len(r.Files) != 2 || r.Body != "v1" {
+	if r.Enabled || r.Screen == nil || !r.Screen.Unscanned || len(r.Files) != 2 || r.Body != "v1" || r.Source != "---\nname: pdf-forms\ndescription: Does pdf-forms. Use when asked.\n---\nv1" {
 		t.Fatalf("row = %+v, want disabled, unscanned, two files", r)
 	}
 	if _, err := os.Stat(filepath.Join(e.dir, "pdf-forms", "notes", "guide.md")); err != nil {

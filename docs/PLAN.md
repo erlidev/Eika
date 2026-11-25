@@ -1086,8 +1086,9 @@ worth installing" condition no longer applies. Design: `design/skills-and-plugin
       `secret.key` and the memory repository. `make backup` covers it.
 - [x] (P6-06 to P6-08) Catalog in the preamble, sorted. Add the tool `skill_use`, by name or query.
       Resource files are read from `/skills/<name>/` on the computer.
-- [ ] (P6-09 to P6-11) Skills UI: install with the full `SKILL.md` and file list shown, the
-      screen's hits marked in the text, enable, warnings.
+- [ ] (P6-09, P6-10) Skills UI: install with the full `SKILL.md` and file list shown, the
+      screen's hits marked in the text, and warnings.
+- [ ] (P6-11) Skills UI: enable, disable and delete.
 - [ ] (P6-14) `EXTENDING.md`: writing a skill for Eika (the spec fields only).
 
 **Exit** (P6-15 to P6-18): drop a skill zip into the UI and enable it, then ask Eika for something
