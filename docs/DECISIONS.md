@@ -2906,7 +2906,8 @@ skill be worth installing first. Its only dependency is phase 5's backup.
   rejects the install; the guard classifies the description and `SKILL.md`; hits are
   shown in the text and enabling is the user's click. Guard failure shows
   `unscanned`. `skill_use` output is not re-screened.
-- **Limits:** zip 5 MiB, 20 MiB expanded, 200 files, 5 levels, `SKILL.md` 64 KiB;
+- **Limits:** zip 5 MiB, 20 MiB expanded, 200 zip entries, 5 levels below the skill root,
+  `SKILL.md` 64 KiB;
   regular files only, no symlinks or escaping paths.
 - **The catalog is capped at 2,000 exact tokens;** enabling past it is refused.
 - **A changed reinstall returns to disabled;** an identical one is a no-op. Delete

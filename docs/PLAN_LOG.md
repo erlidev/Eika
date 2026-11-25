@@ -1,5 +1,8 @@
 # Plan log
 
+- 2026-11-25: P6-14 documents skill authoring, installation and use in
+  `EXTENDING.md`, and updates the architecture and API descriptions.
+
 - 2026-11-25: P6-13 adds a scripted skills smoke flow: UI install and enable,
   worker load and script run, restart persistence, and computer isolation checks.
   Docker smoke verification remains for the orchestrator.

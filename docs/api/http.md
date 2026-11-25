@@ -1433,7 +1433,8 @@ Installs a skill from a zip. The body is `multipart/form-data` with exactly one
 part, named `file`; any other part, a missing or empty file, or another content
 type is 400. The body is bounded: a zip over 5 MiB (or a `Content-Length` over
 that plus 64 KiB of framing) is 413 `too_large`. Archive limits (20 MiB
-expanded, 200 files, 5 levels deep, `SKILL.md` 64 KiB, regular files only, no
+expanded, 200 zip entries, 5 levels below the skill root, `SKILL.md` 64 KiB,
+regular files only, no
 symlinks or escaping paths) and a `SKILL.md` that cannot be used are 400 with the
 reason. A credential in any text file is 400 and names the file and the pattern,
 never the value. The screen otherwise never blocks: its hits and `unscanned` are

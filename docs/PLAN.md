@@ -733,7 +733,7 @@ its hits are marked in the text. Delete it. On a phone the same works.
       worker's computer, check the answer, restart and check the skill survives, and
       check no agent computer can write `/skills` or read the key and memory. Run
       `make check` and `make smoke`.
-- [ ] **P6-14**: Write `EXTENDING.md`, "Writing a skill for Eika" (the spec fields
+- [x] **P6-14**: Write `EXTENDING.md`, "Writing a skill for Eika" (the spec fields
       only, the layout, limits, how it is installed and screened, how an agent uses
       it, the fixture as the worked example), and bring `ARCHITECTURE.md`,
       `DECISIONS.md` and `docs/api/` up to date for what stages A to C built.
@@ -1090,7 +1090,7 @@ worth installing" condition no longer applies. Design: `design/skills-and-plugin
       screen's hits marked in the text, and warnings.
 - [x] (P6-11) Skills UI: enable, disable and delete.
 - [x] (P6-13) Skills smoke flow and computer isolation check.
-- [ ] (P6-14) `EXTENDING.md`: writing a skill for Eika (the spec fields only).
+- [x] (P6-14) `EXTENDING.md`: writing a skill for Eika (the spec fields only).
 
 **Exit** (P6-15 to P6-18): drop a skill zip into the UI and enable it, then ask Eika for something
 that needs it. Eika delegates, the worker loads the skill with `skill_use`, and it

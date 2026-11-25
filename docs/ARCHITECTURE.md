@@ -44,7 +44,6 @@ egress proxy are network calls and run in the harness.
 | `memory` | Bounded Markdown frontmatter parser, validator and stable renderer; no I/O |
 | `skill` | Lenient `SKILL.md` parser and validator for the six Agent Skills fields (`Parse`), and the bounded zip reader (`ReadZip`: 5 MiB zip, 20 MiB expanded, 200 entries, 5 directory levels, no `..`, absolute or symlink entries; flat zip or one top-level directory; exec bit kept under `scripts/`). `Installer` is the single writer of installed skills (stage, verify, swap, then row; reconcile on start; `SetEnabled` under the same lock with the catalog budget check) through `Volume` and `Index` interfaces. `Catalog` renders the enabled skills and `CheckCatalogBudget` counts it exactly against 2,000 tokens. Pure: no module imports. Fixtures in `testdata/` (`invoice-totals`, poisoned `notes-formatter`) |
 | `memory` (writer) | `Writer` is the only writer of memory files; `server` owns it (`memoryWriter`) over the memory repository and the store index. The `memory_*` tools (`tool/builtin/memory.go`) call `sentry.MemoryChecker` before it. The writer's files are `server.memoryFiles`: a cached repository that is made again (computer ensured) and the call retried once when it fails, so a memory computer recreated after startup is found again. The write policy is in the `eika` built-in prompt only; subagent definitions list no memory tool, and a snapshot's pinned list can only narrow the definition's, so an old home snapshot gets the tools at its next compaction |
-| `skill/volume` | Fixed skills-volume operations through an executor (stage a tree, replace a skill directory, remove, hash, list); names and paths are checked again here. Run by `server.SkillsVolume` against the private installer computer (`skills_computer` id, label `eika.role=skills`, egress none, no row, no agent access) |
 
 | `skill/volume` | Fixed skills-volume operations through an executor (stage a tree, replace a skill directory, remove, hash); names and paths are checked again here. Run by `server.SkillsVolume` against the private installer computer (`skills_computer` id, label `eika.role=skills`, egress none, no row, no agent access). Agent computers mount its volume read-only at `/skills` (`computer.Spec.ReadOnly`); `startComputer` recreates a stopped computer lacking it with `Host.Recreate`, keeping its data volume |
 | `memory/repo` | Fixed named-file and git operations through an executor. Run by `server.EnsureMemory` against the private memory computer |
@@ -297,7 +296,10 @@ run goes on with the replacement's prompt and tools (`Options.RefreshSnapshot`).
 The replacement precedes the compaction entry, so a branch from the summary
 uses the replacement snapshot.
 After compaction the conversation starts with its summary and retained messages.
-Memory, skills and plugin catalogs are not present yet.
+The preamble includes the sorted catalog of enabled, sound skills for Eika and
+workers. `skill_use` reads the stored body and file list; resources are on the
+read-only `/skills` mount. Catalog changes enter an existing session at its
+next compaction. The plugin catalog is not present yet.
 
 Both protocols serialize request fields deterministically. Stored tool arguments
 and reasoning items retain their original text when JSON encoding would change

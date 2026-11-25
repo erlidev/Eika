@@ -4,6 +4,69 @@ One section per extension point, each with a minimal example that compiles.
 Registration is always explicit, in one registry file per extension point,
 never from `init()`.
 
+## Writing a skill for Eika
+
+A skill is a directory with `SKILL.md` and optional resources. Use the
+[Agent Skills specification](https://agentskills.io/specification). Eika uses
+only its six frontmatter fields; it adds no fields of its own.
+
+| Field | Purpose |
+|---|---|
+| `name` | Required. Use 1 to 64 lowercase letters, digits and single hyphens. Match the directory name. |
+| `description` | Required. Use 1 to 1,024 characters to say what the skill does and when to use it. |
+| `license` | Optional license name or reference. |
+| `compatibility` | Optional environment requirements, up to 500 characters. |
+| `metadata` | Optional map of strings to strings. |
+| `allowed-tools` | Optional experimental field. Eika shows it but does not grant tools from it. |
+
+Eika warns about some specification faults, including a missing name when a
+directory name can be used, a name mismatch, long descriptions or compatibility
+fields, unknown fields and a body over 500 lines. It rejects an invalid name,
+missing description, missing frontmatter or unparseable YAML. Fix warnings
+before you distribute a skill.
+
+Put scripts, references and assets beside `SKILL.md`, for example:
+
+```text
+invoice-totals/
+  SKILL.md
+  scripts/totals.py
+  references/rounding.md
+```
+
+The [invoice-totals fixture](../internal/skill/testdata/invoice-totals/) is a
+complete example. Its `SKILL.md` names the task, CSV columns and script command.
+The script totals lines by customer, rounds each line to cents with half-even
+rounding, applies 19% VAT to each customer's net, and prints the totals. The
+reference explains the same rule. To make a zip from the repository root:
+
+```sh
+cd internal/skill/testdata
+zip -r invoice-totals.zip invoice-totals
+```
+
+A zip can instead have `SKILL.md` at its root. It can contain at most 200 zip
+entries, be at most 5 MiB compressed and 20 MiB expanded, and have at most five
+directory levels below the skill root. `SKILL.md` is limited to 64 KiB. Use
+regular files only; symlinks, absolute paths and escaping paths are rejected.
+Executable bits are kept only for files under `scripts/`.
+
+On the Skills page, upload the zip, inspect the full source, file list, warnings
+and screen results, then enable the skill. A credential pattern in any text file
+rejects the install. The guard screens the description and `SKILL.md` body for
+instructions; it marks hits but does not block them. It does not review scripts
+or references. If it cannot answer, the page shows `unscanned`. Review the files
+before enabling. A changed reinstall disables the skill; an identical reinstall
+changes nothing. The enabled catalog has a 2,000-token limit.
+
+Eika and workers see enabled, sound skills in their session preamble. An agent
+calls `skill_use` with a name to load the body and resource list, or with a query
+to search names and descriptions. The body is available without a computer.
+To read resources or run scripts, a worker uses its computer at
+`/skills/<name>/`; the mount is read-only. An existing session gets catalog
+changes at its next compaction. If compaction removes a loaded body, the agent
+can call `skill_use` again. No agent installs or edits skills.
+
 ## Adding a tool
 
 Implement `tool.Tool` in `internal/tool/builtin/` (one file per tool) and add it
