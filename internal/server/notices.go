@@ -430,7 +430,7 @@ var errNothingToDeliver = errors.New("no notices to deliver")
 // noticeStore records a home session's messages and tells the book which
 // notices each stored message delivered.
 type noticeStore struct {
-	*session.Store
+	agent.Store
 	notices     *notices
 	notifyReply bool
 }

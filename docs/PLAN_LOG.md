@@ -2880,3 +2880,11 @@ exercised. This is the known model stochasticity (passes seen in 3 of the earlie
 The case passed on the bench in earlier reruns (pending, guard max 0.994 and
 0.996, held out of the preamble after compaction and reindex).
 
+
+## P7-01: Scheduler engine
+
+The scheduler stores routine runs and wakeups, claims due work without overlap,
+and starts background runs through the run manager. Routine results reach home
+as notices and trigger pushes. Wakeup messages are committed with their claim.
+The disabled Morning brief uses the saved time zone, or UTC. The parser supports five-field cron,
+IANA time zones, RFC 3339 one-shot times and schedule descriptions.

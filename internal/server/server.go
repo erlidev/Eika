@@ -22,6 +22,7 @@ import (
 	"github.com/erlidev/eika/internal/mcp"
 	"github.com/erlidev/eika/internal/memory"
 	"github.com/erlidev/eika/internal/provider"
+	"github.com/erlidev/eika/internal/schedule"
 	"github.com/erlidev/eika/internal/search"
 	"github.com/erlidev/eika/internal/search/fetch"
 	"github.com/erlidev/eika/internal/secret"
@@ -257,11 +258,18 @@ func (s *Server) Run(ctx context.Context) error {
 		if err := s.reconcileSessions(ctx); err != nil {
 			return fmt.Errorf("reconcile sessions: %w", err)
 		}
+		if err := s.deps.Store.RecoverSchedule(ctx); err != nil {
+			return fmt.Errorf("recover scheduler: %w", err)
+		}
+		if err := s.recoverRoutineNotices(ctx); err != nil {
+			return fmt.Errorf("recover routine notices: %w", err)
+		}
 		// The queue knows its pools before the first run asks for a lease.
 		s.syncInference(ctx)
 		watchCtx, cancel := context.WithCancel(ctx)
 		var wg sync.WaitGroup
 		wg.Go(func() { s.watchIdleCompaction(watchCtx) })
+		wg.Go(func() { (schedule.Engine{Store: s.deps.Store, Runner: scheduleRunner{s}, Log: s.log}).Run(watchCtx) })
 		if s.deps.Providers != nil {
 			wg.Go(func() { s.probeProviders(watchCtx) })
 		}

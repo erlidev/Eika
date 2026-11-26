@@ -32,6 +32,7 @@ type job struct {
 	// priority is the run's inference priority. The zero value is
 	// interactive: a person is waiting on the answer.
 	priority inference.Priority
+	wakeupID string
 	// notify makes the run a background turn that delivers a home
 	// session's waiting notices: its message is empty, and its <context>
 	// block carries them.
@@ -310,7 +311,7 @@ func (r *runs) launch(ctx context.Context, sessionID, model string, work job) (s
 		if ex, err = s.runExecutor(ctx, sess.ComputerID); err != nil {
 			return store.Run{}, nil, err
 		}
-		if sess.Kind == store.SessionSubagent && sess.ProjectID != "" {
+		if (sess.Kind == store.SessionSubagent || sess.Kind == store.SessionRoutine) && sess.ProjectID != "" {
 			if ex, err = s.projectWorkdir(ctx, sess.ProjectID, ex); err != nil {
 				return store.Run{}, nil, err
 			}
@@ -330,10 +331,13 @@ func (r *runs) launch(ctx context.Context, sessionID, model string, work job) (s
 	active.releaseCounter = releaseRoutes
 	sessionStore := session.NewStore(s.tree)
 	var runStore agent.Store = sessionStore
+	if work.wakeupID != "" {
+		runStore = &wakeupStore{Store: runStore, db: s.deps.Store, id: work.wakeupID, channel: sess.Kind == store.SessionHome}
+	}
 	var takeNotices func() []agent.Notice
 	if home {
 		sessionStore.SetChannel("web")
-		runStore = noticeStore{Store: sessionStore, notices: s.notices, notifyReply: work.notify}
+		runStore = noticeStore{Store: runStore, notices: s.notices, notifyReply: work.notify}
 		takeNotices = func() []agent.Notice {
 			// Memory changes since the snapshot ride with this message.
 			s.notices.collectMemoryChanges(sessionID)

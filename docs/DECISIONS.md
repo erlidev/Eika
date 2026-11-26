@@ -2932,3 +2932,19 @@ skill be worth installing first. Its only dependency is phase 5's backup.
 The detail needs the original `SKILL.md` for screen byte offsets. Migration 0035
 stores it alongside the body. Older rows have no source; reinstalling supplies it
 and returns the skill to disabled. The detail states when the source is unavailable.
+
+## Scheduler engine (P7-01)
+
+- Cron uses five fields and the usual day-of-month or day-of-week rule when
+  both fields are restricted. It walks UTC minutes and checks the local time.
+  A missing local time does not run; a repeated local time can run twice.
+  One-shot times use the offset in their RFC 3339 expression.
+- Routine claims advance from the poll time, not the old due time. This makes
+  `run_once` discard the rest of a backlog. A locked routine records the
+  skipped occurrence and its reason in the same transaction.
+- The shipped Morning brief starts disabled and unapproved. Its time zone is
+  the saved user setting, or UTC when none is set.
+- A wakeup message and its completed claim share one transaction. A claim
+  left before that write is released at startup. Once the message is stored,
+  normal run recovery applies. Completed routine notices use the run ID and
+  are recovered on startup; pushes follow the existing no-replay rule.

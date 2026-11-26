@@ -32,6 +32,7 @@ egress proxy are network calls and run in the harness.
 | `agent` | The loop: turns, tool dispatch, queues, retries, context assembly. `Options.Gate` is asked (`Decide`, 5 s limit) before every tool call: a deny or ask returns `Blocked: <reason>` and the tool does not run; a gate that errors or times out blocks tools not marked `tool.ReadOnlyTool` and lets read-only ones run. The model is never told about the gate. `server.newAgent` sets it for the home session and every subagent |
 | `provider` | Model interface, kind registry, `Complete`; `openai` implementation in two protocols (Chat Completions and the stateless Responses API); `providertest` scripted fake; `probe` identifies the backend behind an endpoint, reads its slots, window, KV cache and capabilities, and runs the Responses conformance check, with `probetest` serving its fixtures; `counter` predicts a request's token count (exact, anchored or estimated) and learns from the measured one |
 | `inference` | The queue every model call waits in: pools of slots (and a shared cache), four priorities with aging, an idle gate for maintenance, optional preemption of running low-priority calls, one lease per model call; standard library only |
+| `schedule` | Parses cron and one-shot schedules, finds their next times in an IANA time zone, and owns the scheduler loop; standard library only |
 | `utility` | The harness's own one-shot model tasks (session titles), sent to the model of the class the task runs on |
 | `imaging` | Prepares attached images: decode, EXIF orientation, fit within 1080p (Catmull-Rom), PNG or JPEG without metadata |
 | `tool` | Tool interface, call context, registry; `tool/builtin` holds the built-ins and `limits.go` |
@@ -1386,3 +1387,20 @@ netguard refusals to the gate for audit. Halt closes active proxy connections. C
 pass through the gate on each request, including redirects and reused connections.
 Only requests to the configured local SearXNG origin are exempt. Hosted search
 and fetch connections use netguard.
+
+## Scheduler
+
+Migration 0036 stores routines, their runs and wakeups. The disabled Morning
+brief uses the saved time zone, or UTC when none is set. Only enabled, approved
+routines are claimed. The server owns one scheduler loop. Each poll claims due
+rows with `SKIP LOCKED`, advances a routine and records its run or skip in one
+transaction. A late occurrence runs once within six hours; an overlap or an
+older occurrence is recorded as skipped. Startup marks running routine runs
+interrupted and releases wakeup claims that did not store a message.
+
+A routine starts a new routine session through the run manager at background
+priority. Its final text becomes a home notice and triggers an ntfy push.
+Startup restores a missing notice for a completed run; it does not replay a
+push. A wakeup starts its existing session at background priority. Its first
+user message and claim state are committed together, so a restart does not
+append that message twice. A halt stops new claims.
