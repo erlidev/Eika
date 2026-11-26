@@ -1408,6 +1408,11 @@ push. A wakeup starts its existing session at background priority. Its first
 user message and claim state are committed together, so a restart does not
 append that message twice. A halt stops new claims.
 
+Schedules use five-field cron in an IANA time zone or a one-shot RFC 3339
+time. The engine polls every 15 seconds. The Schedules page shows schedule
+words, the next five times, runs and wakeups; Activity also shows runs and
+wakeups.
+
 The routine tools store a new routine disabled and unapproved. The authenticated
 API approves and enables it. A user-created routine is approved at creation.
 An agent may edit or delete only a routine it created; an edit clears approval

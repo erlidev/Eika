@@ -70,6 +70,7 @@ func TestScenarios(t *testing.T) {
 	exitScenarios(t, report, target, fixtureURL.String(), env[live.GuardVar])
 	memoryScenarios(t, report, target, env[live.GuardVar])
 	skillScenarios(t, report, target, env[live.GuardVar])
+	schedulerScenarios(t, report, target, env[live.GuardVar])
 	ordinaryPreferenceScenarios(t, report, target, env[live.GuardVar])
 	poisonScenarios(t, report, target, fixtureURL.String(), env[live.GuardVar])
 	core := newLiveCore(t, target, env[live.GuardVar])

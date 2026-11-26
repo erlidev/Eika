@@ -20,7 +20,7 @@ This file holds open work only. The log is in `docs/PLAN_LOG.md`, work that was 
 is in `docs/DEFERRED.md` with what brings it back, and a closed phase is reduced
 to a paragraph here. Phases keep their numbers, so older references stay true, but
 they run in the order of this file: skills (phase 6, pulled forward at the owner's
-request) follow memory, then plugins (phase 11) come before the scheduler, and
+request) follow memory. The scheduler is built before plugins (phase 11);
 phase 4b, web fetch and compaction come last.
 
 ## Ground rules
@@ -840,29 +840,11 @@ and `design/sentry.md` sections 3 ("The first-seen index") and 7.
 
 ## Phase 7: Scheduler
 
-Design: `design/scheduler.md`.
-
-- [ ] Add `internal/schedule`:
-      - the tables `routines`, `routine_runs` and `wakeups`
-      - a 5-field cron parser with time zones (standard library), plus one-shot
-        times
-      - a 15 s ticker with `SKIP LOCKED`
-      - the `missed` policy (`run_once`), no overlap
-- [ ] Runs in a `fresh` session, and each result reaches the user.
-- [ ] Creating or enabling a routine asks once. The card shows the schedule in
-      words, the next five times and the prompt in full, with a warning if the
-      screen flags the prompt. A run gets no grant of its own: its tools follow
-      the same settings as everywhere else. Recursion guard.
-- [ ] `wake_me`, with a per-agent cap. It does not ask.
-- [ ] Shipped routine: Morning brief (disabled).
-- [ ] Schedules UI and Activity integration (runs, wakeups).
-
-**Exit:** "every weekday at 8, send me the weather and today's calendar" should:
-- ask once, showing "weekdays at 08:00" and the prompt
-- run the next morning without asking anything
-- deliver a push
-
-Restarting across a due time follows the `missed` policy.
+The scheduler stores routines, runs and wakeups, with approval, missed-run
+recovery, tools, the Schedules page and Activity integration. The smoke and
+live scenarios are in P7-04 in `PLAN_LOG.md`. Their execution and the manual
+exit check are pending. The exit uses a weekday weather or date summary;
+calendar integration waits for phase 11.
 
 ## Phase 4b: Tripwires and checkpoints
 

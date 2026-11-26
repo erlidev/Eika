@@ -1,5 +1,22 @@
 # Plan log
 
+## P7-04 — Scheduler smoke, live and documentation (2026-11-25)
+
+The smoke scenario covers approval, a routine session and its home result, and
+one missed occurrence across a Core restart. The live scenarios check a weekday
+schedule, a home wakeup and the routine recursion guard. The phase exit uses a
+weather or date summary; calendar integration waits for phase 11.
+
+`make check`, `make visual` and `make smoke` passed (the scheduler smoke scenario
+included; `BenchmarkDecide/fetch/running` can miss its 1 ms limit when `make check`
+runs everything in parallel and passes alone). The three scheduler live scenarios
+passed against the chat model at https://llama.erli.xyz (Qwen3.8-27B UD-Q4_K_XL);
+they need neither the guard nor the decision model, so the full suite was not rerun.
+Phone exit by hand with `npm run shot`: the Schedules page shows the approval card
+(schedule in words, next five times in the routine's zone, prompt, warning), Approve
+turns it into an enabled routine.
+
+
 ## P6-17 — Skills live suite (2026-11-25)
 
 The full run is `evals/results/20261125T233004Z-b11942-338fce651.json`.

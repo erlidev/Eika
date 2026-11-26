@@ -544,3 +544,102 @@ sys.stdout.buffer.write(buf.getvalue())
     ).toBe(false);
   }
 });
+
+test("scheduler: approval, execution and missed occurrence", async ({ page, request }) => {
+  test.setTimeout(240_000);
+  const headers = { Authorization: `Bearer ${process.env.EIKA_SMOKE_TOKEN ?? ""}` };
+  await page.goto("/");
+  const signIn = page.getByRole("button", { name: "Sign in" });
+  if (await signIn.isVisible({ timeout: 3000 }).catch(() => false)) {
+    await page.getByLabel("Password", { exact: true }).fill("smoke-password");
+    await signIn.click();
+  }
+  await page.getByLabel("Message", { exact: true }).fill("Create smoke routine");
+  await page.getByLabel("Message", { exact: true }).press("Enter");
+  type Routine = { id: string; name: string; enabled: boolean; approved_at: string | null };
+  let agentRoutine: Routine | undefined;
+  await expect
+    .poll(
+      async () => {
+        const response = await request.get("/api/routines", { headers });
+        const data = (await response.json()) as { routines: Routine[] };
+        agentRoutine = data.routines.find((r) => r.name === "agent smoke");
+        return !!agentRoutine;
+      },
+      { timeout: 60_000 },
+    )
+    .toBe(true);
+  expect(agentRoutine?.enabled).toBe(false);
+  expect(agentRoutine?.approved_at).toBeNull();
+  const approved = await request.post(`/api/routines/${agentRoutine?.id ?? ""}/approve`, {
+    headers,
+  });
+  expect(approved.ok()).toBe(true);
+  expect(((await approved.json()) as Routine).enabled).toBe(true);
+
+  const due = new Date(Date.now() + 20_000).toISOString();
+  const created = await request.post("/api/routines", {
+    headers,
+    data: {
+      name: "smoke missed",
+      schedule_kind: "at",
+      schedule_expr: due,
+      timezone: "UTC",
+      agent: "eika",
+      prompt: "Routine smoke result",
+      enabled: false,
+    },
+  });
+  expect(created.status()).toBe(201);
+  const routine = (await created.json()) as Routine;
+  expect(routine.approved_at).not.toBeNull();
+  expect((await request.post(`/api/routines/${routine.id}/approve`, { headers })).ok()).toBe(true);
+  const compose = process.env.EIKA_SMOKE_COMPOSE ?? "false";
+  execSync(`${compose} stop eika`, { cwd: "..", stdio: "inherit", timeout: 120_000 });
+  await new Promise((resolve) =>
+    setTimeout(resolve, Math.max(0, Date.parse(due) - Date.now() + 2000)),
+  );
+  execSync(`${compose} start eika`, { cwd: "..", stdio: "inherit", timeout: 120_000 });
+  let runs: { session_id: string; outcome: string }[] = [];
+  await expect
+    .poll(
+      async () => {
+        const response = await request
+          .get(`/api/routines/${routine.id}/runs`, { headers })
+          .catch(() => null);
+        if (!response?.ok()) return false;
+        runs = ((await response.json()) as { runs: typeof runs }).runs;
+        return runs.length === 1 && runs[0]?.outcome === "done";
+      },
+      { timeout: 180_000, intervals: [2000] },
+    )
+    .toBe(true);
+  const sessions = (await (await request.get("/api/sessions", { headers })).json()) as {
+    sessions: { id: string; kind: string }[];
+  };
+  expect(sessions.sessions.find((s) => s.id === runs[0]?.session_id)?.kind).toBe("routine");
+  const path = await request.get(`/api/sessions/${runs[0]?.session_id ?? ""}/path`, { headers });
+  const messages = (
+    (await path.json()) as {
+      messages: { role: string; content?: string; tool_calls?: { name: string }[] }[];
+    }
+  ).messages;
+  expect(
+    messages.some(
+      (m) => m.role === "assistant" && m.content?.includes("Routine smoke result complete"),
+    ),
+  ).toBe(true);
+  expect(messages.some((m) => m.tool_calls?.some((c) => c.name === "ask_user"))).toBe(false);
+  const home = (
+    (await (await request.get("/api/home", { headers })).json()) as { session: { id: string } }
+  ).session;
+  await expect
+    .poll(
+      async () => {
+        const response = await request.get(`/api/sessions/${home.id}/path`, { headers });
+        return JSON.stringify(await response.json()).includes("Routine smoke result complete");
+      },
+      { timeout: 60_000 },
+    )
+    .toBe(true);
+});

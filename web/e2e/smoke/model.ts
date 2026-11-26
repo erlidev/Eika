@@ -106,6 +106,26 @@ function answer(req: ChatRequest): object[] {
   const last = req.messages?.at(-1);
   const content = typeof last?.content === "string" ? last.content : "";
   const hasTool = (name: string) => req.tools?.some((t) => t.function?.name === name) ?? false;
+  if (
+    last?.role === "user" &&
+    hasTool("routine_create") &&
+    content.includes("Create smoke routine")
+  ) {
+    return toolCall("routine_create", {
+      name: "agent smoke",
+      schedule_kind: "cron",
+      schedule_expr: "0 8 * * 1-5",
+      timezone: "UTC",
+      agent: "eika",
+      prompt: "Say hello.",
+    });
+  }
+  if (last?.role === "user" && content.includes("Routine smoke result")) {
+    return [
+      chunk({ role: "assistant", content: "Routine smoke result complete." }),
+      chunk({}, "stop"),
+    ];
+  }
   if (last?.role === "user" && hasTool("subagent_start") && content.includes("Total the invoice")) {
     return toolCall("subagent_start", {
       agent: "worker",
