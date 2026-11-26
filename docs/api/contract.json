@@ -27,6 +27,9 @@
     "DELETE /api/providers/{id}": {
       "status": 204
     },
+    "DELETE /api/routines/{id}": {
+      "status": 204
+    },
     "DELETE /api/sessions/{id}": {
       "status": 204
     },
@@ -34,6 +37,9 @@
       "status": 204
     },
     "DELETE /api/trusted-sources/{host}": {
+      "status": 204
+    },
+    "DELETE /api/wakeups/{id}": {
       "status": 204
     },
     "GET /api/agents": {
@@ -1257,6 +1263,154 @@
                   "probe_error",
                   "probed_at"
                 ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "GET /api/routines": {
+      "status": 200,
+      "response": {
+        "object": {
+          "routines": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "agent": "string",
+                  "approved_at": {
+                    "nullable": "string"
+                  },
+                  "created_by": "string",
+                  "description": "string",
+                  "enabled": "boolean",
+                  "grace_seconds": "number",
+                  "id": "string",
+                  "last_outcome": "string",
+                  "last_reason": "string",
+                  "last_run_at": {
+                    "nullable": "string"
+                  },
+                  "max_runtime_seconds": "number",
+                  "missed": "string",
+                  "name": "string",
+                  "next_five": {
+                    "nullable": {
+                      "array": "string"
+                    }
+                  },
+                  "next_run_at": {
+                    "nullable": "string"
+                  },
+                  "project_id": "string",
+                  "prompt": "string",
+                  "schedule_expr": "string",
+                  "schedule_kind": "string",
+                  "schedule_words": "string",
+                  "timezone": "string",
+                  "warning": {
+                    "object": {
+                      "max_score": "number",
+                      "spans": {
+                        "nullable": {
+                          "array": {
+                            "object": {
+                              "end": "number",
+                              "score": "number",
+                              "start": "number"
+                            }
+                          }
+                        }
+                      },
+                      "unscanned": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "GET /api/routines/{id}": {
+      "status": 200,
+      "response": {
+        "object": {
+          "agent": "string",
+          "approved_at": {
+            "nullable": "string"
+          },
+          "created_by": "string",
+          "description": "string",
+          "enabled": "boolean",
+          "grace_seconds": "number",
+          "id": "string",
+          "last_outcome": "string",
+          "last_reason": "string",
+          "last_run_at": {
+            "nullable": "string"
+          },
+          "max_runtime_seconds": "number",
+          "missed": "string",
+          "name": "string",
+          "next_five": {
+            "nullable": {
+              "array": "string"
+            }
+          },
+          "next_run_at": {
+            "nullable": "string"
+          },
+          "project_id": "string",
+          "prompt": "string",
+          "schedule_expr": "string",
+          "schedule_kind": "string",
+          "schedule_words": "string",
+          "timezone": "string",
+          "warning": {
+            "object": {
+              "max_score": "number",
+              "spans": {
+                "nullable": {
+                  "array": {
+                    "object": {
+                      "end": "number",
+                      "score": "number",
+                      "start": "number"
+                    }
+                  }
+                }
+              },
+              "unscanned": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "GET /api/routines/{id}/runs": {
+      "status": 200,
+      "response": {
+        "object": {
+          "runs": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "duration_ms": {
+                    "nullable": "number"
+                  },
+                  "finished_at": {
+                    "nullable": "string"
+                  },
+                  "id": "string",
+                  "outcome": "string",
+                  "reason": "string",
+                  "scheduled_at": "string",
+                  "session_id": "string",
+                  "started_at": "string",
+                  "tokens": {
+                    "nullable": "number"
+                  }
+                }
               }
             }
           }
@@ -3208,7 +3362,8 @@
                   "array": "string"
                 }
               },
-              "subagent_max_running": "number"
+              "subagent_max_running": "number",
+              "wakeups_max": "number"
             }
           },
           "settings": {
@@ -3365,6 +3520,27 @@
           "hosts": {
             "nullable": {
               "array": "string"
+            }
+          }
+        }
+      }
+    },
+    "GET /api/wakeups": {
+      "status": 200,
+      "response": {
+        "object": {
+          "wakeups": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "agent": "string",
+                  "due_at": "string",
+                  "id": "string",
+                  "note": "string",
+                  "session_id": "string",
+                  "state": "string"
+                }
+              }
             }
           }
         }
@@ -3702,6 +3878,77 @@
           "probe_error",
           "probed_at"
         ]
+      }
+    },
+    "PATCH /api/routines/{id}": {
+      "status": 200,
+      "request": {
+        "object": {
+          "agent": "string",
+          "description": "string",
+          "enabled": "boolean",
+          "grace_seconds": "number",
+          "max_runtime_seconds": "number",
+          "missed": "string",
+          "name": "string",
+          "project_id": "string",
+          "prompt": "string",
+          "schedule_expr": "string",
+          "schedule_kind": "string",
+          "timezone": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "agent": "string",
+          "approved_at": {
+            "nullable": "string"
+          },
+          "created_by": "string",
+          "description": "string",
+          "enabled": "boolean",
+          "grace_seconds": "number",
+          "id": "string",
+          "last_outcome": "string",
+          "last_reason": "string",
+          "last_run_at": {
+            "nullable": "string"
+          },
+          "max_runtime_seconds": "number",
+          "missed": "string",
+          "name": "string",
+          "next_five": {
+            "nullable": {
+              "array": "string"
+            }
+          },
+          "next_run_at": {
+            "nullable": "string"
+          },
+          "project_id": "string",
+          "prompt": "string",
+          "schedule_expr": "string",
+          "schedule_kind": "string",
+          "schedule_words": "string",
+          "timezone": "string",
+          "warning": {
+            "object": {
+              "max_score": "number",
+              "spans": {
+                "nullable": {
+                  "array": {
+                    "object": {
+                      "end": "number",
+                      "score": "number",
+                      "start": "number"
+                    }
+                  }
+                }
+              },
+              "unscanned": "boolean"
+            }
+          }
+        }
       }
     },
     "PATCH /api/sessions/{id}": {
@@ -4937,6 +5184,187 @@
         }
       }
     },
+    "POST /api/routines": {
+      "status": 201,
+      "request": {
+        "object": {
+          "agent": "string",
+          "description": "string",
+          "enabled": "boolean",
+          "grace_seconds": "number",
+          "max_runtime_seconds": "number",
+          "missed": "string",
+          "name": "string",
+          "project_id": "string",
+          "prompt": "string",
+          "schedule_expr": "string",
+          "schedule_kind": "string",
+          "timezone": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "agent": "string",
+          "approved_at": {
+            "nullable": "string"
+          },
+          "created_by": "string",
+          "description": "string",
+          "enabled": "boolean",
+          "grace_seconds": "number",
+          "id": "string",
+          "last_outcome": "string",
+          "last_reason": "string",
+          "last_run_at": {
+            "nullable": "string"
+          },
+          "max_runtime_seconds": "number",
+          "missed": "string",
+          "name": "string",
+          "next_five": {
+            "nullable": {
+              "array": "string"
+            }
+          },
+          "next_run_at": {
+            "nullable": "string"
+          },
+          "project_id": "string",
+          "prompt": "string",
+          "schedule_expr": "string",
+          "schedule_kind": "string",
+          "schedule_words": "string",
+          "timezone": "string",
+          "warning": {
+            "object": {
+              "max_score": "number",
+              "spans": {
+                "nullable": {
+                  "array": {
+                    "object": {
+                      "end": "number",
+                      "score": "number",
+                      "start": "number"
+                    }
+                  }
+                }
+              },
+              "unscanned": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "POST /api/routines/{id}/approve": {
+      "status": 200,
+      "response": {
+        "object": {
+          "agent": "string",
+          "approved_at": {
+            "nullable": "string"
+          },
+          "created_by": "string",
+          "description": "string",
+          "enabled": "boolean",
+          "grace_seconds": "number",
+          "id": "string",
+          "last_outcome": "string",
+          "last_reason": "string",
+          "last_run_at": {
+            "nullable": "string"
+          },
+          "max_runtime_seconds": "number",
+          "missed": "string",
+          "name": "string",
+          "next_five": {
+            "nullable": {
+              "array": "string"
+            }
+          },
+          "next_run_at": {
+            "nullable": "string"
+          },
+          "project_id": "string",
+          "prompt": "string",
+          "schedule_expr": "string",
+          "schedule_kind": "string",
+          "schedule_words": "string",
+          "timezone": "string",
+          "warning": {
+            "object": {
+              "max_score": "number",
+              "spans": {
+                "nullable": {
+                  "array": {
+                    "object": {
+                      "end": "number",
+                      "score": "number",
+                      "start": "number"
+                    }
+                  }
+                }
+              },
+              "unscanned": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "POST /api/routines/{id}/disable": {
+      "status": 200,
+      "response": {
+        "object": {
+          "agent": "string",
+          "approved_at": {
+            "nullable": "string"
+          },
+          "created_by": "string",
+          "description": "string",
+          "enabled": "boolean",
+          "grace_seconds": "number",
+          "id": "string",
+          "last_outcome": "string",
+          "last_reason": "string",
+          "last_run_at": {
+            "nullable": "string"
+          },
+          "max_runtime_seconds": "number",
+          "missed": "string",
+          "name": "string",
+          "next_five": {
+            "nullable": {
+              "array": "string"
+            }
+          },
+          "next_run_at": {
+            "nullable": "string"
+          },
+          "project_id": "string",
+          "prompt": "string",
+          "schedule_expr": "string",
+          "schedule_kind": "string",
+          "schedule_words": "string",
+          "timezone": "string",
+          "warning": {
+            "object": {
+              "max_score": "number",
+              "spans": {
+                "nullable": {
+                  "array": {
+                    "object": {
+                      "end": "number",
+                      "score": "number",
+                      "start": "number"
+                    }
+                  }
+                }
+              },
+              "unscanned": "boolean"
+            }
+          }
+        }
+      }
+    },
     "POST /api/runs/{id}/abort": {
       "status": 200,
       "response": {
@@ -5568,7 +5996,8 @@
                   "array": "string"
                 }
               },
-              "subagent_max_running": "number"
+              "subagent_max_running": "number",
+              "wakeups_max": "number"
             }
           },
           "settings": {

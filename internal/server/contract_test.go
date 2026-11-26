@@ -51,6 +51,16 @@ type searchKeysResponse struct {
 // a type this table names wrongly fails the handler tests, which check every
 // response they get against the contract.
 var routeWire = map[string]wire{
+	"GET /api/routines":                      {status: http.StatusOK, response: routinesResponse{}},
+	"POST /api/routines":                     {status: http.StatusCreated, request: routineRequest{}, response: routineBody{}},
+	"GET /api/routines/{id}":                 {status: http.StatusOK, response: routineBody{}},
+	"PATCH /api/routines/{id}":               {status: http.StatusOK, request: routineRequest{}, response: routineBody{}},
+	"DELETE /api/routines/{id}":              {status: http.StatusNoContent},
+	"POST /api/routines/{id}/approve":        {status: http.StatusOK, response: routineBody{}},
+	"POST /api/routines/{id}/disable":        {status: http.StatusOK, response: routineBody{}},
+	"GET /api/routines/{id}/runs":            {status: http.StatusOK, response: routineRunsResponse{}},
+	"GET /api/wakeups":                       {status: http.StatusOK, response: wakeupsResponse{}},
+	"DELETE /api/wakeups/{id}":               {status: http.StatusNoContent},
 	"POST /api/notifications/test":           {status: http.StatusNoContent},
 	"GET /api/home":                          {status: http.StatusOK, response: sessionResponse{}},
 	"GET /api/instructions":                  {status: http.StatusOK, response: store.GlobalInstructions{}},

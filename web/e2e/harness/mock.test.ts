@@ -27,6 +27,16 @@ import type {
  * calls them. A test that calls one sees the mock's 404.
  */
 const unmocked: Record<string, string> = {
+  "GET /api/routines": "the schedules UI is not built yet",
+  "POST /api/routines": "the schedules UI is not built yet",
+  "GET /api/routines/{id}": "the schedules UI is not built yet",
+  "PATCH /api/routines/{id}": "the schedules UI is not built yet",
+  "DELETE /api/routines/{id}": "the schedules UI is not built yet",
+  "POST /api/routines/{id}/approve": "the schedules UI is not built yet",
+  "POST /api/routines/{id}/disable": "the schedules UI is not built yet",
+  "GET /api/routines/{id}/runs": "the schedules UI is not built yet",
+  "GET /api/wakeups": "the schedules UI is not built yet",
+  "DELETE /api/wakeups/{id}": "the schedules UI is not built yet",
   "GET /api/sessions/{id}/path": "the transcript reads the outline instead",
   "GET /api/events": "a WebSocket, which install routes itself",
   "GET /api/inference": "the Activity page that reads the queue arrives in phase 3",

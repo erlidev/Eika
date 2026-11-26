@@ -32,6 +32,8 @@ type Deps struct {
 	// every memory_write passes before the writer.
 	Memory      Memories
 	MemoryCheck sentry.MemoryChecker
+	// Schedule handles routine and wakeup tools.
+	Schedule ScheduleTools
 	// Skills is the skills store skill_use reads.
 	Skills Skills
 }
@@ -64,6 +66,11 @@ func Registry(d Deps) (*tool.Registry, error) {
 		memoryTool{name: "memory_write", memory: d.Memory, check: d.MemoryCheck},
 		memoryTool{name: "memory_forget", memory: d.Memory, check: d.MemoryCheck},
 		skillUseTool{skills: d.Skills},
+		scheduleTool{name: "routine_create", call: d.Schedule},
+		scheduleTool{name: "routine_list", call: d.Schedule},
+		scheduleTool{name: "routine_update", call: d.Schedule},
+		scheduleTool{name: "routine_delete", call: d.Schedule},
+		scheduleTool{name: "wake_me", call: d.Schedule},
 		bashTool{},
 		fileTool{name: "file_read"},
 		fileTool{name: "file_write"},

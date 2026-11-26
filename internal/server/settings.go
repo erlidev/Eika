@@ -107,6 +107,8 @@ type settingsDefaults struct {
 	CompactIdleMinutes  int `json:"compact_idle_minutes"`
 	// SubagentMaxRunning is how many subagents may run at once.
 	SubagentMaxRunning int `json:"subagent_max_running"`
+	// WakeupsMax is the pending wakeup limit per continuing session.
+	WakeupsMax int `json:"wakeups_max"`
 	// MaintenanceIdleSeconds, AgingSeconds and PreemptRunning are the
 	// inference queue's settings: how long a pool is idle before it admits
 	// maintenance calls, how long a waiting call waits for each priority
@@ -222,6 +224,7 @@ func (s *Server) writeSettings(w http.ResponseWriter, r *http.Request, status in
 		CompactIdleFill:        defaultCompactIdleFill,
 		CompactIdleMinutes:     defaultCompactIdleMinutes,
 		SubagentMaxRunning:     subagent.DefaultMaxRunning,
+		WakeupsMax:             store.DefaultWakeupsMax,
 		MaintenanceIdleSeconds: int(inference.DefaultMaintenanceIdle / time.Second),
 		AgingSeconds:           int(inference.DefaultAging / time.Second),
 	}
@@ -253,6 +256,11 @@ func (s *Server) validateSetting(ctx context.Context, key string, value json.Raw
 		return nil
 	}
 	switch key {
+	case "wakeups_max":
+		var n int
+		if json.Unmarshal(value, &n) != nil || n < 1 || n > 1000 {
+			return invalidf("wakeups_max must be a whole number from 1 to 1000")
+		}
 	case "time_zone", "locale":
 		var text string
 		if json.Unmarshal(value, &text) != nil {

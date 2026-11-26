@@ -2888,3 +2888,11 @@ and starts background runs through the run manager. Routine results reach home
 as notices and trigger pushes. Wakeup messages are committed with their claim.
 The disabled Morning brief uses the saved time zone, or UTC. The parser supports five-field cron,
 IANA time zones, RFC 3339 one-shot times and schedule descriptions.
+
+## P7-02: Routine tools and API
+
+The routine tools, authenticated routine and wakeup APIs, prompt warning,
+recursion guard and pending-wakeup limit connect to the scheduler. User approval
+is stored on the routine. Agent creation sends one push and remains disabled
+until approval. The API returns schedule previews and run history. The run-now
+endpoint is not included.

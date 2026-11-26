@@ -28,6 +28,8 @@ export type SettingsDefaults = {
   compact_idle_minutes: number;
   /** subagent_max_running is how many subagents may run at once. */
   subagent_max_running: number;
+  /** wakeups_max is the pending wakeup limit per continuing session. */
+  wakeups_max: number;
   /** maintenance_idle_seconds, aging_seconds and preempt_running are the inference queue's settings. */
   maintenance_idle_seconds: number;
   aging_seconds: number;

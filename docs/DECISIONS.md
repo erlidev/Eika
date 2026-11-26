@@ -2948,3 +2948,18 @@ and returns the skill to disabled. The detail states when the source is unavaila
   left before that write is released at startup. Once the message is stored,
   normal run recovery applies. Completed routine notices use the run ID and
   are recovered on startup; pushes follow the existing no-replay rule.
+
+## Routine approval and wakeups (P7-02)
+
+A routine uses `approved_at` as its approval state. An authenticated user
+creation approves it, and the approve endpoint enables it. An agent creation
+starts disabled and unapproved; an agent edit clears approval and disables the
+routine. This keeps an edited prompt from running under an earlier approval.
+The prompt screen records byte ranges and scores, with no duplicate prompt text;
+a hit is a warning, not a denial. No phase 11 approval record is needed.
+
+A continuing session identifies one agent for the wakeup limit. The store locks
+that session's limit while it counts pending and claimed wakeups and inserts a
+new one. A claimed wakeup counts until delivery because it can return to pending.
+Deletion hides a routine and retains its run history for notice recovery. It
+refuses while a run is active. There is no run-now endpoint in this phase.

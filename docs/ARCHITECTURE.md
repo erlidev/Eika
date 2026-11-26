@@ -1404,3 +1404,17 @@ Startup restores a missing notice for a completed run; it does not replay a
 push. A wakeup starts its existing session at background priority. Its first
 user message and claim state are committed together, so a restart does not
 append that message twice. A halt stops new claims.
+
+The routine tools store a new routine disabled and unapproved. The authenticated
+API approves and enables it. A user-created routine is approved at creation.
+An agent may edit or delete only a routine it created; an edit clears approval
+and disables it. Routine sessions cannot create routines or wakeups. Home and
+subagent sessions can set wakeups for themselves. The `wakeups_max` setting
+limits pending and claimed wakeups per session; its default is 20.
+
+Sentry screens each new or changed prompt. The routine stores score and byte
+ranges without copying the prompt into the warning. A hit does not block the
+write; an unavailable screen is marked unscanned. A new agent-created routine
+sends one push. The API returns schedule words, the next five occurrences,
+the warning and the last run. A revision prevents concurrent edits from
+silently replacing one another.

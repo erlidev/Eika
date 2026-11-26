@@ -965,6 +965,7 @@ stores them.
 | `compact_idle_minutes` | number | 30. |
 | `computer_idle_minutes` | number | 15. |
 | `subagent_max_running` | number | 4. |
+| `wakeups_max` | number | 20. |
 | `maintenance_idle_seconds`, `aging_seconds` | number | 120 and 300. |
 | `preempt_running` | boolean | `false`. |
 | `sandbox_limits` | object | No CPU or memory limit, and 4096 processes. |
@@ -1664,3 +1665,74 @@ An unknown project returns 404. Other projects and global text stay unchanged.
 
 Clears project text. Returns 204, including when already empty. An unknown
 project returns 404. Project metadata stays unchanged.
+
+## Routines and wakeups
+
+All routes require authentication. Times are RFC 3339 timestamps. A routine
+response has these fields:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `id`, `name`, `description` | string | Routine identity and description. |
+| `enabled` | boolean | Whether the scheduler may claim the routine. |
+| `schedule_kind`, `schedule_expr`, `timezone` | string | `at` with an RFC 3339 time, or `cron` with five fields; an IANA time zone. |
+| `schedule_words` | string | Description of the schedule. |
+| `next_five` | array of timestamps | Up to five occurrences after the response time. |
+| `next_run_at` | timestamp or null | Next occurrence stored for the scheduler. |
+| `agent`, `project_id`, `prompt` | string | Agent, optional project ID, and prompt for each run. |
+| `max_runtime_seconds`, `grace_seconds` | integer | Run timeout and missed-run grace. |
+| `missed` | string | `run_once`. |
+| `created_by` | string | `user` or the creating session ID. |
+| `approved_at` | timestamp or null | Time the user approved the routine. |
+| `warning` | object | `spans` contains byte `start`, `end` and `score` into the prompt; `max_score` is a number and `unscanned` is a boolean. |
+| `last_run_at`, `last_outcome`, `last_reason` | timestamp or null, string, string | Latest run summary. |
+
+### `GET /api/routines`
+
+Returns `{routines: [...]}` (200).
+
+### `GET /api/routines/{id}`
+
+Returns one routine (200).
+
+### `POST /api/routines`
+
+Accepts `name`, `schedule_kind`, `schedule_expr`, `timezone`, `agent` and
+`prompt`, plus optional `description`, `project_id`, `enabled`,
+`max_runtime_seconds`, `grace_seconds` and `missed`. Returns the user-approved
+routine (201). `enabled` defaults to false.
+
+### `PATCH /api/routines/{id}`
+
+Accepts the creation fields as optional changes and returns the routine (200).
+Setting `enabled` to true approves it if needed.
+
+### `POST /api/routines/{id}/approve`
+
+Approves and enables the routine (200).
+
+### `POST /api/routines/{id}/disable`
+
+Disables the routine and keeps approval (200).
+
+### `DELETE /api/routines/{id}`
+
+Hides the routine and retains its history (204). An active run causes 409.
+
+### `GET /api/routines/{id}/runs`
+
+Returns `{runs: [...]}` (200). Each run has `id`, `session_id`, `scheduled_at`,
+`outcome`, `reason`, `tokens`, `duration_ms`, `started_at` and `finished_at`.
+`tokens`, `duration_ms` and `finished_at` can be null.
+
+### `GET /api/wakeups`
+
+Returns `{wakeups: [...]}` (200). Each has `id`, `session_id`, `agent`, `note`,
+`due_at` and `state` (`pending` or `claimed`).
+
+### `DELETE /api/wakeups/{id}`
+
+Cancels a pending wakeup (204). A claimed or unknown wakeup returns 404.
+
+The `wakeups_max` setting is an integer from 1 to 1000. It defaults to 20 and
+limits pending and claimed wakeups for each continuing session.

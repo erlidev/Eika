@@ -2,11 +2,13 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
 	"github.com/erlidev/eika/internal/schedule"
+	"github.com/erlidev/eika/internal/sentry"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -14,8 +16,10 @@ import (
 type Routine struct {
 	ID, Name, Description, ScheduleKind, ScheduleExpr, Timezone, Agent, ProjectID, Prompt, Missed, CreatedBy string
 	Enabled                                                                                                  bool
+	GraceSet                                                                                                 bool
 	MaxRuntime, Grace                                                                                        time.Duration
 	ApprovedAt, NextRunAt                                                                                    time.Time
+	Warning                                                                                                  sentry.RoutineWarning
 }
 
 // CreateRoutine stores a routine and calculates its first occurrence.
@@ -30,7 +34,7 @@ func (s *Store) CreateRoutine(ctx context.Context, r Routine) (Routine, error) {
 	if r.MaxRuntime == 0 {
 		r.MaxRuntime = 24 * time.Hour
 	}
-	if r.Grace == 0 {
+	if r.Grace == 0 && !r.GraceSet {
 		r.Grace = 6 * time.Hour
 	}
 	if r.Missed == "" {
@@ -46,19 +50,51 @@ func (s *Store) CreateRoutine(ctx context.Context, r Routine) (Routine, error) {
 	if !r.NextRunAt.IsZero() {
 		next = &r.NextRunAt
 	}
-	_, err = s.pool.Exec(ctx, `INSERT INTO routines (id,name,description,enabled,schedule_kind,schedule_expr,timezone,agent,project_id,prompt,max_runtime_seconds,missed,grace_seconds,created_by,approved_at,next_run_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`, r.ID, r.Name, r.Description, r.Enabled, r.ScheduleKind, r.ScheduleExpr, r.Timezone, r.Agent, nullable(r.ProjectID), r.Prompt, int64(r.MaxRuntime/time.Second), r.Missed, int64(r.Grace/time.Second), r.CreatedBy, approved, next)
+	warning, err := json.Marshal(r.Warning)
+	if err != nil {
+		return Routine{}, err
+	}
+	_, err = s.pool.Exec(ctx, `INSERT INTO routines (id,name,description,enabled,schedule_kind,schedule_expr,timezone,agent,project_id,prompt,max_runtime_seconds,missed,grace_seconds,created_by,approved_at,next_run_at,warning) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`, r.ID, r.Name, r.Description, r.Enabled, r.ScheduleKind, r.ScheduleExpr, r.Timezone, r.Agent, nullable(r.ProjectID), r.Prompt, int64(r.MaxRuntime/time.Second), r.Missed, int64(r.Grace/time.Second), r.CreatedBy, approved, next, warning)
 	if err != nil {
 		return Routine{}, wrap("create routine", err)
 	}
 	return r, nil
 }
 
-// CreateWakeup stores a request to resume a session.
+// DefaultWakeupsMax is the pending wakeup limit until the user sets one.
+const DefaultWakeupsMax = 20
+
+// ErrWakeupLimit means the agent already has the maximum pending wakeups.
+var ErrWakeupLimit = errors.New("wakeup limit reached")
+
+// CreateWakeup stores a request to resume a session, subject to the per-agent limit.
 func (s *Store) CreateWakeup(ctx context.Context, w schedule.Wakeup) (schedule.Wakeup, error) {
 	if w.ID == "" {
 		w.ID = NewID()
 	}
-	_, err := s.pool.Exec(ctx, `INSERT INTO wakeups (id,session_id,agent,note,due_at) VALUES ($1,$2,$3,$4,$5)`, w.ID, w.SessionID, w.Agent, w.Note, w.DueAt)
+	err := s.tx(ctx, func(q querier) error {
+		if _, err := q.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('eika wakeups'), hashtext($1))`, w.SessionID); err != nil {
+			return wrap("lock wakeups", err)
+		}
+		var count int
+		var raw []byte
+		if err := q.QueryRow(ctx, `SELECT COALESCE((SELECT value FROM settings WHERE key='wakeups_max'),'null'::jsonb)`).Scan(&raw); err != nil {
+			return wrap("read wakeup limit", err)
+		}
+		limit := DefaultWakeupsMax
+		var configured int
+		if json.Unmarshal(raw, &configured) == nil && configured >= 1 && configured <= 1000 {
+			limit = configured
+		}
+		if err := q.QueryRow(ctx, `SELECT count(*) FROM wakeups WHERE session_id=$1 AND state IN ('pending','claimed')`, w.SessionID).Scan(&count); err != nil {
+			return wrap("count wakeups", err)
+		}
+		if count >= limit {
+			return ErrWakeupLimit
+		}
+		_, err := q.Exec(ctx, `INSERT INTO wakeups (id,session_id,agent,note,due_at) VALUES ($1,$2,$3,$4,$5)`, w.ID, w.SessionID, w.Agent, w.Note, w.DueAt)
+		return err
+	})
 	if err != nil {
 		return schedule.Wakeup{}, wrap("create wakeup", err)
 	}
@@ -95,7 +131,7 @@ func (s *Store) ClaimRoutine(ctx context.Context, now time.Time) (schedule.Routi
 			var due time.Time
 			var maxSeconds, grace int64
 			var running bool
-			err := q.QueryRow(ctx, `SELECT r.id,r.name,r.agent,r.project_id,r.prompt,r.schedule_kind,r.schedule_expr,r.timezone,r.next_run_at,r.max_runtime_seconds,r.grace_seconds,EXISTS (SELECT 1 FROM routine_runs x WHERE x.routine_id=r.id AND x.outcome='running') FROM routines r WHERE r.enabled AND r.approved_at IS NOT NULL AND r.next_run_at <= $1 AND NOT (SELECT halted FROM halt) ORDER BY r.next_run_at,r.id FOR UPDATE OF r SKIP LOCKED LIMIT 1`, now).Scan(&out.ID, &out.Name, &out.Agent, &project, &out.Prompt, &kind, &expr, &zone, &due, &maxSeconds, &grace, &running)
+			err := q.QueryRow(ctx, `SELECT r.id,r.name,r.agent,r.project_id,r.prompt,r.schedule_kind,r.schedule_expr,r.timezone,r.next_run_at,r.max_runtime_seconds,r.grace_seconds,EXISTS (SELECT 1 FROM routine_runs x WHERE x.routine_id=r.id AND x.outcome='running') FROM routines r WHERE r.deleted_at IS NULL AND r.enabled AND r.approved_at IS NOT NULL AND r.next_run_at <= $1 AND NOT (SELECT halted FROM halt) ORDER BY r.next_run_at,r.id FOR UPDATE OF r SKIP LOCKED LIMIT 1`, now).Scan(&out.ID, &out.Name, &out.Agent, &project, &out.Prompt, &kind, &expr, &zone, &due, &maxSeconds, &grace, &running)
 			if errors.Is(err, pgx.ErrNoRows) {
 				return nil
 			}
@@ -114,7 +150,7 @@ func (s *Store) ClaimRoutine(ctx context.Context, now time.Time) (schedule.Routi
 			if !next.IsZero() {
 				nextPtr = &next
 			}
-			if _, err = q.Exec(ctx, `UPDATE routines SET next_run_at=$2 WHERE id=$1`, out.ID, nextPtr); err != nil {
+			if _, err = q.Exec(ctx, `UPDATE routines SET next_run_at=$2,revision=revision+1 WHERE id=$1`, out.ID, nextPtr); err != nil {
 				return wrap("advance routine", err)
 			}
 			outcome, reason := "running", ""

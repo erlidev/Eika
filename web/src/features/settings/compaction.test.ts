@@ -17,6 +17,7 @@ function state(stored: unknown): SettingsState {
       compact_idle_fill: 60,
       compact_idle_minutes: 30,
       subagent_max_running: 4,
+      wakeups_max: 20,
       maintenance_idle_seconds: 120,
       aging_seconds: 300,
       preempt_running: false,

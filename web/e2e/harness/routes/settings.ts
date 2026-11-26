@@ -70,6 +70,12 @@ export function settingsRoutes(ctx: RouteContext): void {
         body.screen_threshold > 1)
     )
       return fail(400, "invalid_request", "screen_threshold must be above 0 and at most 1");
+    const wakeups = body.wakeups_max;
+    if (
+      wakeups != null &&
+      (typeof wakeups !== "number" || !Number.isInteger(wakeups) || wakeups < 1 || wakeups > 1000)
+    )
+      return fail(400, "invalid_request", "wakeups_max must be a whole number from 1 to 1000");
     const running = body.subagent_max_running;
     if (running !== undefined && running !== null && !validSubagentMaxRunning(running, raw)) {
       return fail(

@@ -4,6 +4,7 @@ package store_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -14,6 +15,34 @@ import (
 	"github.com/erlidev/eika/internal/store/storetest"
 	"github.com/jackc/pgx/v5"
 )
+
+func TestWakeupLimit(t *testing.T) {
+	st := storetest.Open(t)
+	sess, err := st.EnsureHomeSession(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := schedule.Wakeup{SessionID: sess.ID, Agent: sess.Agent, Note: "check", DueAt: time.Now().Add(time.Hour)}
+	results := make(chan error, 24)
+	for range 24 {
+		go func() { _, err := st.CreateWakeup(t.Context(), w); results <- err }()
+	}
+	success, limited := 0, 0
+	for range 24 {
+		err := <-results
+		switch {
+		case err == nil:
+			success++
+		case errors.Is(err, store.ErrWakeupLimit):
+			limited++
+		default:
+			t.Fatal(err)
+		}
+	}
+	if success != 20 || limited != 4 {
+		t.Fatalf("created %d, limited %d", success, limited)
+	}
+}
 
 func TestScheduleClaims(t *testing.T) {
 	url := storetest.URL(t)

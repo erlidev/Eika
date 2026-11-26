@@ -29,7 +29,7 @@ func TestAgentSessionRunsAndPreviewsUseTheDefinition(t *testing.T) {
 	decodeBody[map[string]any](t, request(t, a.Server, "PUT", "/api/agents/eika", map[string]any{"class": "deep", "prompt": "agent rules"}), 200)
 	a.assignClasses(t, map[string]any{"main": "test-model"})
 	wantTools := []string{"history_read", "history_search", "memory_forget", "memory_read", "memory_search", "memory_write", "project_create", "project_list", "project_open", "project_update",
-		"skill_use", "subagent_cancel", "subagent_message", "subagent_start", "subagent_status", "web_search"}
+		"routine_create", "routine_delete", "routine_list", "routine_update", "skill_use", "subagent_cancel", "subagent_message", "subagent_start", "subagent_status", "wake_me", "web_search"}
 	preview := decodeBody[struct {
 		Sections []struct {
 			Text string `json:"text"`

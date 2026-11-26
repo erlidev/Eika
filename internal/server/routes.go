@@ -41,6 +41,16 @@ func (s *Server) routes() {
 
 // resourceRoutes registers the routes that read or write the database.
 func (s *Server) resourceRoutes(api *http.ServeMux) {
+	api.HandleFunc("GET /api/routines", s.handleRoutines)
+	api.HandleFunc("POST /api/routines", s.handleCreateRoutine)
+	api.HandleFunc("GET /api/routines/{id}", s.handleRoutine)
+	api.HandleFunc("PATCH /api/routines/{id}", s.handleUpdateRoutine)
+	api.HandleFunc("DELETE /api/routines/{id}", s.handleDeleteRoutine)
+	api.HandleFunc("POST /api/routines/{id}/approve", s.handleRoutineEnable(true))
+	api.HandleFunc("POST /api/routines/{id}/disable", s.handleRoutineEnable(false))
+	api.HandleFunc("GET /api/routines/{id}/runs", s.handleRoutineRuns)
+	api.HandleFunc("GET /api/wakeups", s.handleWakeups)
+	api.HandleFunc("DELETE /api/wakeups/{id}", s.handleCancelWakeup)
 	api.HandleFunc("GET /api/instructions", s.handleInstructions)
 	api.HandleFunc("PUT /api/instructions", s.handlePutInstructions)
 	api.HandleFunc("DELETE /api/instructions", s.handleDeleteInstructions)

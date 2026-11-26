@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"net/http"
 
@@ -211,5 +212,8 @@ func agentToolRegistry(deps builtin.Deps, server func() *Server) (*tool.Registry
 	deps.Memory = memoryService{server: server}
 	deps.MemoryCheck = memoryCheck{server: server}
 	deps.Skills = skillService{server: server}
+	deps.Schedule = func(ctx context.Context, sessionID, name string, raw json.RawMessage) (string, error) {
+		return server().scheduleTool(ctx, sessionID, name, raw)
+	}
 	return builtin.Registry(deps)
 }
