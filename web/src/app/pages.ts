@@ -4,7 +4,15 @@
  * is a route in `App.tsx` and an entry here (docs/EXTENDING.md, "Adding a page").
  */
 
-import { Activity, Brain, FolderKanban, Inbox, MessageCircle, Sparkles } from "lucide-react";
+import {
+  Activity,
+  CalendarClock,
+  Brain,
+  FolderKanban,
+  Inbox,
+  MessageCircle,
+  Sparkles,
+} from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 /** Page is one destination of the shell's navigation. */
@@ -27,6 +35,7 @@ export const pages: readonly Page[] = [
   { id: "inbox", title: "Inbox", path: "/inbox", icon: Inbox, bar: true },
   { id: "projects", title: "Projects", path: "/projects", icon: FolderKanban, bar: false },
   { id: "memory", title: "Memory", path: "/memory", icon: Brain, bar: false },
+  { id: "schedules", title: "Schedules", path: "/schedules", icon: CalendarClock, bar: false },
   { id: "skills", title: "Skills", path: "/skills", icon: Sparkles, bar: false },
 ];
 

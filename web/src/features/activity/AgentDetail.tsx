@@ -47,6 +47,14 @@ export function AgentDetail({ sessionId }: AgentDetailProps) {
     );
   }
   const agent = session.data.session;
+  if (agent.kind === "routine" || agent.kind === "home") {
+    return (
+      <>
+        <BackLink />
+        <SessionView key={agent.id} sessionId={agent.id} readOnly />
+      </>
+    );
+  }
   if (!isSubagent(agent)) {
     return (
       <div className="flex flex-col gap-3 p-3">

@@ -46,7 +46,13 @@ test("the board groups the subagents by state, and says why one waits", async ({
   ).toHaveAttribute("aria-current", "page");
   // Waiting first, then running, idle, and failed or cancelled together.
   const headings = eika.page.getByRole("navigation", { name: "Subagents" }).getByRole("heading");
-  await expect(headings).toHaveText([/^Waiting/, /^Running/, /^Idle/, /^Failed and cancelled/]);
+  await expect(headings).toHaveText([
+    /^Waiting/,
+    /^Running/,
+    /^Idle/,
+    /^Failed and cancelled/,
+    /^Schedules/,
+  ]);
   await expect(group(eika, "Waiting").getByRole("link")).toHaveCount(2);
   await expect(rowOf(eika, /^Waiting: permit/)).toContainText(
     "Waiting on the user's answer about which council applies",

@@ -12,10 +12,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)
 	s.mux.HandleFunc("GET /api/healthz", s.handleHealth)
 
-	// The event stream needs nothing but the bus, so it is served even by a
-	// harness that has no database; every other route reads or writes rows.
+	// The event stream and schedule preview do not need a database.
 	api := http.NewServeMux()
 	api.HandleFunc("GET /api/events", s.handleEvents)
+	api.HandleFunc("POST /api/routines/preview", s.handleRoutinePreview)
 	if s.deps.Store != nil {
 		// Setup and sign-in are how a browser gets a token, so they are the
 		// routes under /api that need none.

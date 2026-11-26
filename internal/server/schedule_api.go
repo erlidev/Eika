@@ -380,3 +380,28 @@ func (s *Server) scheduleTool(ctx context.Context, sessionID, name string, raw j
 	b, err := json.Marshal(result)
 	return string(b), err
 }
+
+func (s *Server) handleRoutinePreview(w http.ResponseWriter, r *http.Request) {
+	q, err := decodeJSON[*schedulePreviewRequest](r)
+	if err == nil && q == nil {
+		err = invalidf("schedule must be an object")
+	}
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if len(q.ScheduleExpr) > 256 || len(q.Timezone) > 128 {
+		s.fail(w, r, invalidf("invalid schedule"))
+		return
+	}
+	spec, err := schedule.Parse(q.ScheduleKind, q.ScheduleExpr, q.Timezone)
+	if err != nil {
+		s.fail(w, r, invalidf("invalid schedule: %v", err))
+		return
+	}
+	next := spec.NextN(time.Now(), 5)
+	if next == nil {
+		next = []time.Time{}
+	}
+	writeJSON(w, s.log, http.StatusOK, schedulePreviewResponse{ScheduleWords: spec.Words(), NextFive: next})
+}

@@ -9,6 +9,7 @@ import { useParams } from "react-router";
 
 import { AgentBoard } from "@/features/activity/AgentBoard";
 import { AgentDetail } from "@/features/activity/AgentDetail";
+import { ScheduleActivity } from "@/features/schedules";
 import { cn } from "@/lib/utils";
 
 export function ActivityPage() {
@@ -25,6 +26,7 @@ export function ActivityPage() {
         )}
       >
         <AgentBoard project={project} onProjectChange={setProject} />
+        <ScheduleActivity />
       </nav>
       <div className={cn("min-h-0 min-w-0 flex-1 flex-col lg:flex", open ? "flex" : "hidden")}>
         {sessionId === undefined ? (

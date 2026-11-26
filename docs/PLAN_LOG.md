@@ -2896,3 +2896,10 @@ recursion guard and pending-wakeup limit connect to the scheduler. User approval
 is stored on the routine. Agent creation sends one push and remains disabled
 until approval. The API returns schedule previews and run history. The run-now
 endpoint is not included.
+
+## P7-03: Schedules UI
+
+Schedules lists routines, approval requests, run history and wakeups. Users can
+create, edit, approve, enable, delete and cancel them. Activity links to run
+sessions and wakeups. The preview route parses draft schedules without saving them. The scheduler
+does not publish schedule events.

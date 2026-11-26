@@ -1,3 +1,4 @@
+import type { Routine, Wakeup } from "../../src/features/schedules/types.ts";
 /**
  * The in-memory world a mock harness serves: every table the HTTP API reads,
  * plus the session trees a replay walks. A scenario is a function that builds
@@ -138,6 +139,22 @@ export type World = {
   memories: Memory[];
   /** skills is GET /api/skills: every installed skill, in any order; the route sorts. */
   skills: Skill[];
+  routines: Routine[];
+  wakeups: Wakeup[];
+  routineRuns: Record<
+    string,
+    {
+      id: string;
+      session_id: string;
+      scheduled_at: string;
+      outcome: string;
+      reason: string;
+      tokens: number | null;
+      duration_ms: number | null;
+      started_at: string;
+      finished_at: string | null;
+    }[]
+  >;
   /** withheld is GET /api/withheld: every removal, in any order; the route sorts. */
   withheld: Withheld[];
   guard: "unknown" | "up" | "down";
@@ -253,6 +270,9 @@ export function emptyWorld(): World {
     projectInstructionVersions: {},
     memories: [],
     skills: [],
+    routines: [],
+    wakeups: [],
+    routineRuns: {},
     withheld: [],
     guard: "up",
     trustedSources: [],

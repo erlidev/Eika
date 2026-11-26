@@ -52,6 +52,7 @@ type searchKeysResponse struct {
 // response they get against the contract.
 var routeWire = map[string]wire{
 	"GET /api/routines":                      {status: http.StatusOK, response: routinesResponse{}},
+	"POST /api/routines/preview":             {status: http.StatusOK, request: schedulePreviewRequest{}, response: schedulePreviewResponse{}},
 	"POST /api/routines":                     {status: http.StatusCreated, request: routineRequest{}, response: routineBody{}},
 	"GET /api/routines/{id}":                 {status: http.StatusOK, response: routineBody{}},
 	"PATCH /api/routines/{id}":               {status: http.StatusOK, request: routineRequest{}, response: routineBody{}},

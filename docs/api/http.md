@@ -1691,6 +1691,13 @@ response has these fields:
 
 Returns `{routines: [...]}` (200).
 
+### `POST /api/routines/preview`
+
+Accepts `schedule_kind`, `schedule_expr`, and `timezone`. Returns
+`{schedule_words: string, next_five: [timestamp, ...]}` (200), with up to
+five occurrences after the request. Invalid schedules return 400. This route
+does not save a routine.
+
 ### `GET /api/routines/{id}`
 
 Returns one routine (200).

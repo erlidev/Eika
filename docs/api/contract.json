@@ -5255,6 +5255,26 @@
         }
       }
     },
+    "POST /api/routines/preview": {
+      "status": 200,
+      "request": {
+        "object": {
+          "schedule_expr": "string",
+          "schedule_kind": "string",
+          "timezone": "string"
+        }
+      },
+      "response": {
+        "object": {
+          "next_five": {
+            "nullable": {
+              "array": "string"
+            }
+          },
+          "schedule_words": "string"
+        }
+      }
+    },
     "POST /api/routines/{id}/approve": {
       "status": 200,
       "response": {

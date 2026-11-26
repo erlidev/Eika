@@ -27,16 +27,6 @@ import type {
  * calls them. A test that calls one sees the mock's 404.
  */
 const unmocked: Record<string, string> = {
-  "GET /api/routines": "the schedules UI is not built yet",
-  "POST /api/routines": "the schedules UI is not built yet",
-  "GET /api/routines/{id}": "the schedules UI is not built yet",
-  "PATCH /api/routines/{id}": "the schedules UI is not built yet",
-  "DELETE /api/routines/{id}": "the schedules UI is not built yet",
-  "POST /api/routines/{id}/approve": "the schedules UI is not built yet",
-  "POST /api/routines/{id}/disable": "the schedules UI is not built yet",
-  "GET /api/routines/{id}/runs": "the schedules UI is not built yet",
-  "GET /api/wakeups": "the schedules UI is not built yet",
-  "DELETE /api/wakeups/{id}": "the schedules UI is not built yet",
   "GET /api/sessions/{id}/path": "the transcript reads the outline instead",
   "GET /api/events": "a WebSocket, which install routes itself",
   "GET /api/inference": "the Activity page that reads the queue arrives in phase 3",
@@ -637,5 +627,31 @@ describe("skills", () => {
     expect((await call(mock, "DELETE", "/api/skills/aa")).status).toBe(204);
     expect((await call(mock, "GET", "/api/skills")).body).toEqual({ skills: [] });
     expect(mock.contractBreaks).toEqual([]);
+  });
+});
+
+describe("schedules", () => {
+  it("previews a draft without creating a routine", async () => {
+    const mock = open("schedules");
+    const before = mock.world.routines.length;
+    const preview = await call(mock, "POST", "/api/routines/preview", {
+      schedule_kind: "cron",
+      schedule_expr: "0 8 * * *",
+      timezone: "UTC",
+    });
+    expect(preview.status).toBe(200);
+    expect((preview.body as { next_five: string[] }).next_five).toHaveLength(5);
+    expect(mock.world.routines).toHaveLength(before);
+    expect((await call(mock, "POST", "/api/routines/preview", {})).status).toBe(400);
+  });
+
+  it("keeps run history and cancels a pending wakeup", async () => {
+    const mock = open("schedules");
+    const history = await call(mock, "GET", "/api/routines/routine-brief/runs");
+    expect((history.body as { runs: { session_id: string }[] }).runs[0]?.session_id).toBe(
+      "routine-session",
+    );
+    expect((await call(mock, "DELETE", "/api/wakeups/wake-1")).status).toBe(204);
+    expect((await call(mock, "GET", "/api/wakeups")).body).toEqual({ wakeups: [] });
   });
 });

@@ -150,7 +150,7 @@ test.describe("on a phone", () => {
     await expectShot(eika, "inbox-phone");
     await bar.getByRole("button", { name: "More" }).tap();
     const sheet = eika.page.getByRole("navigation", { name: "More pages" });
-    await expect(sheet.getByRole("link")).toHaveText([/Projects/, /Memory/, /Skills/]);
+    await expect(sheet.getByRole("link")).toHaveText([/Projects/, /Memory/, /Schedules/, /Skills/]);
     await expect(sheet.getByRole("button", { name: "Settings" })).toBeVisible();
     await expectShot(eika, "more-sheet-phone");
     await sheet.getByRole("link", { name: "Memory" }).tap();

@@ -1619,6 +1619,76 @@ export const scenarios = {
       return w;
     },
   },
+  schedules: {
+    description: "Routines, approval and wakeups.",
+    path: "/schedules",
+    build: () => {
+      const b = configured();
+      const w = b.world;
+      b.chat({ id: "routine-session", title: "Morning brief" });
+      const base = {
+        description: "",
+        enabled: true,
+        schedule_kind: "cron",
+        schedule_expr: "0 8 * * *",
+        timezone: "UTC",
+        schedule_words: "Every day at 08:00 UTC",
+        next_five: [
+          "2026-03-15T08:00:00Z",
+          "2026-03-16T08:00:00Z",
+          "2026-03-17T08:00:00Z",
+          "2026-03-18T08:00:00Z",
+          "2026-03-19T08:00:00Z",
+        ],
+        next_run_at: "2026-03-15T08:00:00Z",
+        agent: "eika",
+        prompt: "Prepare the daily brief.",
+        approved_at: "2026-03-14T12:00:00Z",
+        warning: { spans: [], unscanned: false, max_score: 0 },
+        last_outcome: "completed",
+        last_reason: "",
+        project_id: "",
+        max_runtime_seconds: 1800,
+        grace_seconds: 300,
+        missed: "run_once",
+        created_by: "user",
+        last_run_at: null,
+      };
+      w.routines.push(
+        { ...base, id: "routine-brief", name: "Morning brief" },
+        {
+          ...base,
+          id: "routine-review",
+          name: "Review sources",
+          enabled: false,
+          approved_at: null,
+          warning: { spans: [{ start: 0, end: 4, score: 0.9 }], unscanned: false, max_score: 0.9 },
+        },
+      );
+      w.routineRuns["routine-brief"] = [
+        {
+          id: "run-brief",
+          session_id: "routine-session",
+          scheduled_at: "2026-03-14T08:00:00Z",
+          started_at: "2026-03-14T08:00:00Z",
+          finished_at: "2026-03-14T08:01:00Z",
+          outcome: "completed",
+          reason: "",
+          tokens: 200,
+          duration_ms: 60000,
+        },
+      ];
+      w.wakeups.push({
+        id: "wake-1",
+        session_id: b.home().id,
+        agent: "eika",
+        note: "Check the report",
+        due_at: "2026-03-15T12:00:00Z",
+        state: "pending",
+      });
+      return w;
+    },
+  },
   skills: {
     description:
       "Skills: an enabled skill, a disabled one with warnings and a screen hit, and a broken one.",

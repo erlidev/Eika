@@ -54,3 +54,13 @@ type routineRunsResponse struct {
 type wakeupsResponse struct {
 	Wakeups []store.WakeupRecord `json:"wakeups"`
 }
+
+type schedulePreviewRequest struct {
+	ScheduleKind string `json:"schedule_kind"`
+	ScheduleExpr string `json:"schedule_expr"`
+	Timezone     string `json:"timezone"`
+}
+type schedulePreviewResponse struct {
+	ScheduleWords string      `json:"schedule_words"`
+	NextFive      []time.Time `json:"next_five"`
+}

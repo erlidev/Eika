@@ -901,7 +901,10 @@ The frontend uses React, Vite, TypeScript, Tailwind, shadcn with Radix,
 TanStack Query, Zustand and React Router. UI pages are registered in
 `app/pages.ts` and routed in `app/App.tsx`: Chat at `/`, Activity at
 `/activity/:sessionId?`, Projects at `/projects/:slug?`, Inbox at `/inbox`, and Memory at
-`/memory/:name?`. The MCP OAuth
+`/memory/:name?`, Skills at `/skills/:name?`, and Schedules at `/schedules`.
+Schedules lists routines and wakeups and shows routine run history. Its editor
+uses the scheduler preview API for draft schedules. Activity also shows runs and
+wakeups. The MCP OAuth
 callback has its own route. `docs/EXTENDING.md` describes adding a page.
 
 The production build includes a web manifest and service worker. The worker
