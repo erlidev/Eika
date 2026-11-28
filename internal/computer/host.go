@@ -224,6 +224,10 @@ func (h *Host) Create(ctx context.Context, spec Spec) (Computer, error) {
 		rollback()
 		return Computer{}, err
 	}
+	if err := h.ownCheckpoints(ctx, cx.ContainerID); err != nil {
+		rollback()
+		return Computer{}, err
+	}
 	h.log.Info("computer created", "computer_id", cx.ID, "image", cx.Image)
 	return cx, nil
 }

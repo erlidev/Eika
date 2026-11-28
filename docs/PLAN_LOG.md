@@ -1,5 +1,21 @@
 # Plan log
 
+## P4b-12 — Checkpoints in eikad (2026-11-28)
+
+A run in a project (a worker's or a routine's) now has its tree committed to a shadow
+git repository when it starts and when it ends, aborted or not. `eikad` has a new
+`POST /checkpoint` (`docs/api/eikad.md`); `sandbox.Client.Checkpoint` calls it and is
+not on the `Executor`, so no tool can. The server's `projectCheckpointer` takes both
+checkpoints from `runs.drive` and writes a `checkpoints` row (migration 0042: run,
+label, commit, files, skipped, `took_ms`); a failure is logged and the run goes on.
+The repository is under `/var/lib/eikad/checkpoints` in the container, created by
+`Host.Create`; the sandbox image needed nothing new (git was already in it). Tests: the
+daemon's handler against real git (what is kept and left out, a deletion, the root and
+outside paths refused, a stale lock left by a killed daemon), the real image taking two
+commits with none under the home directory, and that a failing checkpoint touches
+nothing else. Choices are in DECISIONS; owner question 7 is new, and P4b-13's text has
+the constraints it inherits. `make smoke` covers P4b-12 and P4b-13 together in P4b-16.
+
 ## P4b-10 — Tripwire controls in Settings, Security (2026-11-28)
 
 Settings, Security has a Tripwires section: a switch for each of the five tripwires with

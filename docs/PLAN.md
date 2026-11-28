@@ -658,13 +658,23 @@ phase 11 extends it. See DECISIONS, "Tripwires and checkpoints".
 
 ### Stage C: checkpoints and images
 
-- [ ] **P4b-12**: `eikad` shadow git directory per project tree, outside any path
+- [x] **P4b-12**: `eikad` shadow git directory per project tree, outside any path
       a tool can name; commits at run start and end, following `.gitignore`,
       skipping files over 10 MB and package-manager directories. The time a
-      checkpoint took is recorded.
+      checkpoint took is recorded. Built as `POST /checkpoint` and the
+      `checkpoints` table; see `PLAN_LOG.md` and DECISIONS.
 - [ ] **P4b-13**: Restore: a run's card offers "restore files to before this run",
       which checks the earlier commit out and commits the restore so it can be
-      undone; checkpoints older than 30 days are dropped.
+      undone; checkpoints older than 30 days are dropped. Constraints from
+      P4b-12: restore is a new eikad route that takes the commit id from a
+      `checkpoints` row (`Store.RunCheckpoints`), never a name a tool could
+      have moved, and holds the same per-repository lock as `/checkpoint`; the
+      shadow repositories live in the container's own filesystem under
+      `eikad.DefaultCheckpointDir`, so pruning runs `git gc --prune` there and
+      deletes the `checkpoints` rows with it (there is no foreign key); `gc.auto`
+      is on, so repositories pack themselves; nested repositories and files
+      over 10 MB are not in a commit, and the restore must leave them alone
+      rather than delete them.
 - [ ] **P4b-14**: Remote images in model output load only when their URL's source
       is `user`, `search` or `content`; otherwise the UI shows a link. Reads the
       index of P4b-02.
@@ -710,6 +720,13 @@ phase 11 extends it. See DECISIONS, "Tripwires and checkpoints".
    third answer. "Stop the run" on a run that already ended closes the entry as
    stopped and makes no host known; the card words it "Dismiss" once the run is
    no longer going.
+7. **Where do the shadow repositories live, and do existing computers have
+   them?** Applied: in the container's filesystem, not the computer's volume,
+   so no path of the computer root reaches them; a computer made again (not
+   restarted) starts with none, so its earlier checkpoints are gone. A
+   computer made before this item has the old daemon, which has no
+   `/checkpoint` route: its runs log a failed checkpoint and carry on until the
+   computer is made again.
 
 ## Schedule for phase 6
 

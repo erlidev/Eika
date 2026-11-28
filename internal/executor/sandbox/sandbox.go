@@ -193,6 +193,26 @@ func (c *Client) SetEnvironment(ctx context.Context, env []string) error {
 	return err
 }
 
+// Checkpoint asks the daemon to commit a project tree to its shadow
+// repository. Like SetEnvironment it is not part of the executor, so no tool
+// can take or rewrite a checkpoint.
+func (c *Client) Checkpoint(ctx context.Context, req eikad.CheckpointRequest) (eikad.CheckpointResponse, error) {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return eikad.CheckpointResponse{}, fmt.Errorf("encode checkpoint request: %w", err)
+	}
+	resp, err := c.do(ctx, http.MethodPost, "/checkpoint", nil, bytes.NewReader(body), "application/json")
+	if err != nil {
+		return eikad.CheckpointResponse{}, err
+	}
+	defer resp.Body.Close()
+	var out eikad.CheckpointResponse
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return eikad.CheckpointResponse{}, fmt.Errorf("decode checkpoint response: %w", err)
+	}
+	return out, nil
+}
+
 // Stat describes one file in the computer.
 func (c *Client) Stat(ctx context.Context, path string) (executor.FileInfo, error) {
 	var out eikad.FileInfo

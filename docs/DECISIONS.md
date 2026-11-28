@@ -3153,3 +3153,38 @@ refuses while a run is active. There is no run-now endpoint in this phase.
   to case, the last of a repeated key, invalid JSON reads as empty. A test pins this. It
   took `fetch_private` from 0.97 ms to 0.33 ms in `make bench-sentry`, with
   one decode pass and no lenient-unescape copy of text that has nothing to decode.
+- **Checkpoints are an eikad route, and the shadow repository is outside the root.**
+  `POST /checkpoint` (`internal/eikad/checkpoint.go`) takes a project directory, a run
+  id and `start` or `end`, and commits the tree to a git directory named by a hash of
+  the tree's path under `/var/lib/eikad/checkpoints`, with `--git-dir` and
+  `--work-tree` given on every command so the tree holds no `.git` of ours. That
+  directory is in the container's own filesystem, not in the computer's volume, so
+  no path under `/home/eika` leads to it: the file tools and the project executor are
+  confined to the root, and no mount carries it. `bash` runs as the same user as
+  eikad and can name any path in the container, so a command written to find it
+  could still rewrite it. That is the limit of this design: the daemon cannot change
+  user without capabilities the sandbox drops. What the design adds is that nothing
+  an agent does by accident or by following a task reaches it, and that the commit a
+  restore trusts is the id the harness recorded in `checkpoints` (P4b-13), so a
+  rewritten history is a missing commit, not a silent restore of something else.
+  Git runs with no global configuration, no hooks and no prompts, so a `.gitconfig`
+  or hook in the tree changes nothing.
+- **What a checkpoint keeps.** The tree's own `.gitignore` files apply, plus the
+  repository's exclude list of package-manager directories (`node_modules`, `.venv`,
+  `venv`, `__pycache__`, `.npm`, `.gradle`, `.m2`, `.cargo/registry` and a few more).
+  A file over 10 MB is left out (counted in `skipped`): git has no size filter, so the
+  daemon lists what changed with `git ls-files`, drops the large ones, and stages the
+  rest by path. A file that was kept and grows past 10 MB keeps its earlier content.
+  A repository nested in the tree is left out whole: it has history of its own.
+  Every checkpoint is a commit, empty when nothing changed, so a run always has a
+  start and an end commit to name. Checkpoints of one tree take turns; a lock a
+  killed daemon left behind is removed the first time this process uses the repository.
+- **The harness records the time and the commit, and never waits on failure.** The
+  `checkpoints` table (migration 0042) has the run, label, commit, counts and
+  `took_ms`, with no foreign keys so P4b-13's sweep is what removes a row. The start
+  checkpoint runs on the run's goroutine before the loop, the end one after it
+  (aborted runs included, on a context that is not cancelled). Each is bounded at two
+  minutes, and a failure is a warning in the log: a checkpoint is a safety net, not a
+  gate. Only runs in a project have them; the home session works outside any tree.
+  A routine's or worker's run in a project on a computer whose daemon is older than
+  this item fails its checkpoint and goes on.

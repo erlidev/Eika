@@ -514,6 +514,7 @@ duplicates `store.ErrConflict`. Ids are `store.NewID` text.
 | `halt` | one row: whether Eika is halted, since when and why (migration 0025). `SetHalt` writes it and the `halt` or `resume` audit row in one transaction |
 | `trusted_sources` | exact canonical web hosts trusted by the user (migration 0026); subdomains are separate hosts, and fetch trust uses the final content host |
 | `marks` | what Sentry saw that a tripwire may join into a chain, per session and run (migration 0038): kind, value (a host), source name, call key, score; one row per run, kind and value. Written by ingest (`watched`, `hidden`); nothing reads them yet. No foreign keys |
+| `checkpoints` | a commit eikad made of a project tree for a run (migration 0042): run, session, computer, directory, `start` or `end`, commit id, changed and skipped file counts, `took_ms`. No foreign keys. Written by `runs.drive` through `projectCheckpointer`; the commits are in the computer's shadow repository |
 | `tripwire_entries` | the Inbox entries tripwires make (migration 0041): tripwire, session, run, computer, host, where the host first appeared, whether the run was held, a plain-words summary, and status `open`, `fine` or `stopped`. No foreign keys. The hold itself is in memory |
 | `destinations`, `known_hosts` | the local destination index (migration 0039): first source of each host per session (`user`, `search`, `content`; no row means `model`), and hosts known to every computer (`computer_id` empty, "this was fine") or to one. No foreign keys |
 | `withheld` | suspect text recorded by ingest, including trusted text passed to the agent; text ingest removed from a result (migration 0024): source kind and name (the URL), session, run, call key (matches the tool card), wrapper id, text, score. No foreign keys |
@@ -699,7 +700,10 @@ longest existing prefix is resolved through symlinks before comparison, and
 the canonical path is what is opened. `/home` holds other directories, so a
 sibling such as `/home/eikaother` is outside, however it is spelled. `EIKAD_TOKEN` is stripped from command
 environments. A command leads its own process group, killed on timeout;
-output is capped and reported as truncated. API: `api/eikad.md`.
+output is capped and reported as truncated. `POST /checkpoint` commits a project
+tree to a shadow git repository in `/var/lib/eikad/checkpoints`, outside the
+root, when a run in a project starts and ends (`internal/eikad/checkpoint.go`;
+the harness side is `internal/server/checkpoints.go`). API: `api/eikad.md`.
 
 `executor/sandbox` is an HTTP client for one daemon; `Exec` streams the
 daemon's newline-delimited frames into the caller's writers. A 404 is

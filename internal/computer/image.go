@@ -15,6 +15,8 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
+
+	"github.com/erlidev/eika/internal/eikad"
 )
 
 // daemonDir is where the eikad binary is placed inside a container. The
@@ -108,6 +110,28 @@ func (h *Host) ownRoot(ctx context.Context, containerID, root string) error {
 		CopyUIDGID: true,
 	}); err != nil {
 		return fmt.Errorf("own %s in container: %w", root, err)
+	}
+	return nil
+}
+
+// ownCheckpoints creates the directory eikad keeps its checkpoint repositories
+// in, owned by the user the container runs as. It lies in the container's own
+// filesystem, outside the computer root and its volume, so no file tool path
+// names it. A custom image needs no preparation for it.
+func (h *Host) ownCheckpoints(ctx context.Context, containerID string) error {
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	parent := path.Dir(eikad.DefaultCheckpointDir)
+	for _, dir := range []string{path.Base(parent), path.Base(parent) + "/" + path.Base(eikad.DefaultCheckpointDir)} {
+		if err := tw.WriteHeader(&tar.Header{Typeflag: tar.TypeDir, Name: dir + "/", Mode: 0o700, Uid: userID, Gid: groupID}); err != nil {
+			return fmt.Errorf("write tar header for %s: %w", dir, err)
+		}
+	}
+	if err := tw.Close(); err != nil {
+		return fmt.Errorf("close tar archive: %w", err)
+	}
+	if err := h.docker.CopyToContainer(ctx, containerID, path.Dir(parent), &buf, container.CopyToContainerOptions{CopyUIDGID: true}); err != nil {
+		return fmt.Errorf("create %s in container: %w", eikad.DefaultCheckpointDir, err)
 	}
 	return nil
 }

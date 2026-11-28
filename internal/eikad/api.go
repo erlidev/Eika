@@ -12,6 +12,11 @@ const BinaryPath = "/usr/local/bin/eikad"
 // spells it too, and a test keeps the two equal.
 const DefaultRoot = "/home/eika"
 
+// DefaultCheckpointDir is where a sandbox keeps the shadow repositories of
+// project trees. It is outside the computer root, so no path a file tool can
+// name reaches it, and the sandbox image creates it for the daemon's user.
+const DefaultCheckpointDir = "/var/lib/eikad/checkpoints"
+
 // ExecRequest is the body of POST /exec.
 //
 // Stdin is sent up front rather than streamed: /exec is for non-interactive
@@ -117,4 +122,32 @@ type ProcessMessage struct {
 	ExitCode int `json:"exit_code,omitempty"`
 	// Error says why the process could not run, on an error message.
 	Error string `json:"error,omitempty"`
+}
+
+// The labels of a checkpoint: the two moments of a run it is taken at.
+const (
+	CheckpointStart = "start"
+	CheckpointEnd   = "end"
+)
+
+// CheckpointRequest is the body of POST /checkpoint.
+type CheckpointRequest struct {
+	// Dir is the project tree, relative to the root. It is never the root.
+	Dir string `json:"dir"`
+	// Run is the id of the run the checkpoint belongs to.
+	Run string `json:"run"`
+	// Label is CheckpointStart or CheckpointEnd.
+	Label string `json:"label"`
+}
+
+// CheckpointResponse is the body of a successful POST /checkpoint.
+type CheckpointResponse struct {
+	// Commit is the id of the commit the tree was recorded in.
+	Commit string `json:"commit"`
+	// Files is how many changed paths the commit holds, deletions included.
+	Files int `json:"files"`
+	// Skipped is how many changed files were left out for being over 10 MB.
+	Skipped int `json:"skipped"`
+	// TookMS is how long the checkpoint took, in milliseconds.
+	TookMS int64 `json:"took_ms"`
 }

@@ -139,6 +139,30 @@ Request: `{"env": ["KEY=VALUE", ...]}`; an empty list clears them. An entry
 without `=`, with an empty key, or naming `EIKAD_TOKEN` is `400`. Response:
 `204`.
 
+## POST /checkpoint
+
+Commits a project tree to a shadow git repository, which is how a run's file
+changes are made recoverable (`design/sentry.md`, section 7). The repository is
+in `/var/lib/eikad/checkpoints`, in the container's filesystem and outside the
+computer root, so no path a request can name reaches it. Git runs with no
+global configuration, hooks or prompts.
+
+Request: `{"dir": "projects/app", "run": "<run id>", "label": "start"}`. `dir`
+is a directory in the root, never the root itself (`400`; outside it is `403`);
+`label` is `start` or `end`; `run` is letters, digits, `_` and `-` (`400`
+otherwise).
+
+Response `200`: `{"commit": "<id>", "files": 3, "skipped": 1, "took_ms": 42}`.
+`files` is how many changed paths the commit holds, deletions included;
+`skipped` how many changed files were over 10 MB and left out; `took_ms` how
+long the checkpoint took. A git failure is `500`.
+
+The tree's own `.gitignore` applies, and so do an exclude list of directories
+package managers fill (`node_modules`, `.venv` and the like) and a nested
+repository, which is left out whole. A checkpoint with no changes is an empty
+commit, so every run has a start and an end commit. Checkpoints of one tree take
+turns.
+
 ## `eikad filter` (command)
 
 Not a route: a one-shot mode of the same binary, run through `POST /exec` as

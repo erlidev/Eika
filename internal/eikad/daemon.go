@@ -30,6 +30,9 @@ type Options struct {
 	Token string
 	// MaxReadBytes caps a single file read. Zero uses the default.
 	MaxReadBytes int64
+	// CheckpointDir holds the shadow repositories of project trees. It must
+	// lie outside Root. Empty uses DefaultCheckpointDir.
+	CheckpointDir string
 }
 
 // Daemon serves the sandbox API over HTTP for one computer.
@@ -39,6 +42,11 @@ type Daemon struct {
 	log     *slog.Logger
 	maxRead int64
 	mux     *http.ServeMux
+
+	// ckptDir holds the shadow repositories; ckptMu guards ckptRepos.
+	ckptDir   string
+	ckptMu    sync.Mutex
+	ckptRepos map[string]*checkpointRepo
 
 	// mu guards env.
 	mu sync.Mutex
@@ -80,6 +88,15 @@ func New(opts Options, log *slog.Logger) (*Daemon, error) {
 		log:     log,
 		maxRead: opts.MaxReadBytes,
 		mux:     http.NewServeMux(),
+
+		ckptDir:   opts.CheckpointDir,
+		ckptRepos: map[string]*checkpointRepo{},
+	}
+	if d.ckptDir == "" {
+		d.ckptDir = DefaultCheckpointDir
+	}
+	if within(root, filepath.Clean(d.ckptDir)) {
+		return nil, fmt.Errorf("build daemon: checkpoint directory %s is inside the root", d.ckptDir)
 	}
 	if d.maxRead <= 0 {
 		d.maxRead = defaultMaxReadBytes
@@ -104,6 +121,7 @@ func (d *Daemon) routes() {
 	d.mux.HandleFunc("PUT /files", d.authed(d.handleWriteFile))
 	d.mux.HandleFunc("GET /stat", d.authed(d.handleStat))
 	d.mux.HandleFunc("GET /list", d.authed(d.handleList))
+	d.mux.HandleFunc("POST /checkpoint", d.authed(d.handleCheckpoint))
 	d.mux.HandleFunc("PUT /environment", d.authed(d.handleSetEnvironment))
 }
 

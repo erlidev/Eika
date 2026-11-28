@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/erlidev/eika/internal/agent"
+	"github.com/erlidev/eika/internal/eikad"
 	"github.com/erlidev/eika/internal/event"
 	"github.com/erlidev/eika/internal/executor"
 	"github.com/erlidev/eika/internal/inference"
@@ -160,6 +161,9 @@ type activeRun struct {
 	// which carry the provider's key. Set before the run starts and called on
 	// every way out of it; nil until the run has a counter.
 	releaseCounter func()
+	// checkpoint takes the run's checkpoints of its project tree; nil for a
+	// run that has none. Set before the run starts.
+	checkpoint checkpointer
 
 	mu    sync.Mutex
 	id    string
@@ -311,6 +315,7 @@ func (r *runs) launch(ctx context.Context, sessionID, model string, work job) (s
 		return store.Run{}, nil, err
 	}
 	var ex executor.Executor
+	var checkpoint checkpointer
 	if s.usesComputer(sess) {
 		if ex, err = s.runExecutor(ctx, sess.ComputerID); err != nil {
 			return store.Run{}, nil, err
@@ -319,6 +324,7 @@ func (r *runs) launch(ctx context.Context, sessionID, model string, work job) (s
 			if ex, err = s.projectWorkdir(ctx, sess.ProjectID, ex); err != nil {
 				return store.Run{}, nil, err
 			}
+			checkpoint = s.projectCheckpointer(sess, ex)
 		}
 	}
 	if len(work.message.Images) > 0 && !cfg.model.ImageInput {
@@ -417,6 +423,9 @@ func (r *runs) launch(ctx context.Context, sessionID, model string, work job) (s
 			ag.FollowUp(message)
 		}
 	}
+	if !work.compact && !work.idle {
+		active.checkpoint = checkpoint
+	}
 	active.begin(row.ID, ag, cfg.model, rank)
 	r.mu.Lock()
 	r.byID[row.ID] = active
@@ -501,6 +510,9 @@ func (r *runs) drive(ctx context.Context, active *activeRun, loaded *agent.Sessi
 	defer active.cancel()
 	runID := active.runID()
 	loop := active.loop()
+	if active.checkpoint != nil {
+		active.checkpoint(ctx, runID, eikad.CheckpointStart)
+	}
 	var err error
 	switch {
 	case work.idle:
@@ -511,6 +523,11 @@ func (r *runs) drive(ctx context.Context, active *activeRun, loaded *agent.Sessi
 		err = loop.Run(ctx, loaded, work.message)
 	}
 	active.end(err)
+	if active.checkpoint != nil {
+		// An aborted run is checkpointed too: its files are what the user
+		// may want to go back from.
+		active.checkpoint(context.WithoutCancel(ctx), runID, eikad.CheckpointEnd)
+	}
 	r.server.gate.Observe(context.WithoutCancel(ctx), sentry.Observation{Kind: sentry.ObserveRunEnd, Run: runID})
 	if work.idle {
 		r.releaseIdle(active)
