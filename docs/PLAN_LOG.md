@@ -1,5 +1,21 @@
 # Plan log
 
+## P7-05 — Scheduler smoke run and live status (2026-11-28)
+
+`make smoke` passed, six of six, the scheduler scenario (approval, execution,
+missed occurrence across a restart) included; the stack was torn down after it.
+`make check` passed on its second run: the first failed only in
+`BenchmarkDecide/fetch/running`, the known 1 ms flake under parallel load, and
+`make smoke` found no bug, so no code changed.
+
+The scheduler live scenarios did not run. The chat endpoint
+(`https://llama.erli.xyz`, from `~/.config/eika/live.env`) answered 502 on `/health`
+and `/v1/models`, twice, 20 seconds apart. Their last passing result is the one in
+P7-04. Rerun them with `go test -tags live -run Scheduler ./evals/live/...` (or
+`make live`) once the endpoint answers.
+
+The manual exit stays with the owner and has not been run.
+
 ## P7-04 — Scheduler smoke, live and documentation (2026-11-25)
 
 The smoke scenario covers approval, a routine session and its home result, and

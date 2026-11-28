@@ -842,8 +842,13 @@ and `design/sentry.md` sections 3 ("The first-seen index") and 7.
 
 The scheduler stores routines, runs and wakeups, with approval, missed-run
 recovery, tools, the Schedules page and Activity integration. The smoke and
-live scenarios are in P7-04 in `PLAN_LOG.md`. Their execution and the manual
-exit check are pending. The exit uses a weekday weather or date summary;
+live scenarios are in P7-04 in `PLAN_LOG.md`. The scheduler smoke scenario passed
+(P7-05). The live scenarios passed once (P7-04) and their rerun was blocked by an
+unreachable model endpoint (P7-05). The manual exit check is pending with the owner.
+Steps: approve a weekday routine on the Schedules page ("every weekday at HH:MM,
+tell me today's date and the weather"), set its time two minutes ahead, wait for
+the run, check that the result lands in home and in Activity with a push on the
+phone, then restart Core and check it does not run twice. The exit uses a weekday weather or date summary;
 calendar integration waits for phase 11.
 
 ## Phase 4b: Tripwires and checkpoints
