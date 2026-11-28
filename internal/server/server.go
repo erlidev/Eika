@@ -203,10 +203,7 @@ func New(cfg config.Config, log *slog.Logger, deps Deps, opts Options) *Server {
 		o.SensitiveList = s.sensitiveList
 		o.SinkLimits = s.sinkLimits
 		o.Tripwires = s.tripwires
-		// P4b-09 turns this into the Inbox entry; until then it is logged.
-		o.Tripped = func(_ context.Context, t sentry.Tripped) {
-			log.Warn("tripwire fired", "tripwire", t.Tripwire, "held", t.Held, "session_id", t.Principal.Session, "run_id", t.Principal.Run, "host", t.Host)
-		}
+		o.Tripped = s.tripped
 		o.GuardChanged = func(up bool) {
 			if s.notifications != nil {
 				message := "The guard is unavailable. Untrusted content cannot be screened."
@@ -277,6 +274,7 @@ func (s *Server) Run(ctx context.Context) error {
 		watchCtx, cancel := context.WithCancel(ctx)
 		var wg sync.WaitGroup
 		wg.Go(func() { s.watchIdleCompaction(watchCtx) })
+		wg.Go(func() { s.watchMarkPruning(watchCtx) })
 		wg.Go(func() { (schedule.Engine{Store: s.deps.Store, Runner: scheduleRunner{s}, Log: s.log}).Run(watchCtx) })
 		if s.deps.Providers != nil {
 			wg.Go(func() { s.probeProviders(watchCtx) })

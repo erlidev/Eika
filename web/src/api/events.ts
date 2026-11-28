@@ -29,6 +29,7 @@ export type EventType =
   | "halt.state"
   | "memory.changed"
   | "inbox.count"
+  | "tripwire.changed"
   | "skills.changed"
   | "bus.dropped";
 
@@ -280,7 +281,16 @@ export type MemoryChanged = {
   state?: string;
 };
 
-/** InboxCount is the payload of an inbox.count event, on topic inbox: how many memories are pending now. */
+/**
+ * TripwireChanged is the payload of a tripwire.changed event, on topic inbox:
+ * an entry was made (open) or answered (fine or stopped). Refetch the list.
+ */
+export type TripwireChanged = {
+  id: string;
+  status: "open" | "fine" | "stopped";
+};
+
+/** InboxCount is the payload of an inbox.count event, on topic inbox: how many entries wait now, memories and tripwire entries. */
 export type InboxCountChanged = {
   pending: number;
 };
@@ -348,6 +358,7 @@ export type EventPayloads = {
   "halt.state": HaltState;
   "memory.changed": MemoryChanged;
   "inbox.count": InboxCountChanged;
+  "tripwire.changed": TripwireChanged;
   "skills.changed": SkillsChanged;
   "bus.dropped": BusDropped;
 };
@@ -374,7 +385,7 @@ export type StreamRequest =
 /** globalTopic is the topic of events that belong to no computer or session. */
 export const globalTopic = "global";
 
-/** inboxTopic is the topic of memory.changed and inbox.count. */
+/** inboxTopic is the topic of memory.changed, tripwire.changed and inbox.count. */
 export const inboxTopic = "inbox";
 
 /** skillsTopic is the topic of skills.changed. */
@@ -414,6 +425,7 @@ export const eventTypes: readonly EventType[] = [
   "halt.state",
   "memory.changed",
   "inbox.count",
+  "tripwire.changed",
   "skills.changed",
   "bus.dropped",
 ];

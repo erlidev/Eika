@@ -642,7 +642,7 @@ phase 11 extends it. See DECISIONS, "Tripwires and checkpoints".
       subagents started while held are held, the hold ends with the run. Lifted at
       the proxy, Drained and Blocked often as Inbox entries without a hold.
       Built as `Options.Tripped`; see `PLAN_LOG.md`.
-- [ ] **P4b-09**: The Inbox entry and its two answers ("this was fine", "stop the
+- [x] **P4b-09**: The Inbox entry and its two answers ("this was fine", "stop the
       run"), one push, audit rows, and the per-tripwire fired and "fine" counts.
       "This was fine" ends the hold and makes the destination known. P4b-08 left the
       seam: `sentry.Options.Tripped` (the server logs it now) is the entry's source,
@@ -700,11 +700,16 @@ phase 11 extends it. See DECISIONS, "Tripwires and checkpoints".
 2. **Are tripwires on by default?** Applied: off in a deployment until P4b-15's
    report; the report then turns on those that pass both tests.
 3. **How long are marks kept?** Applied: 30 days, like checkpoints; pruning is in
-   P4b-09.
+   P4b-09 (done: a daily sweep, `watchMarkPruning`).
 4. **What counts as hidden text?** Applied: a tag-character run that decodes to
    eight characters or more.
 5. **Does a hold survive a Core restart?** Applied: no. The hold ends with the run
    (design), and a run does not survive a restart; its entry stays.
+6. **Can an entry be dismissed without teaching the host?** Applied: no. P4b-09
+   has the two answers of the design only. "Stop the run" on a run that already
+   ended is 409 and leaves the entry open, so "this was fine" (which makes the
+   host known) is then the only way to close it. A third answer, such as "dismiss",
+   is yours to ask for.
 
 ## Schedule for phase 6
 

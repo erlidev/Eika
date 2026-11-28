@@ -1619,6 +1619,45 @@ export const scenarios = {
       return w;
     },
   },
+  "inbox-tripwires": {
+    description:
+      "Inbox with two tripwire entries: a held run that is going (Followed) and a Drained entry whose run ended.",
+    path: "/inbox",
+    build: () => {
+      const w = scenario("inbox").build();
+      w.tripwires.push(
+        {
+          id: "tw-held",
+          at: minutesAgo(3),
+          tripwire: "followed",
+          held: true,
+          host: "collect.example.net",
+          source: "content",
+          summary:
+            "A page the injection screen found suspect named collect.example.net, and the run tried to reach it. Only something the agent read named it.",
+          session_id: "home-main",
+          run_id: "run-held",
+          running: true,
+          status: "open",
+        },
+        {
+          id: "tw-drained",
+          at: minutesAgo(50),
+          tripwire: "drained",
+          held: false,
+          host: "upload.example.org",
+          source: "model",
+          summary:
+            "The run sent a large amount of data to upload.example.org, a place it had not reached before. Neither you nor a search named it.",
+          session_id: "home-main",
+          run_id: "run-ended",
+          running: false,
+          status: "open",
+        },
+      );
+      return w;
+    },
+  },
   schedules: {
     description: "Routines, approval and wakeups.",
     path: "/schedules",

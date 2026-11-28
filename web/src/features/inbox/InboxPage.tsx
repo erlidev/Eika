@@ -1,18 +1,22 @@
 /**
- * The Inbox: what waits for the user's answer. For now that is pending
- * memories, one card each, newest first in a column capped at 40rem.
+ * The Inbox: what waits for the user's answer. Tripwire entries come first
+ * (a held run is waiting), then pending memories, one card each, newest first
+ * in a column capped at 40rem.
  */
 
 import { Inbox } from "lucide-react";
 
 import { LoadError, Notice } from "@/components/Notice";
 import { MemoryCard } from "@/features/inbox/MemoryCard";
-import { listLimit, useInboxMemories } from "@/features/inbox/queries";
+import { listLimit, useInboxMemories, useInboxTripwires } from "@/features/inbox/queries";
+import { TripwireCard } from "@/features/inbox/TripwireCard";
 import { useSources } from "@/features/memory/queries";
 
 export function InboxPage() {
   const inbox = useInboxMemories();
+  const tripwires = useInboxTripwires();
   const sessions = useSources();
+  const entries = tripwires.data?.entries ?? [];
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto w-full max-w-[40rem] space-y-3 p-3 sm:p-4">
@@ -35,14 +39,33 @@ export function InboxPage() {
                 retrying={inbox.isFetching}
               />
             )}
+            {tripwires.isError && (
+              <LoadError
+                what="the tripwire entries"
+                error={tripwires.error}
+                retry={() => void tripwires.refetch()}
+                retrying={tripwires.isFetching}
+              />
+            )}
+            {entries.length > 0 && (
+              <ul className="space-y-3">
+                {entries.map((entry) => (
+                  <li key={entry.id}>
+                    <TripwireCard entry={entry} sessions={sessions.data ?? []} />
+                  </li>
+                ))}
+              </ul>
+            )}
             {inbox.data.memories.length === 0 ? (
-              <div className="text-muted-foreground flex flex-col items-center gap-2 py-12 text-center text-sm">
-                <Inbox aria-hidden className="size-4" />
-                <p>Nothing is waiting for you.</p>
-                <p className="max-w-xs text-xs">
-                  A memory Eika is unsure about shows up here for you to accept, edit or reject.
-                </p>
-              </div>
+              entries.length === 0 && (
+                <div className="text-muted-foreground flex flex-col items-center gap-2 py-12 text-center text-sm">
+                  <Inbox aria-hidden className="size-4" />
+                  <p>Nothing is waiting for you.</p>
+                  <p className="max-w-xs text-xs">
+                    A memory Eika is unsure about, or a run it held, shows up here for your answer.
+                  </p>
+                </div>
+              )
             ) : (
               <>
                 <p className="text-muted-foreground text-xs">

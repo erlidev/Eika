@@ -31,6 +31,7 @@ import type {
   QueuedMessage,
   Withheld,
   Memory,
+  TripwireEntry,
   Skill,
   Provider,
   ProbeFindings,
@@ -137,6 +138,8 @@ export type World = {
   projectInstructionVersions: Record<string, number>;
   /** memories is GET /api/memories: every memory; content_sha is computed by the route. */
   memories: Memory[];
+  /** tripwires is GET /api/inbox/tripwires: every entry; the route lists the open ones. */
+  tripwires: TripwireEntry[];
   /** skills is GET /api/skills: every installed skill, in any order; the route sorts. */
   skills: Skill[];
   routines: Routine[];
@@ -269,6 +272,7 @@ export function emptyWorld(): World {
     projectInstructions: {},
     projectInstructionVersions: {},
     memories: [],
+    tripwires: [],
     skills: [],
     routines: [],
     wakeups: [],

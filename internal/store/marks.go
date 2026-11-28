@@ -42,5 +42,17 @@ func (s *Store) WatchedHosts(ctx context.Context, session string) ([]string, err
 		}
 		out = append(out, host)
 	}
-	return out, wrap("list watched hosts", rows.Err())
+	if err := rows.Err(); err != nil {
+		return nil, wrap("list watched hosts", err)
+	}
+	return out, nil
+}
+
+// PruneMarks deletes the marks recorded before the cutoff and returns how many.
+func (s *Store) PruneMarks(ctx context.Context, before time.Time) (int64, error) {
+	tag, err := s.pool.Exec(ctx, `DELETE FROM marks WHERE at < $1`, before)
+	if err != nil {
+		return 0, wrap("prune marks", err)
+	}
+	return tag.RowsAffected(), nil
 }

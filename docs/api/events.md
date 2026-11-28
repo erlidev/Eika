@@ -386,14 +386,25 @@ A memory was written, changed or removed.
 | `name` | string | The memory's name. |
 | `state` | string, optional | `active`, `pending` or `archived` now. Absent when it was purged. |
 
+### `tripwire.changed`
+
+A tripwire entry was made (`open`) or answered (`fine` or `stopped`). Carries no
+text: the client refetches `GET /api/inbox/tripwires`. The push that tells the
+user is separate.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `id` | string | The entry. |
+| `status` | string | `open`, `fine` or `stopped`. |
+
 ### `inbox.count`
 
-Follows every `memory.changed`, with the number of pending memories now. A
+Follows every `memory.changed` and `tripwire.changed`, with what waits now. A
 client may show it as the badge without another request.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `pending` | integer | Memories in state `pending`. |
+| `pending` | integer | Memories in state `pending` plus open tripwire entries. |
 
 ## Skills events
 

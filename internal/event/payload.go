@@ -343,8 +343,17 @@ type MemoryChanged struct {
 	State string `json:"state,omitempty"`
 }
 
+// TripwireChanged is the payload of a tripwire.changed event, on the inbox
+// topic: a tripwire entry was made (status "open") or answered ("fine" or
+// "stopped"). Clients refetch the list; no text is carried.
+type TripwireChanged struct {
+	ID     string `json:"id"`
+	Status string `json:"status"`
+}
+
 // InboxCount is the payload of an inbox.count event, on the inbox topic: how
-// many memories are pending now. It follows every memory.changed.
+// many entries wait now: pending memories and open tripwire entries. It
+// follows every memory.changed and tripwire.changed.
 type InboxCount struct {
 	Pending int `json:"pending"`
 }

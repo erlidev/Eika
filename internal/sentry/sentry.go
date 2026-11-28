@@ -40,6 +40,11 @@ type Gate interface {
 	// Observe records something that needs no decision: a user message, a new
 	// subagent. It never fails the caller.
 	Observe(ctx context.Context, o Observation)
+	// ReleaseHold is the answer "this was fine" to a tripwire: it ends the hold
+	// on p.Run, with that of the subagents it started, and makes host known to
+	// every computer, so the same chain does not fire again. An empty host
+	// makes nothing known. A run that is not held is not an error.
+	ReleaseHold(ctx context.Context, p Principal, host string) error
 }
 
 // Kind says how an Action's Name is read.

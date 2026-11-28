@@ -79,6 +79,10 @@ func (s *Server) resourceRoutes(api *http.ServeMux) {
 	api.HandleFunc("GET /api/inbox/memories", s.handleInboxMemories)
 	api.HandleFunc("POST /api/inbox/memories/{name}/accept", s.handleAcceptMemory)
 	api.HandleFunc("POST /api/inbox/memories/{name}/reject", s.handleRejectMemory)
+	api.HandleFunc("GET /api/inbox/tripwires", s.handleTripwireEntries)
+	api.HandleFunc("POST /api/inbox/tripwires/{id}/fine", s.handleTripwireFine)
+	api.HandleFunc("POST /api/inbox/tripwires/{id}/stop", s.handleTripwireStop)
+	api.HandleFunc("GET /api/tripwires/counts", s.handleTripwireCounts)
 
 	api.HandleFunc("POST /api/skills", s.handleInstallSkill)
 	api.HandleFunc("GET /api/skills", s.handleListSkills)

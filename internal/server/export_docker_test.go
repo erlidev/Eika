@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/erlidev/eika/internal/inference"
+	"github.com/erlidev/eika/internal/sentry"
 	"github.com/erlidev/eika/internal/skill"
 	"github.com/erlidev/eika/internal/store"
 	"github.com/erlidev/eika/internal/tool/builtin"
@@ -95,3 +96,6 @@ func (s *Server) CanaryForTest() string { return s.canary.get() }
 // SetSkillInstaller publishes an installer whose volume is a test directory,
 // as recoverSkills does for the real one.
 func (s *Server) SetSkillInstaller(in *skill.Installer) { s.skillInstaller.Store(in) }
+
+// TrippedForTest delivers a tripwire as the gate does when a chain completes.
+func (s *Server) TrippedForTest(ctx context.Context, t sentry.Tripped) { s.tripped(ctx, t) }

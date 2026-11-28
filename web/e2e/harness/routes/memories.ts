@@ -49,7 +49,9 @@ export function memoryRoutes({ w, on, now, emit, event }: RouteContext): void {
     emit(event("memory.changed", "inbox", state === "" ? { name } : { name, state }));
     emit(
       event("inbox.count", "inbox", {
-        pending: w.memories.filter((m) => m.state === "pending").length,
+        pending:
+          w.memories.filter((m) => m.state === "pending").length +
+          w.tripwires.filter((t) => t.status === "open").length,
       }),
     );
   };
@@ -331,7 +333,9 @@ export function memoryRoutes({ w, on, now, emit, event }: RouteContext): void {
       .filter((m) => m.state === "pending")
       .toSorted((a, b) => b.updated.localeCompare(a.updated) || a.name.localeCompare(b.name));
 
-  on("GET", "/api/inbox/count", () => ok({ pending: pending().length }));
+  on("GET", "/api/inbox/count", () =>
+    ok({ pending: pending().length + w.tripwires.filter((t) => t.status === "open").length }),
+  );
 
   on("GET", "/api/inbox/memories", ({ query: q, rawQuery }) => {
     const bad = query(rawQuery, ["limit", "after"]);

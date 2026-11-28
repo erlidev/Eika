@@ -3120,8 +3120,32 @@ refuses while a run is active. There is no run-now endpoint in this phase.
   often fires when the run's count of denied results reaches `blocked_limit`,
   counting every deny, ask and refused connection of the run. Drained reads the
   `upload` mark after an egress report and the `fan-out` mark in `Decide`.
-  P4b-09 turns the callback into the Inbox entry, the push, the audit rows and the
-  counts; until then the server logs it. A held plugin call asks (P4b-11).
+  `server.tripped` turns the callback into the Inbox entry, the push and the audit
+  row (P4b-09). A held plugin call asks (P4b-11).
+- **The Inbox entry is a table row; the hold is not.** `tripwire_entries` (migration
+  0041) holds one row per tripwire that fired, open until answered. A hold lives only
+  in the gate and ends with its run, so an entry whose run ended stays open, says
+  so, and offers only "this was fine". The badge counts memories and open entries
+  together (`inbox.count`). The summary is built in the server from the tripwire,
+  the host and where the host first appeared; it holds no text from the page that
+  caused it. The push carries that summary.
+- **"This was fine" releases through the gate, and "stop the run" does not.**
+  `Gate.ReleaseHold(principal, host)` ends the hold on the run and on subagents it
+  started, and marks the host known to every computer. It does not clear the run's
+  "acted while held" mark, so hosts the run reached on its own still do not become
+  known at its end: only the answered host does. A known host is no longer
+  Followed: `tripwire` skips a watched host the user answered. "Stop the run" is
+  `runs.abort`; the hold ends at `ObserveRunEnd`, and no host is made known. A
+  stop for a run that already ended is 409 and leaves the entry open: there is no
+  third "dismiss" answer, and "this was fine" on such an entry still teaches the
+  host. Checkpoint offers come with P4b-13.
+- **Marks are kept 30 days.** A daily sweep started with the server
+  (`watchMarkPruning`) deletes marks older than that; chains read only the marks of
+  a run in progress and the watched set of a session.
+- **Counts come from the audit log.** `tripwire`, `tripwire_fine` and
+  `tripwire_stop` rows are written in the same transaction as the entry or its
+  status; `GET /api/tripwires/counts` groups them by tripwire. Settings, Security
+  (P4b-10) shows them.
 - **`outbound` reads the arguments in one pass.** A `web_fetch` or `web_search`
   argument that is a flat object of plain ASCII strings is read directly;
   anything else (an escape, non-ASCII text, another value type) goes to

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { ApiError } from "@/api/client";
-import { answerFailure } from "@/features/inbox/state";
+import { answerFailure, tripwireFailure } from "@/features/inbox/state";
 
 describe("answerFailure", () => {
   it("tells a stale answer, a credential and an unready memory apart", () => {
@@ -11,5 +11,13 @@ describe("answerFailure", () => {
       "Not accepted: has a credential",
     );
     expect(answerFailure("reject", new ApiError(503, "internal", "x"))).toContain("not ready");
+  });
+});
+
+describe("tripwireFailure", () => {
+  it("says a stop after the run ended apart from a repeated answer", () => {
+    const conflict = new ApiError(409, "conflict", "x");
+    expect(tripwireFailure("stop", conflict)).toContain("already ended");
+    expect(tripwireFailure("fine", conflict)).toContain("already answered");
   });
 });

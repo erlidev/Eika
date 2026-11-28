@@ -6,9 +6,24 @@ import { useEffect } from "react";
 
 import { inboxTopic, payloadOf } from "@/api/events";
 import { queryKeys } from "@/api/keys";
-import { acceptMemory, getInboxCount, listInboxMemories, rejectMemory } from "@/api/routes";
+import {
+  acceptMemory,
+  answerTripwire,
+  getInboxCount,
+  listInboxMemories,
+  listInboxTripwires,
+  rejectMemory,
+} from "@/api/routes";
 import { eventStream } from "@/api/stream";
-import type { EditMemoryRequest, InboxCount, InboxPage, Memory } from "@/api/types";
+import type {
+  EditMemoryRequest,
+  InboxCount,
+  InboxPage,
+  Memory,
+  TripwireEntries,
+  TripwireEntry,
+} from "@/api/types";
+import type { TripwireAnswer } from "@/features/inbox/state";
 import { useStreamSubscription } from "@/api/useStream";
 
 /** listLimit is the most the API returns at once; a longer Inbox shows its newest. */
@@ -30,9 +45,17 @@ export function useInboxMemories(): UseQueryResult<InboxPage> {
   });
 }
 
+/** useInboxTripwires lists the open tripwire entries, newest first. */
+export function useInboxTripwires(): UseQueryResult<TripwireEntries> {
+  return useQuery({
+    queryKey: queryKeys.inboxTripwires(),
+    queryFn: ({ signal }) => listInboxTripwires(signal),
+  });
+}
+
 /**
- * useInboxEvents keeps the badge and the list current: `inbox.count` is the
- * badge, `memory.changed` makes the list stale, and what a dropped or
+ * useInboxEvents keeps the badge and the lists current: `inbox.count` is the
+ * badge, `memory.changed` and `tripwire.changed` make a list stale, and what a dropped or
  * reconnected stream missed is read again, since events are not replayed.
  * The shell calls it once, so the badge is live on every page.
  */
@@ -48,6 +71,9 @@ export function useInboxEvents(): void {
     if (count) client.setQueryData<InboxCount>(queryKeys.inboxCount(), { pending: count.pending });
     if (payloadOf(e, "memory.changed")) {
       void client.invalidateQueries({ queryKey: queryKeys.inboxList() });
+    }
+    if (payloadOf(e, "tripwire.changed")) {
+      void client.invalidateQueries({ queryKey: queryKeys.inboxTripwires() });
     }
   });
   useEffect(() => eventStream().onReopen(() => void refresh()));
@@ -83,5 +109,18 @@ export function useReject(): UseMutationResult<Memory, Error, RejectInput> {
   return useMutation({
     mutationFn: ({ name, contentSha }) => rejectMemory(name, { content_sha: contentSha }),
     onSettled: refresh,
+  });
+}
+
+/** useAnswerTripwire answers an entry; a refusal refreshes the card too. */
+export function useAnswerTripwire(): UseMutationResult<
+  TripwireEntry,
+  Error,
+  { id: string; answer: TripwireAnswer }
+> {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, answer }) => answerTripwire(id, answer),
+    onSettled: () => client.invalidateQueries({ queryKey: queryKeys.inbox() }),
   });
 }

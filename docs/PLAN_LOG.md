@@ -1,5 +1,20 @@
 # Plan log
 
+## P4b-09 — The Inbox entry and its two answers (2026-11-28)
+
+A tripwire that fires (`Options.Tripped`) is now one `tripwire_entries` row (migration
+0041) with a `tripwire` audit row, a `tripwire.changed` event, the badge count and one
+push. The Inbox lists the entries above the memories; each card says in plain words what
+happened, where the host came from and whether the run is still held, with "This was
+fine" (new `Gate.ReleaseHold`: ends the hold and the subagents' holds, makes the host
+known to every computer, and Followed no longer fires for it) and "Stop the run" (aborts
+the run; 409 if it ended). Answers write `tripwire_fine` / `tripwire_stop` audit rows;
+`GET /api/tripwires/counts` gives the per-tripwire fired and fine counts for P4b-10.
+Also the 30-day mark pruning that owner question 3 assigned here, and a fix of
+`WatchedHosts`, which returned a nil-wrapped error. Tests: both answers through the API
+(a gate test covers the hold ending), pruning, one new e2e spec with phone and desktop
+baselines. Choices are in DECISIONS; owner question 6 is new.
+
 ## P4b-08 — The held run (2026-11-28)
 
 Followed, Carried out and Lifted now hold the run (`internal/sentry/hold.go`). A held

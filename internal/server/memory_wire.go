@@ -71,7 +71,8 @@ type inboxResponse struct {
 	NextCursor string       `json:"next_cursor,omitempty"`
 }
 
-// inboxCountResponse is the number of pending memories.
+// inboxCountResponse is the number of entries waiting: pending memories and
+// open tripwire entries.
 type inboxCountResponse struct {
 	Pending int `json:"pending"`
 }

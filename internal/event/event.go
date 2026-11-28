@@ -62,6 +62,8 @@ const (
 	TypeMemoryChanged = "memory.changed"
 	// TypeInboxCount reports how many memories wait for the user's answer.
 	TypeInboxCount = "inbox.count"
+	// TypeTripwireChanged reports that a tripwire entry was made or answered.
+	TypeTripwireChanged = "tripwire.changed"
 	// TypeSkillsChanged reports that a skill was installed, enabled,
 	// disabled or deleted.
 	TypeSkillsChanged = "skills.changed"
@@ -69,7 +71,7 @@ const (
 	TypeBusDropped = "bus.dropped"
 )
 
-// TopicInbox carries memory.changed and inbox.count. A client subscribes to
+// TopicInbox carries memory.changed, tripwire.changed and inbox.count. A client subscribes to
 // it for the Inbox badge and to know when to refetch a memory.
 const TopicInbox = "inbox"
 

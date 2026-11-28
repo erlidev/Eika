@@ -172,3 +172,66 @@ test.describe("on a phone", () => {
     await expectShot(eika, "inbox-phone-edit");
   });
 });
+
+test.describe("tripwire entries", () => {
+  const entry = (eika: EikaDriver, id: string) => {
+    const found = eika.mock.world.tripwires.find((t) => t.id === id);
+    if (found === undefined) throw new Error(`no entry ${id}`);
+    return found;
+  };
+
+  test("a held run's card comes first, says what happened, and the badge counts it", async ({
+    open,
+    expectShot,
+  }) => {
+    const eika = await open({ scenario: "inbox-tripwires" });
+    await expect(eika.page.getByRole("article")).toHaveCount(5);
+    await expect(badge(eika)).toContainText("5 unanswered");
+    const held = card(eika, "A suspect page's destination was followed");
+    await expect(held).toContainText("collect.example.net");
+    await expect(held).toContainText("The run is held");
+    await expect(held.getByRole("button", { name: "Stop the run" })).toBeVisible();
+    // A run that is over cannot be stopped; the entry can still be answered.
+    const ended = card(eika, "A large amount of data was sent out");
+    await expect(ended).toContainText("The run has ended");
+    await expect(ended.getByRole("button", { name: "Stop the run" })).toHaveCount(0);
+    await expectShot(eika, "inbox-tripwires-desktop");
+  });
+
+  test("this was fine and stop the run each close one card", async ({ open }) => {
+    const eika = await open({ scenario: "inbox-tripwires" });
+    await card(eika, "A large amount of data was sent out")
+      .getByRole("button", { name: "This was fine" })
+      .click();
+    await expect(eika.page.getByRole("article")).toHaveCount(4);
+    expect(entry(eika, "tw-drained").status).toBe("fine");
+    await expect(badge(eika)).toContainText("4 unanswered");
+
+    await card(eika, "A suspect page's destination was followed")
+      .getByRole("button", { name: "Stop the run" })
+      .click();
+    await expect(eika.page.getByRole("article")).toHaveCount(3);
+    expect(entry(eika, "tw-held")).toMatchObject({ status: "stopped", running: false });
+  });
+
+  test("a stop after the run ended is said plainly and the card is read again", async ({
+    open,
+  }) => {
+    const eika = await open({ scenario: "inbox-tripwires" });
+    const held = card(eika, "A suspect page's destination was followed");
+    entry(eika, "tw-held").running = false;
+    await held.getByRole("button", { name: "Stop the run" }).click();
+    await expect(held.getByRole("alert")).toContainText("already ended");
+    await expect(held.getByRole("button", { name: "Stop the run" })).toHaveCount(0);
+    expect(entry(eika, "tw-held").status).toBe("open");
+  });
+
+  test.describe("on a phone", () => {
+    test.use({ hasTouch: true, isMobile: true });
+
+    test("the cards fit", async ({ open, expectShot }) => {
+      const eika = await open({ scenario: "inbox-tripwires", viewport: phone });
+      await expectShot(eika, "inbox-tripwires-phone");
+    });
+  });
+});

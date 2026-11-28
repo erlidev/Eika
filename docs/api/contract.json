@@ -575,6 +575,38 @@
         ]
       }
     },
+    "GET /api/inbox/tripwires": {
+      "status": 200,
+      "response": {
+        "object": {
+          "entries": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "answered_at": "string",
+                  "at": "string",
+                  "held": "boolean",
+                  "host": "string",
+                  "id": "string",
+                  "run_id": "string",
+                  "running": "boolean",
+                  "session_id": "string",
+                  "source": "string",
+                  "status": "string",
+                  "summary": "string",
+                  "tripwire": "string"
+                },
+                "optional": [
+                  "answered_at",
+                  "host",
+                  "source"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
     "GET /api/inference": {
       "status": 200,
       "response": {
@@ -3513,6 +3545,24 @@
         }
       }
     },
+    "GET /api/tripwires/counts": {
+      "status": 200,
+      "response": {
+        "object": {
+          "counts": {
+            "nullable": {
+              "array": {
+                "object": {
+                  "fine": "number",
+                  "fired": "number",
+                  "tripwire": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "GET /api/trusted-sources": {
       "status": 200,
       "response": {
@@ -4179,6 +4229,54 @@
         "optional": [
           "archive_reason",
           "screen"
+        ]
+      }
+    },
+    "POST /api/inbox/tripwires/{id}/fine": {
+      "status": 200,
+      "response": {
+        "object": {
+          "answered_at": "string",
+          "at": "string",
+          "held": "boolean",
+          "host": "string",
+          "id": "string",
+          "run_id": "string",
+          "running": "boolean",
+          "session_id": "string",
+          "source": "string",
+          "status": "string",
+          "summary": "string",
+          "tripwire": "string"
+        },
+        "optional": [
+          "answered_at",
+          "host",
+          "source"
+        ]
+      }
+    },
+    "POST /api/inbox/tripwires/{id}/stop": {
+      "status": 200,
+      "response": {
+        "object": {
+          "answered_at": "string",
+          "at": "string",
+          "held": "boolean",
+          "host": "string",
+          "id": "string",
+          "run_id": "string",
+          "running": "boolean",
+          "session_id": "string",
+          "source": "string",
+          "status": "string",
+          "summary": "string",
+          "tripwire": "string"
+        },
+        "optional": [
+          "answered_at",
+          "host",
+          "source"
         ]
       }
     },
@@ -6277,6 +6375,12 @@
         "details",
         "removed"
       ]
+    },
+    "tripwire.changed": {
+      "object": {
+        "id": "string",
+        "status": "string"
+      }
     },
     "turn.end": {
       "object": {

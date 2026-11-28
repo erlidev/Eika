@@ -2,6 +2,7 @@ package sentry
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 	"strings"
 	"sync"
@@ -193,4 +194,27 @@ func (g *gate) heldConnection(ctx context.Context, a Action) (Verdict, error) {
 		return Verdict{Decision: Allow}, err
 	}
 	return Verdict{Decision: Deny, Reason: tripReason, Detail: "held run"}, nil
+}
+
+// ReleaseHold ends a run's hold and makes the destination known (the answer
+// "this was fine"). The run stays marked as having acted while held, so the
+// hosts it reached do not become known at its end: only the answered host does.
+func (g *gate) ReleaseHold(ctx context.Context, p Principal, host string) error {
+	h := &g.holds
+	h.mu.Lock()
+	delete(h.runs, p.Run)
+	for child, parent := range h.inherit {
+		if parent == p.Run {
+			delete(h.inherit, child)
+		}
+	}
+	h.mu.Unlock()
+	host = EgressHost(host)
+	if host == "" || g.Destinations == nil {
+		return nil
+	}
+	if err := g.Destinations.MarkKnown(ctx, "", host, "this was fine"); err != nil {
+		return fmt.Errorf("sentry: mark answered host known: %w", err)
+	}
+	return nil
 }

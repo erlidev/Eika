@@ -37,14 +37,30 @@ func (s *Server) publishMemoryChange(ctx context.Context, name, state string) {
 	if e, err := event.New(event.TypeMemoryChanged, event.TopicInbox, event.MemoryChanged{Name: name, State: state}); err == nil {
 		s.deps.Bus.Emit(ctx, e)
 	}
-	n, err := s.deps.Store.CountMemories(ctx, "pending")
+	s.publishInboxCount(ctx)
+}
+
+// publishInboxCount emits inbox.count: what waits now, memories and tripwire
+// entries together. A count that cannot be read is logged and skipped.
+func (s *Server) publishInboxCount(ctx context.Context) {
+	n, err := s.inboxTotal(ctx)
 	if err != nil {
-		s.log.Warn("count pending memories for event", "error", err)
+		s.log.Warn("count inbox for event", "error", err)
 		return
 	}
 	if e, err := event.New(event.TypeInboxCount, event.TopicInbox, event.InboxCount{Pending: n}); err == nil {
 		s.deps.Bus.Emit(ctx, e)
 	}
+}
+
+// inboxTotal is what the badge shows: pending memories and open tripwire entries.
+func (s *Server) inboxTotal(ctx context.Context) (int, error) {
+	n, err := s.pendingCount(ctx)
+	if err != nil {
+		return 0, err
+	}
+	t, err := s.deps.Store.CountOpenTripwireEntries(ctx)
+	return n + t, err
 }
 
 func (s *Server) pendingCount(ctx context.Context) (int, error) {
@@ -56,7 +72,7 @@ func (s *Server) handleInboxCount(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	n, err := s.pendingCount(r.Context())
+	n, err := s.inboxTotal(r.Context())
 	if err != nil {
 		s.fail(w, r, err)
 		return

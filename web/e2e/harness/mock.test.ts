@@ -29,6 +29,7 @@ import type {
 const unmocked: Record<string, string> = {
   "GET /api/sessions/{id}/path": "the transcript reads the outline instead",
   "GET /api/events": "a WebSocket, which install routes itself",
+  "GET /api/tripwires/counts": "Settings, Security shows the counts from P4b-10",
   "GET /api/inference": "the Activity page that reads the queue arrives in phase 3",
 };
 

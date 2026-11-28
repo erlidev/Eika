@@ -1600,7 +1600,8 @@ answer.
 
 ### `GET /api/inbox/count`
 
-Returns `{pending: integer}` (200): the memories in state `pending`.
+Returns `{pending: integer}` (200): what waits for an answer, the memories in
+state `pending` plus the open tripwire entries.
 
 ### `GET /api/inbox/memories`
 
@@ -1627,6 +1628,52 @@ are 409. To change a pending memory without accepting it, use `PATCH`.
 Body `{content_sha: string, reason?: string}`; a reason is 1 to 200 characters
 and defaults to `rejected by the user`. Archives the pending memory, keeping its
 screen verdict, and returns it (200). The file stays in git. Errors as accept.
+
+### Tripwire entries
+
+A tripwire that fires (`docs/design/sentry.md`, section 11) makes one entry,
+an audit row (`tripwire`) and one push. The entry is `open` until answered; an
+unanswered hold ends with its run and the entry stays. These routes need no
+memory recovery. An entry is:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `id` | string | The entry. |
+| `at` | string | When the tripwire fired, RFC 3339. |
+| `tripwire` | string | `followed`, `carried_out`, `lifted`, `drained` or `blocked_often`. |
+| `held` | boolean | The run was held (the first three). |
+| `host` | string, optional | The destination, when it has one. |
+| `source` | string, optional | Where the host first appeared in the session: `user`, `search`, `content` or `model`. |
+| `summary` | string | What happened, in plain words. |
+| `session_id`, `run_id` | string | The run it concerns. |
+| `running` | boolean | The run is still going, so "stop the run" can work. Always false once answered. |
+| `status` | string | `open`, `fine` or `stopped`. |
+| `answered_at` | string, optional | When it was answered. |
+
+### `GET /api/inbox/tripwires`
+
+Returns `{entries}` (200): the open entries, newest first, at most 50.
+
+### `POST /api/inbox/tripwires/{id}/fine`
+
+"This was fine". Ends the hold on the run (and on the subagents it started),
+makes the host known to every computer so the same chain does not fire again,
+and closes the entry; a run that acted while held still does not make the hosts
+it reached known. No body. Returns the entry (200). 404 for an unknown id, 409
+for an entry already answered.
+
+### `POST /api/inbox/tripwires/{id}/stop`
+
+"Stop the run". Aborts the run and closes the entry as `stopped`. No body.
+Returns the entry (200). 404 for an unknown id; 409 for an entry already
+answered, or for a run that already ended (the entry stays open, so "this was
+fine" can still answer it).
+
+### `GET /api/tripwires/counts`
+
+Returns `{counts: [{tripwire, fired, fine}]}` (200), read from the audit log: for
+each tripwire that has fired, how often it did and how often the answer was
+"this was fine". Settings, Security shows them beside each switch.
 
 ## User instructions
 

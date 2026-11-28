@@ -63,6 +63,8 @@ import type {
   InboxCount,
   InboxListQuery,
   InboxPage,
+  TripwireEntries,
+  TripwireEntry,
   Memory,
   MemoryListQuery,
   MemoryPage,
@@ -631,6 +633,18 @@ export function rejectMemory(name: string, input: RejectMemoryRequest): Promise<
   return request<Memory>(`/api/inbox/memories/${encodeURIComponent(name)}/reject`, {
     method: "POST",
     body: input,
+  });
+}
+
+/** listInboxTripwires lists the tripwire entries nobody has answered, newest first. */
+export function listInboxTripwires(signal?: AbortSignal): Promise<TripwireEntries> {
+  return request<TripwireEntries>("/api/inbox/tripwires", { signal });
+}
+
+/** answerTripwire answers an entry: "fine" ends the hold, "stop" aborts the run. 409: answered already, or the run is over. */
+export function answerTripwire(id: string, answer: "fine" | "stop"): Promise<TripwireEntry> {
+  return request<TripwireEntry>(`/api/inbox/tripwires/${encodeURIComponent(id)}/${answer}`, {
+    method: "POST",
   });
 }
 

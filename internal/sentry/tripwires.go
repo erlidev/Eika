@@ -69,7 +69,7 @@ func (g *gate) tripwire(ctx context.Context, a Action, sink fetchSink, carried b
 	if p.Run == "" || sink.host == "" {
 		return Verdict{Decision: Allow}
 	}
-	watched := g.isWatched(p.Session, sink.host)
+	watched := g.isWatched(p.Session, sink.host) && !g.answeredFine(ctx, sink.host)
 	if !watched && !sink.fanOut && (!carried || !sink.newSink) {
 		return Verdict{Decision: Allow}
 	}
@@ -138,4 +138,15 @@ func (g *gate) blockedOften(ctx context.Context, p Principal, key string) {
 	if s.On(trip.BlockedOften) && n >= s.BlockedLimit {
 		g.fired(ctx, string(trip.BlockedOften), p, key, "", false)
 	}
+}
+
+// answeredFine reports whether the user answered "this was fine" for a host
+// (it is known to every computer), so Followed does not fire for it again. A
+// failed read says no: the tripwire fires.
+func (g *gate) answeredFine(ctx context.Context, host string) bool {
+	if g.Destinations == nil {
+		return false
+	}
+	known, err := g.Destinations.KnownHost(ctx, "", host)
+	return err == nil && known
 }
