@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/erlidev/eika/internal/sentry/trip"
 )
 
 type benchAudit struct{}
@@ -28,7 +30,7 @@ func BenchmarkDecide(b *testing.B) {
 	cases = append(cases, struct {
 		name   string
 		action Action
-	}{"fetch_private", Action{Kind: KindTool, Name: "web_fetch", Principal: Principal{Session: "s"},
+	}{"fetch_private", Action{Kind: KindTool, Name: "web_fetch", Principal: Principal{Session: "s", Run: "r", Computer: "c"},
 		Args: benchArgs("url", "https://example.com/?q=", size)}})
 	for _, tc := range cases {
 		if len(tc.action.Args) != size {
@@ -40,7 +42,7 @@ func BenchmarkDecide(b *testing.B) {
 				name = tc.name + "/halted"
 			}
 			b.Run(name, func(b *testing.B) {
-				g := New(Options{Audit: benchAudit{}, Canary: func() string { return canary }, Halter: func(context.Context, string) error { return nil }}).(*gate)
+				g := New(Options{Audit: benchAudit{}, Canary: func() string { return canary }, Tripwires: func(context.Context) (trip.Settings, error) { return benchTrip, nil }, Halter: func(context.Context, string) error { return nil }}).(*gate)
 				g.halt.set(HaltState{Halted: halted})
 				if tc.action.Principal.Session != "" {
 					g.Marks = benchMarks{}
@@ -61,6 +63,8 @@ func BenchmarkDecide(b *testing.B) {
 		}
 	}
 }
+
+var benchTrip = trip.Settings{Followed: true, CarriedOut: true, Lifted: true, Drained: true, BlockedOften: true, BlockedLimit: 10}
 
 type benchMarks struct{}
 

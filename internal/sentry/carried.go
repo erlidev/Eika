@@ -326,17 +326,16 @@ func (g *gate) notePrivate(session, text string) {
 }
 
 // markCarried records a carried mark when an allowed outbound call's arguments
-// hold private text. Like every mark it changes no verdict.
-func (g *gate) markCarried(ctx context.Context, a Action, args []string) {
-	if g.Marks == nil {
-		return
-	}
-	if len(args) == 0 || !g.private.carries(a.Principal.Session, args) {
-		return
+// hold private text, and reports whether they do. Like every mark it changes
+// no verdict; the tripwires read it.
+func (g *gate) markCarried(ctx context.Context, a Action, args []string) bool {
+	if g.Marks == nil || len(args) == 0 || !g.private.carries(a.Principal.Session, args) {
+		return false
 	}
 	m := Mark{Session: a.Principal.Session, Run: a.Principal.Run, Computer: a.Principal.Computer,
 		Kind: MarkCarried, SourceName: a.Name, Key: a.Key}
 	if err := g.mark(ctx, m); err != nil {
 		g.Log.Error("record carried", "error", err)
 	}
+	return true
 }

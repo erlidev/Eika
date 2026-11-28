@@ -202,6 +202,7 @@ func New(cfg config.Config, log *slog.Logger, deps Deps, opts Options) *Server {
 		o.WatchThreshold = s.watchThreshold
 		o.SensitiveList = s.sensitiveList
 		o.SinkLimits = s.sinkLimits
+		o.Tripwires = s.tripwires
 		o.GuardChanged = func(up bool) {
 			if s.notifications != nil {
 				message := "The guard is unavailable. Untrusted content cannot be screened."

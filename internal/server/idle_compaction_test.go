@@ -78,6 +78,7 @@ func TestScreenSettingValidation(t *testing.T) {
 		{settingWatchThreshold, "0.5", true}, {settingWatchThreshold, "0", false},
 		{settingSensitiveList, `["\\.env"]`, true}, {settingSensitiveList, `["("]`, false}, {settingSensitiveList, `"x"`, false},
 		{settingSinkLimits, `{"fan_out_urls":8}`, true}, {settingSinkLimits, `{"upload_ratio":0}`, false},
+		{settingTripwires, `{"followed":true}`, true}, {settingTripwires, `{"blocked_limit":0}`, false},
 	} {
 		err := s.validateSetting(context.Background(), tc.key, []byte(tc.value))
 		if (err == nil) != tc.valid {

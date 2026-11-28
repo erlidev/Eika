@@ -16,6 +16,7 @@ import (
 	"github.com/erlidev/eika/internal/inference"
 	"github.com/erlidev/eika/internal/search"
 	"github.com/erlidev/eika/internal/sentry"
+	"github.com/erlidev/eika/internal/sentry/trip"
 	"github.com/erlidev/eika/internal/store"
 	"github.com/erlidev/eika/internal/subagent"
 )
@@ -39,6 +40,9 @@ const (
 	settingSensitiveList = "sensitive_list"
 	// settingSinkLimits holds the numbers of the upload and fan-out marks.
 	settingSinkLimits = "sink_limits"
+	// settingTripwires holds each tripwire's switch and its numbers. Every
+	// tripwire is off until it says otherwise.
+	settingTripwires = "tripwires"
 	// settingSandboxImage is the image the home computer's container is
 	// created from. A container that exists keeps the image it was created
 	// from.
@@ -296,6 +300,10 @@ func (s *Server) validateSetting(ctx context.Context, key string, value json.Raw
 		}
 	case settingSinkLimits:
 		if _, err := sentry.ParseSinkLimits(value); err != nil {
+			return invalidf("%s: %v", key, err)
+		}
+	case settingTripwires:
+		if _, err := trip.Parse(value); err != nil {
 			return invalidf("%s: %v", key, err)
 		}
 	case settingSensitiveList:
@@ -594,6 +602,20 @@ func (s *Server) sinkLimits(ctx context.Context) (sentry.SinkLimits, error) {
 		}
 	}
 	return sentry.DefaultSinkLimits, nil
+}
+
+// tripwires is the stored tripwires setting, else every tripwire off.
+func (s *Server) tripwires(ctx context.Context) (trip.Settings, error) {
+	rows, err := s.deps.Store.Settings(ctx)
+	if err != nil {
+		return trip.Settings{}, err
+	}
+	for _, row := range rows {
+		if row.Key == settingTripwires && string(row.Value) != "null" {
+			return trip.Parse(row.Value)
+		}
+	}
+	return trip.Settings{BlockedLimit: trip.DefaultBlockedLimit}, nil
 }
 
 func parseScreenSettings(rows []store.Setting, defaultThreshold float64) (float64, bool, error) {

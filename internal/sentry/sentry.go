@@ -15,6 +15,8 @@ import (
 	"net/netip"
 	"sync"
 	"time"
+
+	"github.com/erlidev/eika/internal/sentry/trip"
 )
 
 // Gate is what Core calls.
@@ -199,6 +201,9 @@ type Options struct {
 	// SinkLimits returns the numbers of the upload and fan-out marks (the
 	// `sink_limits` setting). Nil means DefaultSinkLimits.
 	SinkLimits func(context.Context) (SinkLimits, error)
+	// Tripwires returns the per-tripwire switches and numbers (the `tripwires`
+	// setting). Nil means every tripwire is off.
+	Tripwires func(context.Context) (trip.Settings, error)
 	// ScreenSettings returns the current threshold and whether screening is required.
 	ScreenSettings func(context.Context) (float64, bool, error)
 	// MemoryThreshold returns the score at or over which a memory write goes
@@ -237,6 +242,12 @@ type gate struct {
 	// egress counts each running run's connections (egress_counts.go).
 	egressMu sync.Mutex
 	egress   map[string]*runEgress
+
+	// trip joins each run's marks into tripwire chains (tripwires.go).
+	trip trip.Engine
+	// watchedHosts is the hosts each session's ingest watched, in memory.
+	watchedMu    sync.Mutex
+	watchedHosts map[string]map[string]struct{}
 }
 
 func (g *gate) Decide(ctx context.Context, a Action) (Verdict, error) {
@@ -276,8 +287,9 @@ func (g *gate) Decide(ctx context.Context, a Action) (Verdict, error) {
 		v = g.policy(args)
 		if v.Decision == Allow {
 			g.markSensitive(ctx, a)
-			g.markCarried(ctx, a, args)
-			g.markFetchSink(ctx, a, args)
+			carried := g.markCarried(ctx, a, args)
+			sink := g.markFetchSink(ctx, a, args)
+			v = g.tripwire(ctx, a, sink, carried)
 		}
 	}
 	if v.Decision == Allow {

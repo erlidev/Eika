@@ -41,6 +41,9 @@ var boundaries = []boundary{
 	{from: "internal/sentry", to: "internal/server"},
 	{from: "internal/sentry", to: "internal/agent"},
 	{from: "internal/sentry", to: "internal/computer"},
+	// The chain engine is pure logic over marks: the gate feeds it and acts on
+	// its answer, so it needs neither the store nor the gate that uses it.
+	{from: "internal/sentry/trip", to: "internal/store"},
 	// The skill format is read before anything is stored or run, so it
 	// depends on no part of Core that does either.
 	{from: "internal/skill", to: "internal/server"},

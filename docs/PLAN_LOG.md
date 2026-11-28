@@ -1,5 +1,14 @@
 # Plan log
 
+## P4b-07 — Chain engine, Followed and Carried out (2026-11-28)
+
+`internal/sentry/trip` holds each run's marks in memory and answers the chain questions
+(all five chains, tested in the package); the gate feeds it every mark and watches hosts
+per session. `Decide` stops a `web_fetch` that completes Followed or Carried out with
+`Blocked: this is not available right now`. The `tripwires` setting has a switch per
+tripwire, off in a deployment. No hold yet (P4b-08). Bench stays under 1 ms. Choices are
+in DECISIONS.
+
 ## P4b-06 — Sink marks (2026-11-28)
 
 `new-sink`, `told-sink`, `upload` and `fan-out` are recorded (`internal/sentry/sinks.go`):

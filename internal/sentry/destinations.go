@@ -102,6 +102,7 @@ func (g *gate) Observe(ctx context.Context, o Observation) {
 		g.markUpload(ctx, o)
 		return
 	case ObserveRunEnd:
+		g.trip.End(o.Run)
 		g.endRun(ctx, o.Run)
 		return
 	case ObservePrivateRead:

@@ -3063,3 +3063,31 @@ refuses while a run is active. There is no run-now endpoint in this phase.
   the bench is unaffected; it needs the report's session. The numbers are one
   setting, `sink_limits` (`upload_bytes` 1 MiB, `upload_ratio_bytes` 64 KiB,
   `upload_ratio` 10, `fan_out_urls` 16), with no UI control until P4b-10.
+- **The chain engine keeps marks in memory, per run; a chain joins on the call.**
+  `internal/sentry/trip` holds at most 512 marks for each of 256 runs, fed by every
+  mark the gate writes, and dropped at `ObserveRunEnd`. A chain "on one call" joins
+  on the call's key: Followed is a `watched` mark on the call (the gate adds it
+  when the fetch's host is in the session's watched set), Carried out is `carried`
+  and `new-sink` on the call. `new-sink` is added for the call even when the
+  once-per-host row was written earlier, so the second fetch to a new host still
+  completes the chain. Lifted needs a `sensitive-read` on the same computer
+  before the call's `told-sink`. Drained needs `upload` or `fan-out` and no
+  `watched`, `hidden`, `sensitive-read` or `carried` mark anywhere in the run
+  ("no other mark" read as: no source or access mark, since those chains tell the
+  stronger story). All five are in the engine; only Followed and Carried out are
+  called from `Decide`. Lifted (at the proxy), Drained and Blocked often (counted
+  by `Engine.Blocked`) are P4b-08's to call.
+- **Watched hosts are a per-session in-memory set, so a restart forgets them.**
+  Ingest adds each watched host to the session's set (2,048 hosts, 64 sessions);
+  `Followed` reads it with one lookup, which keeps `Decide` under 1 ms. The
+  `marks` rows stay the record. A subagent does not inherit its parent's set.
+  A session that outlives a restart loses its watched hosts: a run does not
+  survive a restart (owner question 5), so only a later run of the same session
+  is affected, and the miss is on the quiet side.
+- **`tripwires` is one setting; absent means all off.** It holds a switch per
+  tripwire (`followed`, `carried_out`, `lifted`, `drained`, `blocked_often`) and
+  `blocked_limit` (10). `Options.Tripwires` nil is also all off, so tests turn
+  them on and a deployment starts quiet until P4b-15. A chain that completes
+  returns `Deny` with `Blocked: this is not available right now` and the audit
+  detail `tripwire <name>`; the hold, the Inbox entry and the per-tripwire counts
+  are P4b-08 and P4b-09. A setting that cannot be read lets the call run.

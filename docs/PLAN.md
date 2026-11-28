@@ -630,11 +630,14 @@ phase 11 extends it. See DECISIONS, "Tripwires and checkpoints".
 
 ### Stage B: tripwires and the held run
 
-- [ ] **P4b-07**: `internal/sentry/trip`: the chain engine over marks, the
+- [x] **P4b-07**: `internal/sentry/trip`: the chain engine over marks, the
       per-tripwire switch and numbers, and the Followed and Carried out chains
       for `web_fetch` in `Decide` (blocked with `Blocked: this is not
       available right now`). Carried out's plugin call half is blocked on phase 11.
-- [ ] **P4b-08**: The held run: state per run, outbound `web_fetch` and
+- [ ] **P4b-08**: The held run: state per run (P4b-07 leaves the hold to this item:
+      a chain that completes only denies the call; it also builds the Lifted check
+      at the proxy and fires Drained and Blocked often, whose chains and
+      `Engine.Blocked` count are in `trip` but not yet called from `Decide`), outbound `web_fetch` and
       connections to destinations that are not anchored blocked while held,
       subagents started while held are held, the hold ends with the run. Lifted at
       the proxy, Drained and Blocked often as Inbox entries without a hold.

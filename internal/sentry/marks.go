@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/erlidev/eika/internal/sentry/trip"
 )
 
 // DefaultWatchThreshold is the score at or over which a window's destinations
@@ -126,6 +128,7 @@ func (g *gate) mark(ctx context.Context, m Mark) error {
 	if m.At.IsZero() {
 		m.At = time.Now().UTC()
 	}
+	g.trip.Add(m.Run, trip.Mark{Kind: trip.Kind(m.Kind), Call: m.Key, Computer: m.Computer})
 	if err := g.Marks.AppendMark(ctx, m); err != nil {
 		return fmt.Errorf("sentry: record mark: %w", err)
 	}
@@ -134,5 +137,8 @@ func (g *gate) mark(ctx context.Context, m Mark) error {
 
 // sourceMark writes one mark of a segment's source.
 func (g *gate) sourceMark(ctx context.Context, src Source, kind MarkKind, value string, score float64) error {
+	if kind == MarkWatched {
+		g.noteWatched(src.Session, value)
+	}
 	return g.mark(ctx, Mark{Session: src.Session, Run: src.Run, Kind: kind, Value: value, SourceName: src.Name, Key: src.Key, Score: score})
 }

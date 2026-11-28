@@ -91,8 +91,8 @@ func (g *gate) markOnce(ctx context.Context, m Mark) {
 // markFetchSink marks the destination of an allowed web_fetch: new-sink when it
 // is not anchored, and fan-out when the run has fetched more different URLs
 // than the limit on a host only content named. A URL that does not parse is
-// not marked.
-func (g *gate) markFetchSink(ctx context.Context, a Action, args []string) {
+// not marked. The result tells the tripwires what this one call reached.
+func (g *gate) markFetchSink(ctx context.Context, a Action, args []string) (sink fetchSink) {
 	p := a.Principal
 	if g.Marks == nil || p.Run == "" || a.Name != "web_fetch" || len(args) == 0 {
 		return
@@ -105,6 +105,7 @@ func (g *gate) markFetchSink(ctx context.Context, a Action, args []string) {
 	if host == "" {
 		return
 	}
+	sink.host = host
 	mk := func(kind MarkKind) Mark {
 		return Mark{Session: p.Session, Run: p.Run, Computer: p.Computer, Kind: kind, Value: host, SourceName: a.Name, Key: a.Key}
 	}
@@ -114,6 +115,7 @@ func (g *gate) markFetchSink(ctx context.Context, a Action, args []string) {
 		return
 	}
 	if !anchored {
+		sink.newSink = true
 		g.markOnce(ctx, mk(MarkNewSink))
 	}
 	if g.Destinations == nil {
@@ -136,6 +138,13 @@ func (g *gate) markFetchSink(ctx context.Context, a Action, args []string) {
 	if g.fetchedURLs(p.Run, p.Computer, host, u.String(), limits.FanOutURLs) > limits.FanOutURLs {
 		g.markOnce(ctx, mk(MarkFanOut))
 	}
+	return
+}
+
+// fetchSink is what markFetchSink learned about a fetch's destination.
+type fetchSink struct {
+	host    string
+	newSink bool // the host is not anchored, whether or not the mark was written now
 }
 
 // markConnectionSink marks an allowed connection's host when it is not
