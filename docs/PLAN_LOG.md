@@ -1,5 +1,17 @@
 # Plan log
 
+## P4b-08 — The held run (2026-11-28)
+
+Followed, Carried out and Lifted now hold the run (`internal/sentry/hold.go`). A held
+run's `web_fetch` and connections to hosts that are not anchored are denied and its
+subagents are held; the hold ends at `ObserveRunEnd`, which also no longer makes the
+hosts a held run reached known. Lifted is checked at the proxy's `Decide`; Drained
+and Blocked often tell Core without a hold. All five reach Core through
+`Options.Tripped`, which P4b-09 turns into the Inbox entry. Choices are in DECISIONS.
+Also a speed pass on `Decide`: `fetch_private` in `make bench-sentry` went from 0.97 ms to
+0.33 ms (one JSON pass, no wasted decode copies); the limit and the benchmark are
+unchanged.
+
 ## P4b-07 — Chain engine, Followed and Carried out (2026-11-28)
 
 `internal/sentry/trip` holds each run's marks in memory and answers the chain questions

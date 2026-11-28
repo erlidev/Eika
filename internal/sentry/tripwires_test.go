@@ -10,7 +10,7 @@ import (
 	"github.com/erlidev/eika/internal/sentry/trip"
 )
 
-func tripGate(t *testing.T, s *trip.Settings, dest *destLog) sentry.Gate {
+func tripGate(t *testing.T, s *trip.Settings, dest *destLog, opts ...func(*sentry.Options)) sentry.Gate {
 	t.Helper()
 	g := fakeGuard(t)
 	o := sentry.Options{Audit: &records{}, Withheld: &records{}, Marks: &markRecords{}, Destinations: dest,
@@ -18,11 +18,18 @@ func tripGate(t *testing.T, s *trip.Settings, dest *destLog) sentry.Gate {
 	if s != nil {
 		o.Tripwires = func(context.Context) (trip.Settings, error) { return *s, nil }
 	}
+	for _, f := range opts {
+		f(&o)
+	}
 	return sentry.New(o)
 }
 
 func tripFetch(g sentry.Gate, key, target string) (sentry.Verdict, error) {
-	return g.Decide(context.Background(), sentry.Action{Key: key, Principal: sentry.Principal{Session: "s1", Run: "r1", Computer: "cx"},
+	return tripFetchIn(g, "r1", key, target)
+}
+
+func tripFetchIn(g sentry.Gate, run, key, target string) (sentry.Verdict, error) {
+	return g.Decide(context.Background(), sentry.Action{Key: key, Principal: sentry.Principal{Session: "s1", Run: run, Computer: "cx"},
 		Kind: sentry.KindTool, Name: "web_fetch", Args: fetchArgs(target)})
 }
 
@@ -49,7 +56,7 @@ func TestFollowedStopsAFetchOfAWatchedHost(t *testing.T) {
 			if tt.want == sentry.Deny && v.Reason != "this is not available right now" {
 				t.Errorf("reason = %q", v.Reason)
 			}
-			if v, err := tripFetch(g, "s1:c3", "https://docs.example.com/"); err != nil || v.Decision != sentry.Allow {
+			if v, err := tripFetchIn(g, "r2", "s1:c3", "https://docs.example.com/"); err != nil || v.Decision != sentry.Allow {
 				t.Fatalf("a host the suspect window did not name: %+v, %v", v, err)
 			}
 		})
@@ -70,7 +77,7 @@ func TestCarriedOutNeedsPrivateTextAndAHostThatIsNotAnchored(t *testing.T) {
 		{"private text to an anchored host", "https://typed.example" + carrying, sentry.Allow},
 		{"a new host without private text", "https://new.example/?q=weather", sentry.Allow},
 	} {
-		if v, err := tripFetch(g, "s1:"+tt.name, tt.url); err != nil || v.Decision != tt.want {
+		if v, err := tripFetchIn(g, "r:"+tt.name, "s1:"+tt.name, tt.url); err != nil || v.Decision != tt.want {
 			t.Errorf("%s: %+v, %v; want %s", tt.name, v, err, tt.want)
 		}
 	}

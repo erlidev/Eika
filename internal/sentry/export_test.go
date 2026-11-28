@@ -12,3 +12,8 @@ func EgressCountOf(g Gate, run, host string) (connections int, sent, received in
 	c := g.(*gate).egressCount(run, host)
 	return c.Connections, c.Sent, c.Received
 }
+
+// OutboundText exposes what a call sends.
+func OutboundText(name, args string) []string {
+	return outbound(Action{Kind: KindTool, Name: name, Args: []byte(args)})
+}

@@ -58,10 +58,11 @@ func (g *gate) tripwires(ctx context.Context) (trip.Settings, error) {
 
 // tripwire asks whether an allowed web_fetch completes a chain: Followed (its
 // host is watched) or Carried out (it carries private text to a host that is
-// not anchored). The settings are read only when a chain could complete, so a
-// plain fetch costs a map lookup. A chain that completes stops the call with
-// a verdict the model cannot learn from; the hold that goes with it is the
-// held run's (P4b-08). An error reading the setting lets the call run and is
+// not anchored), which stop the call and hold the run, or Drained (it is past
+// the fan-out limit with no other mark), which only tells Core. The settings
+// are read only when a chain could complete, so a plain fetch costs a map
+// lookup. A chain that completes stops the call with a verdict the model
+// cannot learn from. An error reading the setting lets the call run and is
 // logged, like a mark that cannot be written.
 func (g *gate) tripwire(ctx context.Context, a Action, sink fetchSink, carried bool) Verdict {
 	p := a.Principal
@@ -69,7 +70,7 @@ func (g *gate) tripwire(ctx context.Context, a Action, sink fetchSink, carried b
 		return Verdict{Decision: Allow}
 	}
 	watched := g.isWatched(p.Session, sink.host)
-	if !watched && (!carried || !sink.newSink) {
+	if !watched && !sink.fanOut && (!carried || !sink.newSink) {
 		return Verdict{Decision: Allow}
 	}
 	if watched {
@@ -78,14 +79,63 @@ func (g *gate) tripwire(ctx context.Context, a Action, sink fetchSink, carried b
 	if sink.newSink {
 		g.trip.Add(p.Run, trip.Mark{Kind: trip.NewSink, Call: a.Key, Computer: p.Computer})
 	}
+	return g.check(ctx, p, a.Key, sink.host)
+}
+
+// connectionTripwire asks whether an allowed connection completes Lifted: it
+// reaches a host only content named, after the run read something sensitive on
+// the same computer. The connection is refused and the run held.
+func (g *gate) connectionTripwire(ctx context.Context, a Action, sink connSink) Verdict {
+	p := a.Principal
+	if !sink.told || p.Run == "" {
+		return Verdict{Decision: Allow}
+	}
+	g.trip.Add(p.Run, trip.Mark{Kind: trip.NewSink, Call: a.Key, Computer: p.Computer})
+	g.trip.Add(p.Run, trip.Mark{Kind: trip.ToldSink, Call: a.Key, Computer: p.Computer})
+	return g.check(ctx, p, a.Key, sink.host)
+}
+
+// check asks the engine which tripwire the call completes and acts on it: a
+// holding one denies the call and holds the run; Drained only reports.
+func (g *gate) check(ctx context.Context, p Principal, key, host string) Verdict {
 	s, err := g.tripwires(ctx)
 	if err != nil {
 		g.Log.Error("read tripwires", "error", err)
 		return Verdict{Decision: Allow}
 	}
-	name, ok := g.trip.Check(s, p.Run, a.Key, p.Computer)
+	name, ok := g.trip.Check(s, p.Run, key, p.Computer)
 	if !ok {
 		return Verdict{Decision: Allow}
 	}
+	if name == trip.Drained {
+		g.fired(ctx, string(name), p, key, host, false)
+		return Verdict{Decision: Allow}
+	}
+	g.fired(ctx, string(name), p, key, host, true)
 	return Verdict{Decision: Deny, Reason: tripReason, Detail: "tripwire " + string(name)}
+}
+
+// drained asks after the fact whether an upload completes Drained: the run
+// sent a lot to a host that is not anchored and has no other mark. It tells
+// Core and holds nothing.
+func (g *gate) drained(ctx context.Context, p Principal, key, host string, kind trip.Kind) {
+	g.trip.Add(p.Run, trip.Mark{Kind: kind, Call: key, Computer: p.Computer})
+	g.check(ctx, p, key, host)
+}
+
+// blockedOften counts a blocked result of a run and tells Core when the count
+// reaches the setting's limit. It holds nothing.
+func (g *gate) blockedOften(ctx context.Context, p Principal, key string) {
+	if p.Run == "" {
+		return
+	}
+	n := g.trip.Blocked(p.Run)
+	s, err := g.tripwires(ctx)
+	if err != nil {
+		g.Log.Error("read tripwires", "error", err)
+		return
+	}
+	if s.On(trip.BlockedOften) && n >= s.BlockedLimit {
+		g.fired(ctx, string(trip.BlockedOften), p, key, "", false)
+	}
 }

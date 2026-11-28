@@ -28,7 +28,7 @@ func invisible(r rune) bool {
 
 // StripInvisible removes the invisible characters from text.
 func StripInvisible(text string) string {
-	if !strings.ContainsFunc(text, invisible) {
+	if isASCII(text) || !strings.ContainsFunc(text, invisible) {
 		return text
 	}
 	return strings.Map(func(r rune) rune {
@@ -37,6 +37,16 @@ func StripInvisible(text string) string {
 		}
 		return r
 	}, text)
+}
+
+// isASCII reports whether text has only ASCII bytes, none of which is invisible.
+func isASCII(text string) bool {
+	for i := 0; i < len(text); i++ {
+		if text[i] >= utf8.RuneSelf {
+			return false
+		}
+	}
+	return true
 }
 
 // StripInvisibleMap is StripInvisible that also returns, for each byte of the

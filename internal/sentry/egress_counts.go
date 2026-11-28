@@ -131,12 +131,14 @@ func (g *gate) egressCount(run, host string) EgressCount {
 
 // endRun drops a finished run's ledger. A host its computer exchanged bytes
 // with becomes known to that computer, so a later run reaching it is not new.
-func (g *gate) endRun(ctx context.Context, run string) {
+// A run that was held made none known: a hijacked run's hosts must not become
+// ordinary because it reached them first.
+func (g *gate) endRun(ctx context.Context, run string, held bool) {
 	g.egressMu.Lock()
 	r := g.egress[run]
 	delete(g.egress, run)
 	g.egressMu.Unlock()
-	if r == nil || g.Destinations == nil || r.computer == "" {
+	if r == nil || held || g.Destinations == nil || r.computer == "" {
 		return
 	}
 	var reached []string

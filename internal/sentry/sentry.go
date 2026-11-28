@@ -204,6 +204,10 @@ type Options struct {
 	// Tripwires returns the per-tripwire switches and numbers (the `tripwires`
 	// setting). Nil means every tripwire is off.
 	Tripwires func(context.Context) (trip.Settings, error)
+	// Tripped receives each tripwire that fires: once for each hold, and once per
+	// run for those that do not hold. Core turns it into the Inbox entry. Nil
+	// drops it.
+	Tripped func(ctx context.Context, t Tripped)
 	// ScreenSettings returns the current threshold and whether screening is required.
 	ScreenSettings func(context.Context) (float64, bool, error)
 	// MemoryThreshold returns the score at or over which a memory write goes
@@ -245,6 +249,8 @@ type gate struct {
 
 	// trip joins each run's marks into tripwire chains (tripwires.go).
 	trip trip.Engine
+	// holds is the held runs (hold.go).
+	holds holds
 	// watchedHosts is the hosts each session's ingest watched, in memory.
 	watchedMu    sync.Mutex
 	watchedHosts map[string]map[string]struct{}
@@ -280,11 +286,23 @@ func (g *gate) Decide(ctx context.Context, a Action) (Verdict, error) {
 			v = Verdict{Decision: Allow}
 		}
 		if v.Decision == Allow {
-			g.markConnectionSink(ctx, a)
+			var err error
+			if v, err = g.heldConnection(ctx, a); err != nil {
+				return Verdict{}, fmt.Errorf("sentry: check held connection: %w", err)
+			}
+		}
+		if v.Decision == Allow {
+			v = g.connectionTripwire(ctx, a, g.markConnectionSink(ctx, a))
 		}
 	default:
 		args := outbound(a)
 		v = g.policy(args)
+		if v.Decision == Allow {
+			var err error
+			if v, err = g.heldFetch(ctx, a, args); err != nil {
+				return Verdict{}, fmt.Errorf("sentry: check held fetch: %w", err)
+			}
+		}
 		if v.Decision == Allow {
 			g.markSensitive(ctx, a)
 			carried := g.markCarried(ctx, a, args)
@@ -299,6 +317,7 @@ func (g *gate) Decide(ctx context.Context, a Action) (Verdict, error) {
 	if v.Decision == Ask {
 		event = EventAsk
 	}
+	g.blockedOften(ctx, a.Principal, a.Key)
 	err := g.Audit.AppendAudit(ctx, AuditEntry{
 		Event: event, Principal: a.Principal, Key: a.Key, Kind: string(a.Kind),
 		Name: a.Name, Reason: v.Reason, Detail: detail(v),

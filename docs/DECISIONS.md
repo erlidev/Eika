@@ -3091,3 +3091,41 @@ refuses while a run is active. There is no run-now endpoint in this phase.
   returns `Deny` with `Blocked: this is not available right now` and the audit
   detail `tripwire <name>`; the hold, the Inbox entry and the per-tripwire counts
   are P4b-08 and P4b-09. A setting that cannot be read lets the call run.
+- **A hold is state in the gate, keyed by run, and a chain that completes starts it.**
+  Followed, Carried out and Lifted deny their call and hold the run (`sentry/hold.go`,
+  in memory like the marks, at most 256 runs). While held, `Decide` denies a
+  `web_fetch` and an allowed connection to a host that is not anchored (the
+  same rule as the sink marks: a fetch is anchored by the user, a search result or a
+  known host; a connection also by the registry list and the computer's history),
+  with the tripwire reason, before any mark is written, and the denial counts toward
+  Blocked often. A URL that does not parse is not anchored. Everything else runs:
+  `bash`, files, memory, `web_search` (it has no destination) and anchored
+  destinations. A failure reading the index while held fails the call (the caller blocks);
+  it does not let it through. Another run of the same session is not held.
+- **A subagent started while its parent's run is held is held while that run is.**
+  `ObserveSubagentStart` names the parent session; if a run of it is held (or it is
+  itself held through its own parent), the child session is held by that run, so a
+  child's later run is too. Its hold ends when the parent's run does. A subagent whose own
+  chain completes holds only its own run.
+- **A run that acted while held makes no host known.** `ObserveRunEnd` skips the
+  `MarkKnown` step for any run that was held or held through its parent, including the
+  hosts it reached before the hold (P4b-03's constraint).
+- **Lifted joins per connection, not per mark row.** The `told-sink` and `new-sink`
+  mark rows are written once per run and host, but the engine gets them for every
+  connection, so a host reached cleanly first and told-after-a-sensitive-read later
+  still completes Lifted. The refused connection is the one that completes it.
+- **Core hears of a tripwire through `Options.Tripped`, once.** One call per hold
+  (a held run that trips again, or is denied again, adds none) and one per run for
+  Drained and Blocked often, which hold nothing and allow what they follow. Blocked
+  often fires when the run's count of denied results reaches `blocked_limit`,
+  counting every deny, ask and refused connection of the run. Drained reads the
+  `upload` mark after an egress report and the `fan-out` mark in `Decide`.
+  P4b-09 turns the callback into the Inbox entry, the push, the audit rows and the
+  counts; until then the server logs it. A held plugin call asks (P4b-11).
+- **`outbound` reads the arguments in one pass.** A `web_fetch` or `web_search`
+  argument that is a flat object of plain ASCII strings is read directly;
+  anything else (an escape, non-ASCII text, another value type) goes to
+  `encoding/json`. It matches `json.Unmarshal` for a struct: keys without regard
+  to case, the last of a repeated key, invalid JSON reads as empty. A test pins this. It
+  took `fetch_private` from 0.97 ms to 0.33 ms in `make bench-sentry`, with
+  one decode pass and no lenient-unescape copy of text that has nothing to decode.

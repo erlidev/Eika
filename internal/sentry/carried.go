@@ -50,7 +50,9 @@ type fingerprints struct {
 // character count of each, so punctuation, line breaks and escapes between words
 // do not matter.
 func words(text string) (ws []string, chars []int) {
-	text = strings.ToLower(text)
+	if lowerable(text) {
+		text = strings.ToLower(text)
+	}
 	start, n := -1, 0
 	flush := func(end int) {
 		if start >= 0 {
@@ -61,12 +63,20 @@ func words(text string) (ws []string, chars []int) {
 	}
 	for i := 0; i < len(text); {
 		c := text[i]
-		r, size := rune(c), 1
-		if c >= utf8.RuneSelf {
-			r, size = utf8.DecodeRuneInString(text[i:])
+		if c < utf8.RuneSelf {
+			if asciiWord[c] {
+				if start < 0 {
+					start = i
+				}
+				n++
+			} else if start >= 0 {
+				flush(i)
+			}
+			i++
+			continue
 		}
-		word := c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c >= utf8.RuneSelf && (unicode.IsLetter(r) || unicode.IsNumber(r))
-		if word {
+		r, size := utf8.DecodeRuneInString(text[i:])
+		if unicode.IsLetter(r) || unicode.IsNumber(r) {
 			if start < 0 {
 				start = i
 			}
@@ -78,6 +88,26 @@ func words(text string) (ws []string, chars []int) {
 	}
 	flush(len(text))
 	return ws, chars
+}
+
+// asciiWord marks the lower-case letters and digits.
+var asciiWord = func() (t [utf8.RuneSelf]bool) {
+	for c := range t {
+		t[c] = c >= 'a' && c <= 'z' || c >= '0' && c <= '9'
+	}
+	return t
+}()
+
+// lowerable reports whether strings.ToLower could change text: it has an
+// upper-case letter or a byte outside ASCII. Text that is already lower-case
+// ASCII is used as it is, without ToLower's copy.
+func lowerable(text string) bool {
+	for i := 0; i < len(text); i++ {
+		if c := text[i]; c >= utf8.RuneSelf || c >= 'A' && c <= 'Z' {
+			return true
+		}
+	}
+	return false
 }
 
 // grams returns the hash of every run of fingerprintWords consecutive words,
@@ -252,7 +282,7 @@ func decodedForms(text string) []string {
 	for depth := 0; depth < maxDecodeDepth && len(queue) > 0; depth++ {
 		var next []string
 		for _, t := range queue {
-			if strings.ContainsAny(t, "%+") {
+			if escaped(t) {
 				if u, err := url.QueryUnescape(t); err == nil && u != t {
 					next = append(next, u)
 				} else if l := lenientUnescape(t); l != t {

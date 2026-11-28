@@ -7,6 +7,8 @@ import (
 	"hash/maphash"
 	"net/url"
 	"strings"
+
+	"github.com/erlidev/eika/internal/sentry/trip"
 )
 
 // The sink marks (docs/design/sentry.md, section 11). Each says where an action
@@ -101,7 +103,7 @@ func (g *gate) markFetchSink(ctx context.Context, a Action, args []string) (sink
 	if err != nil {
 		return
 	}
-	host := EgressHost(u.Hostname())
+	host := fetchHost(args)
 	if host == "" {
 		return
 	}
@@ -136,6 +138,8 @@ func (g *gate) markFetchSink(ctx context.Context, a Action, args []string) (sink
 	}
 	u.Fragment = ""
 	if g.fetchedURLs(p.Run, p.Computer, host, u.String(), limits.FanOutURLs) > limits.FanOutURLs {
+		sink.fanOut = true
+		g.trip.Add(p.Run, trip.Mark{Kind: trip.FanOut, Call: a.Key, Computer: p.Computer})
 		g.markOnce(ctx, mk(MarkFanOut))
 	}
 	return
@@ -145,6 +149,7 @@ func (g *gate) markFetchSink(ctx context.Context, a Action, args []string) (sink
 type fetchSink struct {
 	host    string
 	newSink bool // the host is not anchored, whether or not the mark was written now
+	fanOut  bool // this fetch is past the run's limit of URLs on the host
 }
 
 // markConnectionSink marks an allowed connection's host when it is not
@@ -152,7 +157,7 @@ type fetchSink struct {
 // the one the computer is on; without one nothing is marked. A host that is
 // anchored is never told-sink: a known one was reached before and a page
 // naming it is ordinary.
-func (g *gate) markConnectionSink(ctx context.Context, a Action) {
+func (g *gate) markConnectionSink(ctx context.Context, a Action) (sink connSink) {
 	p := a.Principal
 	if g.Marks == nil || p.Run == "" {
 		return
@@ -169,6 +174,7 @@ func (g *gate) markConnectionSink(ctx context.Context, a Action) {
 	if anchored {
 		return
 	}
+	sink.host = host
 	mk := func(kind MarkKind) Mark {
 		return Mark{Session: p.Session, Run: p.Run, Computer: p.Computer, Kind: kind, Value: host, SourceName: "egress", Key: a.Key}
 	}
@@ -182,8 +188,16 @@ func (g *gate) markConnectionSink(ctx context.Context, a Action) {
 		return
 	}
 	if ok && src == DestContent {
+		sink.told = true
 		g.markOnce(ctx, mk(MarkToldSink))
 	}
+	return
+}
+
+// connSink is what markConnectionSink learned about a connection's host.
+type connSink struct {
+	host string
+	told bool // only content named the host, and it is not anchored
 }
 
 // markUpload marks a host a run's computer has sent a lot to, after each
@@ -215,6 +229,7 @@ func (g *gate) markUpload(ctx context.Context, o Observation) {
 		return
 	}
 	g.markOnce(ctx, Mark{Session: o.Session, Run: o.Run, Computer: o.Computer, Kind: MarkUpload, Value: host, SourceName: "egress"})
+	g.drained(ctx, Principal{Session: o.Session, Run: o.Run, Computer: o.Computer}, "upload "+host, host, trip.Upload)
 }
 
 // urlSeed hashes fetched URLs; the ledger holds hashes, not addresses.

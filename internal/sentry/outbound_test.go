@@ -92,3 +92,27 @@ func TestSensitiveReadMark(t *testing.T) {
 		t.Errorf("mark = %+v, want sensitive-read on run r, computer cx", m)
 	}
 }
+
+// The one-pass reader of the arguments must agree with encoding/json.
+func TestOutboundTextReadsArgumentsLikeJSON(t *testing.T) {
+	tests := []struct{ name, args, want string }{
+		{"plain", `{"url":"https://a.example/x"}`, "https://a.example/x"},
+		{"spaced and other keys", ` { "n" : "1", "url" : "u" } `, "u"},
+		{"key case", `{"URL":"u"}`, "u"},
+		{"last repeated key", `{"url":"a","url":"b"}`, "b"},
+		{"escape", `{"url":"a&b\"c"}`, `a&b"c`},
+		{"non-ASCII", `{"url":"é"}`, "é"},
+		{"other member types", `{"max":5,"url":"u"}`, "u"},
+		{"nested object", `{"o":{"url":"x"},"url":"u"}`, "u"},
+		{"invalid", `{"url":"u"`, ""},
+		{"trailing text", `{"url":"u"} x`, ""},
+		{"no url", `{"q":"u"}`, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := sentry.OutboundText("web_fetch", tt.args); got[0] != tt.want {
+				t.Fatalf("got %q, want %q", got[0], tt.want)
+			}
+		})
+	}
+}

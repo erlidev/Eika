@@ -634,16 +634,20 @@ phase 11 extends it. See DECISIONS, "Tripwires and checkpoints".
       per-tripwire switch and numbers, and the Followed and Carried out chains
       for `web_fetch` in `Decide` (blocked with `Blocked: this is not
       available right now`). Carried out's plugin call half is blocked on phase 11.
-- [ ] **P4b-08**: The held run: state per run (P4b-07 leaves the hold to this item:
+- [x] **P4b-08**: The held run: state per run (P4b-07 leaves the hold to this item:
       a chain that completes only denies the call; it also builds the Lifted check
       at the proxy and fires Drained and Blocked often, whose chains and
       `Engine.Blocked` count are in `trip` but not yet called from `Decide`), outbound `web_fetch` and
       connections to destinations that are not anchored blocked while held,
       subagents started while held are held, the hold ends with the run. Lifted at
       the proxy, Drained and Blocked often as Inbox entries without a hold.
+      Built as `Options.Tripped`; see `PLAN_LOG.md`.
 - [ ] **P4b-09**: The Inbox entry and its two answers ("this was fine", "stop the
       run"), one push, audit rows, and the per-tripwire fired and "fine" counts.
-      "This was fine" ends the hold and makes the destination known.
+      "This was fine" ends the hold and makes the destination known. P4b-08 left the
+      seam: `sentry.Options.Tripped` (the server logs it now) is the entry's source,
+      and the gate has no way to end a hold yet, so this item adds one (a `Gate`
+      method) beside the known-host write.
 - [ ] **P4b-10**: Settings, Security: each tripwire's switch, numbers (including
       the watch threshold and the `sink_limits` numbers) and its two counts. Phone and desktop baselines.
 - [ ] **P4b-11** (**blocked on phase 11**): A held run's plugin calls to

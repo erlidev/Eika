@@ -103,11 +103,14 @@ func (g *gate) Observe(ctx context.Context, o Observation) {
 		return
 	case ObserveRunEnd:
 		g.trip.End(o.Run)
-		g.endRun(ctx, o.Run)
+		g.endRun(ctx, o.Run, g.endHold(o.Run))
 		return
 	case ObservePrivateRead:
 		g.notePrivate(o.Session, o.Text)
 		return
+	}
+	if o.Kind == ObserveSubagentStart {
+		g.holdSubagent(o.Parent, o.Session)
 	}
 	if g.Destinations == nil || o.Session == "" {
 		return

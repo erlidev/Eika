@@ -203,6 +203,10 @@ func New(cfg config.Config, log *slog.Logger, deps Deps, opts Options) *Server {
 		o.SensitiveList = s.sensitiveList
 		o.SinkLimits = s.sinkLimits
 		o.Tripwires = s.tripwires
+		// P4b-09 turns this into the Inbox entry; until then it is logged.
+		o.Tripped = func(_ context.Context, t sentry.Tripped) {
+			log.Warn("tripwire fired", "tripwire", t.Tripwire, "held", t.Held, "session_id", t.Principal.Session, "run_id", t.Principal.Run, "host", t.Host)
+		}
 		o.GuardChanged = func(up bool) {
 			if s.notifications != nil {
 				message := "The guard is unavailable. Untrusted content cannot be screened."
