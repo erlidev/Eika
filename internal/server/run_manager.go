@@ -11,6 +11,7 @@ import (
 	"github.com/erlidev/eika/internal/executor"
 	"github.com/erlidev/eika/internal/inference"
 	"github.com/erlidev/eika/internal/provider"
+	"github.com/erlidev/eika/internal/sentry"
 	"github.com/erlidev/eika/internal/session"
 	"github.com/erlidev/eika/internal/store"
 )
@@ -131,6 +132,7 @@ type runs struct {
 	// delivered them. The next run on the session receives them.
 	pending       map[string]queuedMessages
 	lastImportant time.Time
+	nextSeq       uint64
 }
 
 // activeRun is one execution of the agent loop, from the moment its session
@@ -140,10 +142,12 @@ type runs struct {
 type activeRun struct {
 	sessionID  string
 	computerID string
-	borrowed   map[string]int
-	cancel     context.CancelFunc
-	done       chan struct{}
-	released   chan struct{}
+	// seq orders runs by when they were claimed.
+	seq      uint64
+	borrowed map[string]int
+	cancel   context.CancelFunc
+	done     chan struct{}
+	released chan struct{}
 	// ready closes once the run has its row and loop, or has ended without
 	// them.
 	ready chan struct{}
@@ -459,7 +463,9 @@ func (r *runs) reserve(sessionID, computerID string, work job, cancel context.Ca
 	if _, running := r.bySession[sessionID]; running {
 		return nil, conflictf("session %s already has a run in progress", sessionID)
 	}
+	r.nextSeq++
 	active := &activeRun{
+		seq:             r.nextSeq,
 		sessionID:       sessionID,
 		computerID:      computerID,
 		cancel:          cancel,
@@ -505,6 +511,7 @@ func (r *runs) drive(ctx context.Context, active *activeRun, loaded *agent.Sessi
 		err = loop.Run(ctx, loaded, work.message)
 	}
 	active.end(err)
+	r.server.gate.Observe(context.WithoutCancel(ctx), sentry.Observation{Kind: sentry.ObserveRunEnd, Run: runID})
 	if work.idle {
 		r.releaseIdle(active)
 	}
@@ -725,6 +732,27 @@ func (r *runs) computersInUse() map[string]bool {
 		}
 	}
 	return inUse
+}
+
+// onComputer names the session and run a computer is on now, which is how an
+// egress connection finds its run. Several runs can use one computer (a
+// worker and its parent); the latest claimed wins. Empty when none has a run.
+func (r *runs) onComputer(computerID string) (session, run string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var best *activeRun
+	for _, a := range r.bySession {
+		if a.computerID != computerID && a.borrowed[computerID] == 0 {
+			continue
+		}
+		if a.runID() != "" && (best == nil || a.seq > best.seq) {
+			best = a
+		}
+	}
+	if best == nil {
+		return "", ""
+	}
+	return best.sessionID, best.runID()
 }
 
 // borrowComputer adds a computer to an active run until the caller releases it.

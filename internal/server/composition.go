@@ -90,6 +90,11 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 		proxy = egress.New(egress.Options{Control: liveProxyControl(opts.LiveTest), Policy: func(ctx context.Context, id string) (egress.Policy, error) {
 			return s.EgressPolicy(ctx, id)
 		}, Halted: func() bool { return s.gate.Halted().Halted },
+			Run: func(id string) (string, string) { return s.runs.onComputer(id) },
+			Report: func(r egress.Report) {
+				s.gate.Observe(context.Background(), sentry.Observation{Kind: sentry.ObserveEgress, Session: r.Session, Run: r.Run,
+					Computer: r.Computer, Host: r.Host, Sent: r.Sent, Received: r.Received, Closed: r.Closed})
+			},
 			Decide: func(ctx context.Context, id, host, key, reason string) (bool, error) {
 				v, err := s.gate.Decide(ctx, sentry.Action{Key: key, Principal: sentry.Principal{Computer: id}, Kind: sentry.KindEgress, Name: host, Destination: host, EgressDenial: reason})
 				return v.Decision == sentry.Allow, err

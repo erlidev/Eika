@@ -3003,3 +3003,14 @@ refuses while a run is active. There is no run-now endpoint in this phase.
   `internal/sentry` (not `sentry/seen` as the design's package list says) while
   it shares host extraction with ingest. `Observe` returns no error: a record that
   fails leaves a host unanchored, the safe side.
+- **Egress is counted per run in memory, and "reached" waits for the run's end.**
+  The proxy knows no runs: it asks the server which session and run a computer is
+  on when an allowed connection starts (the latest claimed run using that computer,
+  since a worker and its parent can share one) and reports bytes sent and received
+  per host at each 64 KiB step and at close. Refused connections and connections
+  that never reached the host report nothing; header bytes are not counted. The
+  gate keeps the totals per run and host, capped at 256 runs and 512 hosts per
+  run; a lost report only lowers a count. A host becomes known to a computer only
+  when the run that reached it ends (`ObserveRunEnd`), so within a run it stays new.
+  P4b-08 must skip that step for a run that was held, or a host a hijacked run
+  reached before the hold would be known afterward.

@@ -69,6 +69,12 @@ const (
 	// ObserveSubagentStart is a new subagent session, Session, whose parent
 	// session is Parent.
 	ObserveSubagentStart ObservationKind = "subagent_start"
+	// ObserveEgress is bytes an allowed connection of Computer moved to Host
+	// during Run: Sent and Received are since the last report, and Closed marks
+	// the connection's last.
+	ObserveEgress ObservationKind = "egress"
+	// ObserveRunEnd is Run ending: the hosts its computer reached become known.
+	ObserveRunEnd ObservationKind = "run_end"
 )
 
 // Observation is something that needs no decision. Each kind reads the fields
@@ -78,11 +84,23 @@ type Observation struct {
 	Session string
 	Parent  string
 	Text    string
+
+	Run, Computer, Host string
+	Sent, Received      int64
+	Closed              bool
 }
 
 // Observe records an observation. A failure is logged and changes nothing
 // else: a host that is not recorded is simply not anchored.
 func (g *gate) Observe(ctx context.Context, o Observation) {
+	switch o.Kind {
+	case ObserveEgress:
+		g.countEgress(o)
+		return
+	case ObserveRunEnd:
+		g.endRun(ctx, o.Run)
+		return
+	}
 	if g.Destinations == nil || o.Session == "" {
 		return
 	}

@@ -220,6 +220,10 @@ type gate struct {
 	halt   haltFlag
 	mu     sync.Mutex
 	health string
+
+	// egress counts each running run's connections (egress_counts.go).
+	egressMu sync.Mutex
+	egress   map[string]*runEgress
 }
 
 func (g *gate) Decide(ctx context.Context, a Action) (Verdict, error) {

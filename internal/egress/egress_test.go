@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -257,5 +258,66 @@ func TestHaltEndsOpenTunnels(t *testing.T) {
 	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	if _, err := conn.Read(make([]byte, 1)); err == nil || strings.Contains(err.Error(), "timeout") {
 		t.Errorf("read after halt = %v, want the tunnel closed", err)
+	}
+}
+
+func TestTheProxyReportsAllowedConnectionsWithTheirRun(t *testing.T) {
+	target := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.Copy(io.Discard, r.Body)
+		io.WriteString(w, strings.Repeat("r", 100<<10))
+	}))
+	defer target.Close()
+	var mu sync.Mutex
+	var reports []egress.Report
+	p := egress.New(egress.Options{
+		Policy:  policies{"cx1": {Token: "tok", Mode: egress.ModeAllowlist, Allow: []string{"127.0.0.1"}}}.lookup,
+		Control: anyAddress,
+		Run:     func(string) (string, string) { return "s1", "run1" },
+		Report: func(r egress.Report) {
+			mu.Lock()
+			reports = append(reports, r)
+			mu.Unlock()
+		},
+	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := httptest.NewServer(p)
+	defer srv.Close()
+	defer p.Close()
+
+	client := through(t, target.Client(), srv.URL, "cx1", "tok")
+	resp, err := client.Post(target.URL, "text/plain", strings.NewReader(strings.Repeat("s", 100<<10)))
+	if err != nil {
+		t.Fatalf("post: %v", err)
+	}
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+	client.CloseIdleConnections()
+	// A refused connection reports nothing.
+	if resp, err := through(t, target.Client(), srv.URL, "cx1", "tok").Get("http://example.com/"); err == nil {
+		resp.Body.Close()
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		mu.Lock()
+		var sent, got int64
+		closed := false
+		for _, r := range reports {
+			if r.Run != "run1" || r.Session != "s1" || r.Computer != "cx1" || r.Host != "127.0.0.1" {
+				t.Errorf("report = %+v", r)
+			}
+			sent, got, closed = sent+r.Sent, got+r.Received, closed || r.Closed
+		}
+		n := len(reports)
+		mu.Unlock()
+		if closed && sent >= 100<<10 && got >= 100<<10 {
+			if n < 3 {
+				t.Errorf("%d reports; a connection past the size step reports before it closes", n)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("after %d reports: sent %d, received %d, closed %v", n, sent, got, closed)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }

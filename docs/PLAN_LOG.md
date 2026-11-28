@@ -1,5 +1,17 @@
 # Plan log
 
+## P4b-03 — Egress counting (2026-11-28)
+
+The proxy reports each allowed connection's host and bytes sent and received
+(`egress.Options.Report`, every 64 KiB and at close) with the session and run its
+computer is on (`Options.Run`, answered by `runs.onComputer`). `Gate.Observe`
+(`ObserveEgress`) keeps per-run, per-host totals in memory for P4b-06;
+`ObserveRunEnd`, from `runs.drive`, drops them and marks the hosts reached as known
+to that computer (the "reached in an earlier run" rule of P4b-02). Nothing reads the
+counts yet. P4b-08 must not make hosts known for a held run (DECISIONS). The latest
+claimed run wins when several share a computer (owner question 6). `make check`
+and `make smoke` results are in the commit.
+
 ## P4b-02 — Local destination index (2026-11-28)
 
 `Gate.Observe` exists. Ingest records the hosts in each segment (`search` for a

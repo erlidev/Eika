@@ -6,3 +6,9 @@ import "context"
 func Anchored(ctx context.Context, g Gate, session, computer, host string, egress bool) (bool, error) {
 	return g.(*gate).anchored(ctx, session, computer, host, egress)
 }
+
+// EgressCountOf exposes a run's counts for a host.
+func EgressCountOf(g Gate, run, host string) (connections int, sent, received int64) {
+	c := g.(*gate).egressCount(run, host)
+	return c.Connections, c.Sent, c.Received
+}

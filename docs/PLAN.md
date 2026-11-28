@@ -615,7 +615,7 @@ phase 11 extends it. See DECISIONS, "Tripwires and checkpoints".
       known set (hosts "this was fine" answered, hosts a computer reached in an
       earlier run, the shipped list of package registries and code hosts) and the
       rule for "anchored". Sources `search` and `user` anchor a URL.
-- [ ] **P4b-03**: Egress counting. The proxy reports each connection's host and
+- [x] **P4b-03**: Egress counting. The proxy reports each connection's host and
       bytes sent and received through `Gate.Observe` when it closes or passes a
       size step, with the run its computer is on. This is also the map from a
       connection to a run that Lifted needs.
@@ -1173,3 +1173,6 @@ log. Work that was cut is in `docs/DEFERRED.md`, not here.
   neither should land in this repository by default.
 - **More than one home session** (another person, another persona). The schema
   allows it; nothing else is built.
+6. **Which run does an egress connection belong to when several runs share a
+   computer?** Applied: the latest claimed run on it (P4b-03); a worker and its
+   parent then share one set of counts. Change it if P4b-06 needs the worker alone.

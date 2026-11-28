@@ -132,3 +132,30 @@ func TestDestinationIndexAnchorsBySource(t *testing.T) {
 		t.Error("the child saw a host its parent met after it started")
 	}
 }
+
+func TestEgressCountsJoinTheRunAndLeaveItsHostsKnownAfterIt(t *testing.T) {
+	ctx := context.Background()
+	log := newDestLog()
+	gate := sentry.New(sentry.Options{Audit: &records{}, Threshold: 0.9, Destinations: log})
+	report := func(run, host string, sent, got int64, closed bool) {
+		gate.Observe(ctx, sentry.Observation{Kind: sentry.ObserveEgress, Session: "s", Run: run, Computer: "cx1", Host: host, Sent: sent, Received: got, Closed: closed})
+	}
+	report("r1", "Evil.example.", 70, 0, false)
+	report("r1", "evil.example", 30, 5, true)
+	report("r2", "evil.example", 1, 1, true)
+	if n, sent, got := sentry.EgressCountOf(gate, "r1", "evil.example"); n != 1 || sent != 100 || got != 5 {
+		t.Errorf("r1 counts = %d, %d, %d; the other run's bytes must not join", n, sent, got)
+	}
+
+	// Within the run the host is still new; after it, the computer knows it.
+	if ok, _ := sentry.Anchored(ctx, gate, "s", "cx1", "evil.example", true); ok {
+		t.Error("a host the run is reaching now is anchored")
+	}
+	gate.Observe(ctx, sentry.Observation{Kind: sentry.ObserveRunEnd, Run: "r1"})
+	if ok, _ := sentry.Anchored(ctx, gate, "s", "cx1", "evil.example", true); !ok {
+		t.Error("a host an earlier run reached is not anchored")
+	}
+	if ok, _ := sentry.Anchored(ctx, gate, "s", "cx2", "evil.example", true); ok {
+		t.Error("another computer's host became known")
+	}
+}

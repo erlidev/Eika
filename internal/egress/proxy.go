@@ -57,6 +57,14 @@ type Options struct {
 	Decide func(context.Context, string, string, string, string) (bool, error)
 	// Halted reports the current halt state.
 	Halted func() bool
+	// Run names the session and run a computer is on, asked once when an
+	// allowed connection starts. Nil, or empty answers, leave the connection
+	// without a run: nothing is reported for it.
+	Run func(computerID string) (session, run string)
+	// Report receives each allowed connection's counts: every time it passes a
+	// size step, and a last time with Closed set when it ends. Nil counts
+	// nothing.
+	Report func(Report)
 }
 
 // Blocked is a host a computer was refused.
@@ -119,6 +127,12 @@ func New(opts Options, log *slog.Logger) *Proxy {
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			if errors.Is(err, netguard.ErrPrivateAddress) {
 				p.denied(r.Context(), "non-public address")
+			}
+			// The refusal is the proxy's own text, not the destination's, and
+			// a connection that never reached it is not one to report.
+			if cw, ok := w.(*countedWriter); ok {
+				cw.m.fail()
+				w = cw.ResponseWriter
 			}
 			refuse(w, dialStatus(err), err.Error())
 		},
@@ -194,9 +208,18 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	m := p.meter(id, host)
 	if r.Method == http.MethodConnect {
-		p.tunnel(w, r, info.generation)
+		p.tunnel(w, r, info.generation, m)
 		return
+	}
+	if m != nil {
+		if r.Body != nil && r.Body != http.NoBody {
+			r.Body = &countedBody{ReadCloser: r.Body, m: m}
+		}
+		cw := &countedWriter{ResponseWriter: w, m: m}
+		w = cw
+		defer m.finish()
 	}
 	p.forward.ServeHTTP(w, r)
 }
@@ -290,7 +313,7 @@ func (p *Proxy) Close() {
 
 // tunnel connects to the CONNECT request's destination and relays bytes both
 // ways until either side closes.
-func (p *Proxy) tunnel(w http.ResponseWriter, r *http.Request, generation uint64) {
+func (p *Proxy) tunnel(w http.ResponseWriter, r *http.Request, generation uint64, m *meter) {
 	upstream, err := p.dialer.DialContext(r.Context(), "tcp", r.Host)
 	if err != nil {
 		if errors.Is(err, netguard.ErrPrivateAddress) {
@@ -312,6 +335,9 @@ func (p *Proxy) tunnel(w http.ResponseWriter, r *http.Request, generation uint64
 		return
 	}
 	defer p.untrack(client, upstream)
+	if m != nil {
+		defer m.finish()
+	}
 
 	if _, err := io.WriteString(client, "HTTP/1.1 200 Connection established\r\n\r\n"); err != nil {
 		return
@@ -323,14 +349,20 @@ func (p *Proxy) tunnel(w http.ResponseWriter, r *http.Request, generation uint64
 		if _, err := upstream.Write(head); err != nil {
 			return
 		}
+		m.count(int64(len(head)), 0)
+	}
+	toUpstream, toClient := io.Writer(upstream), io.Writer(client)
+	if m != nil {
+		toUpstream = &countedConn{w: upstream, m: m, sent: true}
+		toClient = &countedConn{w: client, m: m}
 	}
 	var wg sync.WaitGroup
 	wg.Go(func() {
-		_, _ = io.Copy(upstream, client)
+		_, _ = io.Copy(toUpstream, client)
 		closeWrite(upstream)
 	})
 	wg.Go(func() {
-		_, _ = io.Copy(client, upstream)
+		_, _ = io.Copy(toClient, upstream)
 		closeWrite(client)
 	})
 	wg.Wait()
