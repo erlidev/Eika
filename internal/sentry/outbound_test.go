@@ -59,3 +59,36 @@ func TestNeverShareDeniesCredentialsInOutboundArguments(t *testing.T) {
 		})
 	}
 }
+
+func TestSensitiveReadMark(t *testing.T) {
+	marks := &markRecords{}
+	g := sentry.New(sentry.Options{Audit: &records{}, Marks: marks})
+	for _, tc := range []struct {
+		name, args string
+		want       bool
+	}{
+		{"file_read", `{"path":"/home/u/.ssh/id_ed25519"}`, true},
+		{"file_read", `{"path":"app/.env"}`, true},
+		{"file_edit", `{"path":"src/main.go"}`, false},
+		{"bash", `{"command":"cat ~/.aws/credentials | head"}`, true},
+		{"bash", `{"command":"cat /proc/self/environ"}`, true},
+		{"bash", `{"command":"env"}`, true},
+		{"bash", `{"command":"cd x && printenv; ls"}`, true},
+		{"bash", `{"command":"env FOO=1 make"}`, false},
+		{"bash", `{"command":"go test ./..."}`, false},
+		{"web_fetch", `{"url":"https://example.com/.env"}`, false},
+	} {
+		before := len(marks.marks)
+		a := sentry.Action{Key: "s:c", Principal: sentry.Principal{Session: "s", Run: "r", Computer: "cx"}, Kind: sentry.KindTool, Name: tc.name, Args: []byte(tc.args)}
+		v, err := g.Decide(t.Context(), a)
+		if err != nil || v.Decision != sentry.Allow {
+			t.Fatalf("%s %s: verdict %+v, %v; a mark must change no verdict", tc.name, tc.args, v, err)
+		}
+		if got := len(marks.marks) > before; got != tc.want {
+			t.Errorf("%s %s: marked = %v, want %v", tc.name, tc.args, got, tc.want)
+		}
+	}
+	if m := marks.marks[0]; m.Kind != sentry.MarkSensitiveRead || m.Run != "r" || m.Computer != "cx" {
+		t.Errorf("mark = %+v, want sensitive-read on run r, computer cx", m)
+	}
+}

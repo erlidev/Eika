@@ -928,6 +928,7 @@ stores them.
 | `screen_threshold` | number | Remove windows at or above this score, above 0 and at most 1; default is the deployment config. |
 | `memory_screen_threshold` | number | A memory write (description or body) at or above this score is saved pending, above 0 and at most 1; default is the deployment config (0.99). Ingest never reads it. |
 | `watch_threshold` | number | A window of ingested content at or above this score has the hosts, URLs and addresses in it watched, above 0 and at most 1; default 0.5. It never removes anything. |
+| `sensitive_list` | array of strings | Regular expressions (at most 100, 200 characters each) matched against a file tool's path and a `bash` command; a match records a `sensitive-read` mark, which changes nothing by itself. Defaults to credential and key files, `.env` files, browser profiles, `/proc/*/environ` and a bare `env` or `printenv`. |
 | `time_zone` | string | IANA time zone for new agent preamble snapshots; defaults to UTC. |
 | `locale` | string | Locale for new agent preamble snapshots, 1 to 64 ASCII letters, digits or hyphens; unspecified by default. |
 | `default_model` | string | The name of the model a run uses when neither the request nor the session's configuration names one. It must name a chat model. |

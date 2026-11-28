@@ -158,11 +158,11 @@ func (g *gate) markSources(ctx context.Context, segs []Segment, original, texts 
 	for i, seg := range segs {
 		hidden := hiddenText(original[i])
 		if hidden != "" {
-			if err := g.mark(ctx, seg.Source, MarkHidden, "", 1); err != nil {
+			if err := g.sourceMark(ctx, seg.Source, MarkHidden, "", 1); err != nil {
 				return err
 			}
 			for _, host := range hostsIn(hidden) {
-				if err := g.mark(ctx, seg.Source, MarkWatched, host, 1); err != nil {
+				if err := g.sourceMark(ctx, seg.Source, MarkWatched, host, 1); err != nil {
 					return err
 				}
 			}
@@ -172,7 +172,7 @@ func (g *gate) markSources(ctx context.Context, segs []Segment, original, texts 
 				continue
 			}
 			for _, host := range hostsIn(texts[i][w.Start:w.End]) {
-				if err := g.mark(ctx, seg.Source, MarkWatched, host, w.Score); err != nil {
+				if err := g.sourceMark(ctx, seg.Source, MarkWatched, host, w.Score); err != nil {
 					return err
 				}
 			}

@@ -192,6 +192,9 @@ type Options struct {
 	// Destinations keeps the local destination index. Nil records nothing, and
 	// nothing is anchored.
 	Destinations DestinationLog
+	// SensitiveList returns the entries of the sensitive list (the
+	// `sensitive_list` setting). Nil means DefaultSensitiveList.
+	SensitiveList func(context.Context) ([]string, error)
 	// ScreenSettings returns the current threshold and whether screening is required.
 	ScreenSettings func(context.Context) (float64, bool, error)
 	// MemoryThreshold returns the score at or over which a memory write goes
@@ -222,6 +225,9 @@ type gate struct {
 	health string
 
 	// egress counts each running run's connections (egress_counts.go).
+	// sensitive caches the compiled sensitive list.
+	sensitive sensitiveMatcher
+
 	egressMu sync.Mutex
 	egress   map[string]*runEgress
 }
@@ -257,6 +263,9 @@ func (g *gate) Decide(ctx context.Context, a Action) (Verdict, error) {
 		}
 	default:
 		v = g.policy(a)
+		if v.Decision == Allow {
+			g.markSensitive(ctx, a)
+		}
 	}
 	if v.Decision == Allow {
 		return v, nil

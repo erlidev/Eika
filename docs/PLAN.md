@@ -619,7 +619,7 @@ phase 11 extends it. See DECISIONS, "Tripwires and checkpoints".
       bytes sent and received through `Gate.Observe` when it closes or passes a
       size step, with the run its computer is on. This is also the map from a
       connection to a run that Lifted needs.
-- [ ] **P4b-04**: The sensitive list (a setting with a starting value) and the
+- [x] **P4b-04**: The sensitive list (a setting with a starting value) and the
       `sensitive-read` mark, from file tool paths and `bash` command text.
 - [ ] **P4b-05**: Fingerprints of private text (memory bodies and files read with
       file tools; plugin results wait for phase 11), winnowed, 50,000 per session,

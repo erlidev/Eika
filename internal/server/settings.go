@@ -34,6 +34,9 @@ const (
 	// settingWatchThreshold is the score at or over which ingest watches the
 	// destinations in a window. It never changes what is removed.
 	settingWatchThreshold = "watch_threshold"
+	// settingSensitiveList is the list of regular expressions that mark a file
+	// path or a bash command as a read of something sensitive.
+	settingSensitiveList = "sensitive_list"
 	// settingSandboxImage is the image the home computer's container is
 	// created from. A container that exists keeps the image it was created
 	// from.
@@ -288,6 +291,14 @@ func (s *Server) validateSetting(ctx context.Context, key string, value json.Raw
 		var n float64
 		if json.Unmarshal(value, &n) != nil || n <= 0 || n > 1 {
 			return invalidf("%s must be above 0 and at most 1", key)
+		}
+	case settingSensitiveList:
+		var entries []string
+		if json.Unmarshal(value, &entries) != nil {
+			return invalidf("%s must be a list of strings", key)
+		}
+		if err := sentry.ValidateSensitiveList(entries); err != nil {
+			return invalidf("%s: %v", key, err)
 		}
 	case settingDefaultModel:
 		var name string
@@ -545,6 +556,24 @@ func (s *Server) watchThreshold(ctx context.Context) (float64, error) {
 		}
 	}
 	return threshold, nil
+}
+
+// sensitiveList is the stored sensitive_list, else the starting value.
+func (s *Server) sensitiveList(ctx context.Context) ([]string, error) {
+	rows, err := s.deps.Store.Settings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		if row.Key == settingSensitiveList && string(row.Value) != "null" {
+			var entries []string
+			if err := json.Unmarshal(row.Value, &entries); err != nil {
+				return nil, err
+			}
+			return entries, nil
+		}
+	}
+	return sentry.DefaultSensitiveList, nil
 }
 
 func parseScreenSettings(rows []store.Setting, defaultThreshold float64) (float64, bool, error) {

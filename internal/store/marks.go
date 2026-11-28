@@ -7,7 +7,7 @@ import (
 	"github.com/erlidev/eika/internal/sentry"
 )
 
-// AppendMark records a mark. The same kind and value on one run is kept once.
+// AppendMark records a mark. The same kind and value on one run and computer is kept once, the first.
 func (s *Store) AppendMark(ctx context.Context, m sentry.Mark) error {
 	if m.ID == "" {
 		m.ID = NewID()
@@ -16,10 +16,10 @@ func (s *Store) AppendMark(ctx context.Context, m sentry.Mark) error {
 		m.At = time.Now()
 	}
 	_, err := s.pool.Exec(ctx, `INSERT INTO marks
-        (id, at, session_id, run_id, kind, value, source_name, call_key, score)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-        ON CONFLICT (session_id, run_id, kind, value) DO NOTHING`,
-		m.ID, m.At, m.Session, m.Run, string(m.Kind), m.Value, m.SourceName, m.Key, m.Score)
+        (id, at, session_id, run_id, computer_id, kind, value, source_name, call_key, score)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        ON CONFLICT (session_id, run_id, computer_id, kind, value) DO NOTHING`,
+		m.ID, m.At, m.Session, m.Run, m.Computer, string(m.Kind), m.Value, m.SourceName, m.Key, m.Score)
 	if err != nil {
 		return wrap("append mark", err)
 	}

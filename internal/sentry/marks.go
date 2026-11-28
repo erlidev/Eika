@@ -34,6 +34,7 @@ type Mark struct {
 	At         time.Time
 	Session    string
 	Run        string
+	Computer   string // the computer a tool call ran on, when it has one
 	Kind       MarkKind
 	Value      string // the watched host; empty for a mark without one
 	SourceName string // where the content came from, cleaned like a withheld row
@@ -120,11 +121,18 @@ func (g *gate) watchThreshold(ctx context.Context) (float64, error) {
 	return t, nil
 }
 
-// mark writes one mark of a segment's source.
-func (g *gate) mark(ctx context.Context, src Source, kind MarkKind, value string, score float64) error {
-	m := Mark{At: time.Now().UTC(), Session: src.Session, Run: src.Run, Kind: kind, Value: value, SourceName: src.Name, Key: src.Key, Score: score}
+// mark writes one mark. At is set when it is zero.
+func (g *gate) mark(ctx context.Context, m Mark) error {
+	if m.At.IsZero() {
+		m.At = time.Now().UTC()
+	}
 	if err := g.Marks.AppendMark(ctx, m); err != nil {
 		return fmt.Errorf("sentry: record mark: %w", err)
 	}
 	return nil
+}
+
+// sourceMark writes one mark of a segment's source.
+func (g *gate) sourceMark(ctx context.Context, src Source, kind MarkKind, value string, score float64) error {
+	return g.mark(ctx, Mark{Session: src.Session, Run: src.Run, Kind: kind, Value: value, SourceName: src.Name, Key: src.Key, Score: score})
 }

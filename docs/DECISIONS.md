@@ -3014,3 +3014,14 @@ refuses while a run is active. There is no run-now endpoint in this phase.
   when the run that reached it ends (`ObserveRunEnd`), so within a run it stays new.
   P4b-08 must skip that step for a run that was held, or a host a hijacked run
   reached before the hold would be known afterward.
+- **The sensitive list is regular expressions, matched on raw text.** A file tool's
+  `path` and a `bash` command's text are matched as written, with no path
+  resolution, so `../.ssh/key`, `~/.ssh` and `cat .env` all match; the `env` entry
+  matches only a bare `env` or `printenv`. The setting is `sensitive_list` (a list,
+  at most 100 entries of 200 characters, checked to compile on write); it has no UI
+  control until P4b-10. `.env.example` also matches: a mark alone changes nothing.
+  The mark is recorded once per run, computer and matching entry, the first time, so
+  P4b-07's "in that order" reads its `at`. Marks gain a `computer_id` (from
+  `Principal.Computer`, which the agent now sets), because Lifted joins on one
+  computer. A mark or list that cannot be written or read is logged and the call
+  runs: Decide does not fail on it. Only allowed calls are marked.

@@ -1,5 +1,13 @@
 # Plan log
 
+## P4b-04 — Sensitive list and sensitive-read (2026-11-28)
+
+`Decide` records a `sensitive-read` mark for an allowed file tool or `bash` call whose
+path or command matches the `sensitive_list` setting (regular expressions, starting
+value in `sentry.DefaultSensitiveList`). Marks gain `computer_id` (migration 0040) and
+the agent passes its computer in `Principal`. No verdict changes; nothing reads the
+mark until P4b-07. The setting has no UI until P4b-10. Choices are in DECISIONS.
+
 ## P4b-03 — Egress counting (2026-11-28)
 
 The proxy reports each allowed connection's host and bytes sent and received

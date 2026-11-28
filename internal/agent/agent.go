@@ -638,7 +638,7 @@ func (a *Agent) gate(ctx context.Context, s *Session, runID string, c provider.T
 	defer cancel()
 	v, err := a.opts.Gate.Decide(gctx, sentry.Action{
 		Key:       s.ID + ":" + c.ID,
-		Principal: sentry.Principal{Session: s.ID, Run: runID},
+		Principal: sentry.Principal{Session: s.ID, Run: runID, Computer: s.ComputerID},
 		Kind:      sentry.KindTool,
 		Name:      c.Name,
 		Args:      json.RawMessage(c.Arguments),
