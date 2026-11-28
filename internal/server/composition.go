@@ -96,7 +96,8 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger, opts Options)
 					Computer: r.Computer, Host: r.Host, Sent: r.Sent, Received: r.Received, Closed: r.Closed})
 			},
 			Decide: func(ctx context.Context, id, host, key, reason string) (bool, error) {
-				v, err := s.gate.Decide(ctx, sentry.Action{Key: key, Principal: sentry.Principal{Computer: id}, Kind: sentry.KindEgress, Name: host, Destination: host, EgressDenial: reason})
+				session, run := s.runs.onComputer(id)
+				v, err := s.gate.Decide(ctx, sentry.Action{Key: key, Principal: sentry.Principal{Session: session, Run: run, Computer: id}, Kind: sentry.KindEgress, Name: host, Destination: host, EgressDenial: reason})
 				return v.Decision == sentry.Allow, err
 			}}, log)
 	}

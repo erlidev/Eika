@@ -78,13 +78,13 @@ func TestSensitiveReadMark(t *testing.T) {
 		{"bash", `{"command":"go test ./..."}`, false},
 		{"web_fetch", `{"url":"https://example.com/.env"}`, false},
 	} {
-		before := len(marks.marks)
+		before := len(marks.values(sentry.MarkSensitiveRead))
 		a := sentry.Action{Key: "s:c", Principal: sentry.Principal{Session: "s", Run: "r", Computer: "cx"}, Kind: sentry.KindTool, Name: tc.name, Args: []byte(tc.args)}
 		v, err := g.Decide(t.Context(), a)
 		if err != nil || v.Decision != sentry.Allow {
 			t.Fatalf("%s %s: verdict %+v, %v; a mark must change no verdict", tc.name, tc.args, v, err)
 		}
-		if got := len(marks.marks) > before; got != tc.want {
+		if got := len(marks.values(sentry.MarkSensitiveRead)) > before; got != tc.want {
 			t.Errorf("%s %s: marked = %v, want %v", tc.name, tc.args, got, tc.want)
 		}
 	}

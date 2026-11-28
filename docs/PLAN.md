@@ -625,7 +625,7 @@ phase 11 extends it. See DECISIONS, "Tripwires and checkpoints".
       file tools; plugin results wait for phase 11), winnowed, 50,000 per session,
       and the `carried` mark, checked after decoding base64, hex and percent
       encoding.
-- [ ] **P4b-06**: The sink marks `new-sink`, `told-sink`, `upload` and `fan-out`,
+- [x] **P4b-06**: The sink marks `new-sink`, `told-sink`, `upload` and `fan-out`,
       from the destination index and the counts of P4b-03. Numbers are settings.
 
 ### Stage B: tripwires and the held run
@@ -642,7 +642,7 @@ phase 11 extends it. See DECISIONS, "Tripwires and checkpoints".
       run"), one push, audit rows, and the per-tripwire fired and "fine" counts.
       "This was fine" ends the hold and makes the destination known.
 - [ ] **P4b-10**: Settings, Security: each tripwire's switch, numbers (including
-      the watch threshold) and its two counts. Phone and desktop baselines.
+      the watch threshold and the `sink_limits` numbers) and its two counts. Phone and desktop baselines.
 - [ ] **P4b-11** (**blocked on phase 11**): A held run's plugin calls to
       destinations that are not anchored ask, with the chain on the card; Carried
       out's plugin half; "this was fine" releases a stored plugin call; the first-seen

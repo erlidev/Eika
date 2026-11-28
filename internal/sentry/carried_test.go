@@ -73,7 +73,7 @@ func TestFingerprintsNeverHoldPrivateText(t *testing.T) {
 	if _, err := g.Decide(t.Context(), act); err != nil {
 		t.Fatal(err)
 	}
-	if len(marks.marks) != 1 {
+	if len(marks.values(sentry.MarkCarried)) != 1 {
 		t.Fatalf("marks = %+v", marks.marks)
 	}
 	// Everything the gate holds or wrote, as text: state, marks and audit rows.

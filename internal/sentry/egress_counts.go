@@ -2,6 +2,7 @@ package sentry
 
 import (
 	"context"
+	"hash/maphash"
 	"sort"
 )
 
@@ -21,6 +22,8 @@ type EgressCount struct {
 type runEgress struct {
 	computer string
 	hosts    map[string]*EgressCount
+	marked   map[string]bool                // sink marks written, by kind and host
+	urls     map[string]map[uint64]struct{} // hashes of the URLs fetched, by host
 }
 
 // countEgress adds one proxy report to its run's ledger. A report without a
@@ -33,16 +36,9 @@ func (g *gate) countEgress(o Observation) {
 	}
 	g.egressMu.Lock()
 	defer g.egressMu.Unlock()
-	run := g.egress[o.Run]
+	run := g.ledger(o.Run, o.Computer)
 	if run == nil {
-		if len(g.egress) >= maxLedgerRuns {
-			return
-		}
-		if g.egress == nil {
-			g.egress = map[string]*runEgress{}
-		}
-		run = &runEgress{computer: o.Computer, hosts: map[string]*EgressCount{}}
-		g.egress[o.Run] = run
+		return
 	}
 	c := run.hosts[host]
 	if c == nil {
@@ -57,6 +53,68 @@ func (g *gate) countEgress(o Observation) {
 	if o.Closed {
 		c.Connections++
 	}
+}
+
+// ledger returns a run's ledger, made on first use, or nil past the bound.
+// The caller holds egressMu.
+func (g *gate) ledger(runID, computer string) *runEgress {
+	run := g.egress[runID]
+	if run == nil {
+		if len(g.egress) >= maxLedgerRuns {
+			return nil
+		}
+		if g.egress == nil {
+			g.egress = map[string]*runEgress{}
+		}
+		run = &runEgress{computer: computer, hosts: map[string]*EgressCount{}, marked: map[string]bool{}, urls: map[string]map[uint64]struct{}{}}
+		g.egress[runID] = run
+	}
+	return run
+}
+
+// firstMark reports whether the run has not yet written the sink mark named by
+// key, and notes it. Past the bound it reports false: a mark may be lost, and
+// a mark alone changes nothing.
+func (g *gate) firstMark(runID, computer, key string) bool {
+	g.egressMu.Lock()
+	defer g.egressMu.Unlock()
+	run := g.ledger(runID, computer)
+	if run == nil || run.marked[key] || len(run.marked) >= 3*maxLedgerHosts {
+		return false
+	}
+	run.marked[key] = true
+	return true
+}
+
+// hasMark reports whether firstMark has already taken the key.
+func (g *gate) hasMark(runID, key string) bool {
+	g.egressMu.Lock()
+	defer g.egressMu.Unlock()
+	run := g.egress[runID]
+	return run != nil && run.marked[key]
+}
+
+// fetchedURLs notes a URL a run fetched on a host and returns how many
+// different ones it has, counting no further than limit+1.
+func (g *gate) fetchedURLs(runID, computer, host, rawURL string, limit int) int {
+	g.egressMu.Lock()
+	defer g.egressMu.Unlock()
+	run := g.ledger(runID, computer)
+	if run == nil {
+		return 0
+	}
+	set := run.urls[host]
+	if set == nil {
+		if len(run.urls) >= 64 {
+			return 0
+		}
+		set = map[uint64]struct{}{}
+		run.urls[host] = set
+	}
+	if len(set) <= limit {
+		set[maphash.String(urlSeed, rawURL)] = struct{}{}
+	}
+	return len(set)
 }
 
 // egressCount returns what a run's computer has moved to a host so far.

@@ -196,6 +196,9 @@ type Options struct {
 	// SensitiveList returns the entries of the sensitive list (the
 	// `sensitive_list` setting). Nil means DefaultSensitiveList.
 	SensitiveList func(context.Context) ([]string, error)
+	// SinkLimits returns the numbers of the upload and fan-out marks (the
+	// `sink_limits` setting). Nil means DefaultSinkLimits.
+	SinkLimits func(context.Context) (SinkLimits, error)
 	// ScreenSettings returns the current threshold and whether screening is required.
 	ScreenSettings func(context.Context) (float64, bool, error)
 	// MemoryThreshold returns the score at or over which a memory write goes
@@ -265,12 +268,16 @@ func (g *gate) Decide(ctx context.Context, a Action) (Verdict, error) {
 		default:
 			v = Verdict{Decision: Allow}
 		}
+		if v.Decision == Allow {
+			g.markConnectionSink(ctx, a)
+		}
 	default:
 		args := outbound(a)
 		v = g.policy(args)
 		if v.Decision == Allow {
 			g.markSensitive(ctx, a)
 			g.markCarried(ctx, a, args)
+			g.markFetchSink(ctx, a, args)
 		}
 	}
 	if v.Decision == Allow {

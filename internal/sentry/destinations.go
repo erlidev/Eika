@@ -99,6 +99,7 @@ func (g *gate) Observe(ctx context.Context, o Observation) {
 	switch o.Kind {
 	case ObserveEgress:
 		g.countEgress(o)
+		g.markUpload(ctx, o)
 		return
 	case ObserveRunEnd:
 		g.endRun(ctx, o.Run)

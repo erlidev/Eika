@@ -3047,3 +3047,19 @@ refuses while a run is active. There is no run-now endpoint in this phase.
   first 64 KiB. A base64 run is decoded only when its start is text, which keeps
   `Decide` under 1 ms (`make bench-sentry` has a case). The mark has no value and
   is written once per run and computer.
+- **Sink marks are written once per run and host, and `told-sink` skips anchored
+  hosts.** The design says `told-sink` is a connection to a host whose source is
+  `content`. A host the computer reached before, or a registry or code host, is
+  anchored too, and a page naming one is ordinary, so only a host that is not
+  anchored gets `told-sink` (and `new-sink`). P4b-07's Lifted reads `told-sink`
+  as built. `new-sink` is marked for an allowed `web_fetch` (anchored as a
+  fetch: a search result anchors it) and for an allowed connection (anchored as
+  egress); a `web_search` query has no destination and no sink mark. A connection
+  is marked only when the proxy knows its run, so `core_web` fetches carry none.
+  The marks and the fan-out URL hashes live in the run's ledger (bounded, dropped
+  at the run's end); a mark lost to the bound only lowers a count. A fetched URL
+  counts without its fragment, and only for a host whose source is `content`.
+  `upload` is checked in `Observe` after each egress report, not in `Decide`, so
+  the bench is unaffected; it needs the report's session. The numbers are one
+  setting, `sink_limits` (`upload_bytes` 1 MiB, `upload_ratio_bytes` 64 KiB,
+  `upload_ratio` 10, `fan_out_urls` 16), with no UI control until P4b-10.

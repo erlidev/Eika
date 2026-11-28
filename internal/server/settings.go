@@ -37,6 +37,8 @@ const (
 	// settingSensitiveList is the list of regular expressions that mark a file
 	// path or a bash command as a read of something sensitive.
 	settingSensitiveList = "sensitive_list"
+	// settingSinkLimits holds the numbers of the upload and fan-out marks.
+	settingSinkLimits = "sink_limits"
 	// settingSandboxImage is the image the home computer's container is
 	// created from. A container that exists keeps the image it was created
 	// from.
@@ -291,6 +293,10 @@ func (s *Server) validateSetting(ctx context.Context, key string, value json.Raw
 		var n float64
 		if json.Unmarshal(value, &n) != nil || n <= 0 || n > 1 {
 			return invalidf("%s must be above 0 and at most 1", key)
+		}
+	case settingSinkLimits:
+		if _, err := sentry.ParseSinkLimits(value); err != nil {
+			return invalidf("%s: %v", key, err)
 		}
 	case settingSensitiveList:
 		var entries []string
@@ -574,6 +580,20 @@ func (s *Server) sensitiveList(ctx context.Context) ([]string, error) {
 		}
 	}
 	return sentry.DefaultSensitiveList, nil
+}
+
+// sinkLimits is the stored sink_limits, else the starting values.
+func (s *Server) sinkLimits(ctx context.Context) (sentry.SinkLimits, error) {
+	rows, err := s.deps.Store.Settings(ctx)
+	if err != nil {
+		return sentry.SinkLimits{}, err
+	}
+	for _, row := range rows {
+		if row.Key == settingSinkLimits && string(row.Value) != "null" {
+			return sentry.ParseSinkLimits(row.Value)
+		}
+	}
+	return sentry.DefaultSinkLimits, nil
 }
 
 func parseScreenSettings(rows []store.Setting, defaultThreshold float64) (float64, bool, error) {

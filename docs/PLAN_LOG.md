@@ -1,5 +1,14 @@
 # Plan log
 
+## P4b-06 — Sink marks (2026-11-28)
+
+`new-sink`, `told-sink`, `upload` and `fan-out` are recorded (`internal/sentry/sinks.go`):
+`Decide` marks an allowed `web_fetch` and an allowed connection (the proxy's `Decide` now
+carries the computer's session and run), and `Observe` marks `upload` from the P4b-03
+counts. One mark per run and host; no verdict changes. The numbers are the `sink_limits`
+setting. `told-sink` skips anchored hosts (DECISIONS). `make bench-sentry` stays under 1 ms.
+`make check` and `make smoke` results are in the commit.
+
 ## P4b-05 — Fingerprints and the carried mark (2026-11-28)
 
 The agent reports a successful `file_read` result and a `memory_read` body to the gate

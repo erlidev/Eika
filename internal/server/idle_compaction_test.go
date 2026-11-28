@@ -77,6 +77,7 @@ func TestScreenSettingValidation(t *testing.T) {
 		{settingMemoryScreenThreshold, "0.99", true}, {settingMemoryScreenThreshold, "0", false}, {settingMemoryScreenThreshold, "1.1", false},
 		{settingWatchThreshold, "0.5", true}, {settingWatchThreshold, "0", false},
 		{settingSensitiveList, `["\\.env"]`, true}, {settingSensitiveList, `["("]`, false}, {settingSensitiveList, `"x"`, false},
+		{settingSinkLimits, `{"fan_out_urls":8}`, true}, {settingSinkLimits, `{"upload_ratio":0}`, false},
 	} {
 		err := s.validateSetting(context.Background(), tc.key, []byte(tc.value))
 		if (err == nil) != tc.valid {
