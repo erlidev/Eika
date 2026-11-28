@@ -26,6 +26,7 @@ type stubGate struct {
 func (g stubGate) Decide(context.Context, sentry.Action) (sentry.Verdict, error) {
 	return g.verdict, g.err
 }
+func (stubGate) Observe(context.Context, sentry.Observation) {}
 func (stubGate) Ingest(_ context.Context, segs []sentry.Segment) ([]sentry.Ingested, error) {
 	out := make([]sentry.Ingested, len(segs))
 	for i, s := range segs {
@@ -105,5 +106,44 @@ func TestNothingTheModelReadsMentionsTheGate(t *testing.T) {
 		if mentionsGate.MatchString(s) {
 			t.Errorf("model-facing text mentions the gate: %.80q", s)
 		}
+	}
+}
+
+// observeGate records what the agent observed.
+type observeGate struct {
+	stubGate
+	seen []sentry.Observation
+}
+
+func (g *observeGate) Observe(_ context.Context, o sentry.Observation) { g.seen = append(g.seen, o) }
+
+func TestReadsOfPrivateTextReachTheGate(t *testing.T) {
+	g := &observeGate{stubGate: stubGate{verdict: sentry.Verdict{Decision: sentry.Allow}}}
+	run := func(name string, args map[string]any, setup func(*fixture), extra ...tool.Tool) {
+		f := newFixtureWith(t, agent.Options{Gate: g}, []providertest.Step{
+			providertest.Calls("", providertest.Call("c1", name, args)),
+			providertest.Text("done"),
+		}, extra...)
+		if setup != nil {
+			setup(f)
+		}
+		if err := f.agent.Run(context.Background(), f.session, provider.UserMessage("go")); err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+	}
+	run("file_read", map[string]any{"path": "a.txt"}, func(f *fixture) {
+		if err := f.exec.WriteFile(context.Background(), "a.txt", []byte("plain file text")); err != nil {
+			t.Fatal(err)
+		}
+	})
+	run("bash", map[string]any{"command": "echo hi"}, nil)
+	got := map[string]bool{}
+	for _, o := range g.seen {
+		if o.Kind == sentry.ObservePrivateRead {
+			got[o.Text] = true
+		}
+	}
+	if len(got) != 1 || !got["plain file text"] {
+		t.Fatalf("private reads = %v", got)
 	}
 }

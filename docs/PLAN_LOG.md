@@ -1,5 +1,15 @@
 # Plan log
 
+## P4b-05 — Fingerprints and the carried mark (2026-11-28)
+
+The agent reports a successful `file_read` result and a `memory_read` body to the gate
+(`ObservePrivateRead`); the gate keeps winnowed hashes of eight-word runs per session in
+memory (50,000 cap) and `Decide` records `carried` when a `web_fetch` URL or `web_search`
+query holds one, after percent, base64 and hex decoding. No verdict changes; nothing
+reads the mark until P4b-07. The three-match body rule waits for plugin calls (phase 11).
+`Decide` now parses the outbound arguments once; `make bench-sentry` gained a case with
+fingerprints. Choices are in DECISIONS.
+
 ## P4b-04 — Sensitive list and sensitive-read (2026-11-28)
 
 `Decide` records a `sensitive-read` mark for an allowed file tool or `bash` call whose

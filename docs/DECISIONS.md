@@ -3025,3 +3025,25 @@ refuses while a run is active. There is no run-now endpoint in this phase.
   `Principal.Computer`, which the agent now sets), because Lifted joins on one
   computer. A mark or list that cannot be written or read is logged and the call
   runs: Decide does not fail on it. Only allowed calls are marked.
+- **Fingerprints live in memory, per session, as seeded hashes.** The agent tells
+  the gate what it read (`ObservePrivateRead`: a successful `file_read` result and
+  a `memory_read` body; a `memory_search` snippet, `bash` output such as `cat` and
+  a subagent's own reads are not fingerprinted). The gate keeps only 64-bit hashes of
+  eight-word runs (words are lower-case letters and digits, so punctuation, line
+  breaks and JSON escapes do not matter), under a `maphash` seed made at start,
+  winnowed with a window of four, at most 50,000 per session, oldest dropped, and
+  at most 64 sessions (the least recently read goes). They are never persisted or
+  logged, so a restart forgets them: a run that continues across a restart
+  can carry text it read before. A run of at least 11 words is certain to share a
+  kept hash; one of exactly eight may be missed. The argument side hashes every run,
+  not only winnowed ones. A subagent has its own session and its own set: text its
+  parent read is not carried by it.
+- **`carried` is one match of at least 24 characters, and only for `url` and
+  `query`.** The design's "three consecutive matches in a body" waits for
+  plugin calls (phase 11), whose string arguments are bodies; the check
+  and the mark are the same, and the three-match rule is that item's to add. The
+  arguments are checked after percent-decoding (three layers) and after decoding
+  base64 (both alphabets, any alignment) and hex runs, up to three layers, over the
+  first 64 KiB. A base64 run is decoded only when its start is text, which keeps
+  `Decide` under 1 ms (`make bench-sentry` has a case). The mark has no value and
+  is written once per run and computer.

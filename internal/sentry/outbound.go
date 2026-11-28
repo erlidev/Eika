@@ -38,8 +38,8 @@ func outbound(a Action) []string {
 // "". It looks at the text as written, with invisible characters removed, and
 // after each layer of percent-decoding, so a key in the userinfo, path, query
 // or fragment is found whether or not it is encoded.
-func neverShare(a Action) string {
-	for _, text := range outbound(a) {
+func neverShare(args []string) string {
+	for _, text := range args {
 		text = scan.StripInvisible(text)
 		for range maxUnescape + 1 {
 			if kind := scan.Find(text); kind != "" {

@@ -621,7 +621,7 @@ phase 11 extends it. See DECISIONS, "Tripwires and checkpoints".
       connection to a run that Lifted needs.
 - [x] **P4b-04**: The sensitive list (a setting with a starting value) and the
       `sensitive-read` mark, from file tool paths and `bash` command text.
-- [ ] **P4b-05**: Fingerprints of private text (memory bodies and files read with
+- [x] **P4b-05**: Fingerprints of private text (memory bodies and files read with
       file tools; plugin results wait for phase 11), winnowed, 50,000 per session,
       and the `carried` mark, checked after decoding base64, hex and percent
       encoding.

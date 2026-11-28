@@ -25,6 +25,11 @@ func BenchmarkDecide(b *testing.B) {
 	}
 	// Put a canary at the end of a full-sized command.
 	cases[2].action.Args = append(cases[2].action.Args, []byte(canary+`"}`)...)
+	cases = append(cases, struct {
+		name   string
+		action Action
+	}{"fetch_private", Action{Kind: KindTool, Name: "web_fetch", Principal: Principal{Session: "s"},
+		Args: benchArgs("url", "https://example.com/?q=", size)}})
 	for _, tc := range cases {
 		if len(tc.action.Args) != size {
 			b.Fatalf("%s arguments have %d bytes, want %d", tc.name, len(tc.action.Args), size)
@@ -37,6 +42,11 @@ func BenchmarkDecide(b *testing.B) {
 			b.Run(name, func(b *testing.B) {
 				g := New(Options{Audit: benchAudit{}, Canary: func() string { return canary }, Halter: func(context.Context, string) error { return nil }}).(*gate)
 				g.halt.set(HaltState{Halted: halted})
+				if tc.action.Principal.Session != "" {
+					g.Marks = benchMarks{}
+					g.Observe(context.Background(), Observation{Kind: ObservePrivateRead, Session: "s",
+						Text: strings.Repeat("a private note that is long enough to be fingerprinted by the gate ", 800)})
+				}
 				ctx := context.Background()
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
@@ -51,6 +61,10 @@ func BenchmarkDecide(b *testing.B) {
 		}
 	}
 }
+
+type benchMarks struct{}
+
+func (benchMarks) AppendMark(context.Context, Mark) error { return nil }
 
 func benchArgs(key, prefix string, size int) json.RawMessage {
 	// The JSON arguments, not just the value, are exactly 64 KiB.

@@ -75,6 +75,9 @@ const (
 	ObserveEgress ObservationKind = "egress"
 	// ObserveRunEnd is Run ending: the hosts its computer reached become known.
 	ObserveRunEnd ObservationKind = "run_end"
+	// ObservePrivateRead is private text Session read: a memory body or a file
+	// read with a file tool, in Text. Only fingerprints of it are kept.
+	ObservePrivateRead ObservationKind = "private_read"
 )
 
 // Observation is something that needs no decision. Each kind reads the fields
@@ -99,6 +102,9 @@ func (g *gate) Observe(ctx context.Context, o Observation) {
 		return
 	case ObserveRunEnd:
 		g.endRun(ctx, o.Run)
+		return
+	case ObservePrivateRead:
+		g.notePrivate(o.Session, o.Text)
 		return
 	}
 	if g.Destinations == nil || o.Session == "" {

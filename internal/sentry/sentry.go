@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"hash/maphash"
 	"log/slog"
 	"net/netip"
 	"sync"
@@ -214,6 +215,7 @@ func New(o Options) Gate {
 		o.Log = slog.Default()
 	}
 	g := &gate{Options: o}
+	g.private.seed = maphash.MakeSeed()
 	g.load()
 	return g
 }
@@ -224,10 +226,12 @@ type gate struct {
 	mu     sync.Mutex
 	health string
 
-	// egress counts each running run's connections (egress_counts.go).
 	// sensitive caches the compiled sensitive list.
 	sensitive sensitiveMatcher
+	// private holds fingerprints of private text (carried.go).
+	private privateStore
 
+	// egress counts each running run's connections (egress_counts.go).
 	egressMu sync.Mutex
 	egress   map[string]*runEgress
 }
@@ -262,9 +266,11 @@ func (g *gate) Decide(ctx context.Context, a Action) (Verdict, error) {
 			v = Verdict{Decision: Allow}
 		}
 	default:
-		v = g.policy(a)
+		args := outbound(a)
+		v = g.policy(args)
 		if v.Decision == Allow {
 			g.markSensitive(ctx, a)
+			g.markCarried(ctx, a, args)
 		}
 	}
 	if v.Decision == Allow {
@@ -285,8 +291,8 @@ func (g *gate) Decide(ctx context.Context, a Action) (Verdict, error) {
 }
 
 // policy is the rule for one action. Later packages add rules here.
-func (g *gate) policy(a Action) Verdict {
-	if kind := neverShare(a); kind != "" {
+func (g *gate) policy(outbound []string) Verdict {
+	if kind := neverShare(outbound); kind != "" {
 		return Verdict{Decision: Deny, Detail: kind, Reason: "this call contains a credential (" + kind +
 			"). Remove it and send the call again without it."}
 	}

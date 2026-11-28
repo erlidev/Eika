@@ -513,6 +513,7 @@ func (a *Agent) callTool(ctx context.Context, s *Session, runID string, g *guard
 	if err := a.ingest(ctx, s, runID, c, ran, &result); err != nil {
 		return provider.Message{}, err
 	}
+	a.notePrivate(ctx, s, c, ran, result)
 	if n := g.repeated(c); n >= repeatWarnAt {
 		result.Content += repeatWarning(c.Name, n)
 	}
@@ -593,6 +594,29 @@ func (a *Agent) ingest(ctx context.Context, s *Session, runID string, c provider
 	}
 	r.Content = strings.Join(texts, "\n\n")
 	return nil
+}
+
+// notePrivate tells the gate what private text a call read: a file's content
+// or a memory's body. The gate keeps fingerprints of it, never the text.
+func (a *Agent) notePrivate(ctx context.Context, s *Session, c provider.ToolCall, ran bool, r tool.Result) {
+	if a.opts.Gate == nil || !ran || r.IsError {
+		return
+	}
+	text := r.Content
+	switch c.Name {
+	case "file_read":
+	case "memory_read":
+		var m struct {
+			Body string `json:"body"`
+		}
+		if json.Unmarshal([]byte(r.Content), &m) != nil {
+			return
+		}
+		text = m.Body
+	default:
+		return
+	}
+	a.opts.Gate.Observe(ctx, sentry.Observation{Kind: sentry.ObservePrivateRead, Session: s.ID, Text: text})
 }
 
 // dispatch finds the tool and runs it; ran is false when it did not. An
