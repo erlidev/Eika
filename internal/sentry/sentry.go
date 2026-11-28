@@ -181,6 +181,11 @@ type Options struct {
 	// the gate's own state: Core aborts runs and tells the user. Nil halts the
 	// gate alone.
 	Halter func(ctx context.Context, reason string) error
+	// Marks receives the marks ingest records. Nil records none.
+	Marks MarkLog
+	// WatchThreshold returns the score at or over which a window's
+	// destinations are watched. Nil means DefaultWatchThreshold.
+	WatchThreshold func(context.Context) (float64, error)
 	// ScreenSettings returns the current threshold and whether screening is required.
 	ScreenSettings func(context.Context) (float64, bool, error)
 	// MemoryThreshold returns the score at or over which a memory write goes

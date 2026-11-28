@@ -84,8 +84,10 @@ func (g *gate) Ingest(ctx context.Context, segs []Segment) ([]Ingested, error) {
 	}
 	segs = slices.Clone(segs)
 	texts := make([]string, len(segs))
+	original := make([]string, len(segs))
 	ids := make([]string, len(segs))
 	for i := range segs {
+		original[i] = segs[i].Text
 		// Valid UTF-8 first: the guard's offsets are into the JSON-decoded
 		// text, where an invalid byte is already U+FFFD (3 bytes, not 1).
 		texts[i] = scan.Redact(scan.StripInvisible(strings.ToValidUTF8(segs[i].Text, "\uFFFD")))
@@ -113,6 +115,11 @@ func (g *gate) Ingest(ctx context.Context, segs []Segment) ([]Ingested, error) {
 		}
 		return nil, ErrScreenRequired
 	}
+	if g.Marks != nil {
+		if err := g.markSources(ctx, segs, original, texts, windows); err != nil {
+			return nil, err
+		}
+	}
 	out := make([]Ingested, len(segs))
 	for i, seg := range segs {
 		trusted := false
@@ -135,6 +142,40 @@ func (g *gate) Ingest(ctx context.Context, segs []Segment) ([]Ingested, error) {
 		out[i] = Ingested{Text: text, Removed: removed}
 	}
 	return out, nil
+}
+
+// markSources records the source marks of section 11: the hosts in each window
+// at or over the watch threshold, and the text hidden in tag characters. The
+// windows are passed whole either way, and nothing tells the model.
+func (g *gate) markSources(ctx context.Context, segs []Segment, original, texts []string, windows [][]screen.Window) error {
+	threshold, err := g.watchThreshold(ctx)
+	if err != nil {
+		return err
+	}
+	for i, seg := range segs {
+		hidden := hiddenText(original[i])
+		if hidden != "" {
+			if err := g.mark(ctx, seg.Source, MarkHidden, "", 1); err != nil {
+				return err
+			}
+			for _, host := range hostsIn(hidden) {
+				if err := g.mark(ctx, seg.Source, MarkWatched, host, 1); err != nil {
+					return err
+				}
+			}
+		}
+		for _, w := range windows[i] {
+			if w.Score < threshold || w.Start < 0 || w.End > len(texts[i]) || w.Start >= w.End {
+				continue
+			}
+			for _, host := range hostsIn(texts[i][w.Start:w.End]) {
+				if err := g.mark(ctx, seg.Source, MarkWatched, host, w.Score); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // score sends the non-empty texts to the guard in one call. It returns each

@@ -1,5 +1,16 @@
 # Plan log
 
+## P4b-01 — Watch threshold and source marks (2026-11-28)
+
+Ingest records the first two marks of `design/sentry.md` 11. A window scored at or
+over `watch_threshold` (a setting, default 0.5, validated and audited like the
+other screen thresholds) has its hosts, URLs' hosts and addresses written to the
+new `marks` table as `watched`; tag characters that decode to eight or more
+characters write `hidden` and watch the hosts in the decoded text. The window passes
+whole and nothing tells the model; removal is unchanged. Nothing reads the marks
+yet (P4b-02 on). The setting has no UI control until P4b-11. Decisions are in
+DECISIONS, "Tripwires and checkpoints". The schedule for phase 4b is in PLAN.md.
+
 ## P7-05 — Scheduler smoke run and live status (2026-11-28)
 
 `make smoke` passed, six of six, the scheduler scenario (approval, execution,

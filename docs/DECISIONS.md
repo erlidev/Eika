@@ -2963,3 +2963,29 @@ that session's limit while it counts pending and claimed wakeups and inserts a
 new one. A claimed wakeup counts until delivery because it can return to pending.
 Deletion hides a routine and retains its run history for notice recovery. It
 refuses while a run is active. There is no run-now endpoint in this phase.
+
+## Tripwires and checkpoints (phase 4b)
+
+- **A local destination index stands in for the first-seen index.** Phase 11 owns
+  the index of `design/sentry.md` 3, but the tripwires cannot wait for plugins.
+  The design allows a smaller one: its table is a lookup of where a host first
+  appeared, and the rule for "anchored" reads only that and the known set.
+  Phase 4b builds hosts only (no URLs or addresses beyond hosts), the sources
+  `user`, `search`, `content` and `model`, inheritance by subagents, and a known
+  set filled by "this was fine" and by hosts a computer reached in an earlier run
+  plus the shipped registry list. It has no grants and no approved sends. Phase 11
+  extends the same index with those. Everything that needs an approval or a
+  plugin call stays blocked on phase 11 in the schedule.
+- **Watched at host granularity.** A watched window's URLs, hosts and addresses
+  are recorded as canonical hosts, so a later connection or fetch matches by one
+  lookup. A watched path on an otherwise honest host also watches the host; the
+  chains still need an access mark and a sink beside it. A host split by a
+  window boundary is missed; windows are 512 tokens, so the loss is small.
+- **Marks are per run, read per session.** `marks` rows carry the run, and the
+  watched set for a session is the union of its runs, as the design says
+  "watched for the session". One row per run, kind and value.
+- **A tag run counts when it decodes to eight characters.** Flag emoji spell up
+  to six; shorter runs are ordinary text.
+- **`watch_threshold` is a setting, not a deployment key.** It is a tuning
+  number that `evals/injection` sets (section 11, "Keeping them quiet"); it
+  defaults to 0.5 in code and has no config key until a deployment needs one.

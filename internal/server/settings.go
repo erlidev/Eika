@@ -15,6 +15,7 @@ import (
 
 	"github.com/erlidev/eika/internal/inference"
 	"github.com/erlidev/eika/internal/search"
+	"github.com/erlidev/eika/internal/sentry"
 	"github.com/erlidev/eika/internal/store"
 	"github.com/erlidev/eika/internal/subagent"
 )
@@ -30,6 +31,9 @@ const (
 	// settingMemoryScreenThreshold is the score at or over which a memory
 	// write goes pending. Ingest never reads it.
 	settingMemoryScreenThreshold = "memory_screen_threshold"
+	// settingWatchThreshold is the score at or over which ingest watches the
+	// destinations in a window. It never changes what is removed.
+	settingWatchThreshold = "watch_threshold"
 	// settingSandboxImage is the image the home computer's container is
 	// created from. A container that exists keeps the image it was created
 	// from.
@@ -280,7 +284,7 @@ func (s *Server) validateSetting(ctx context.Context, key string, value json.Raw
 		if json.Unmarshal(value, &on) != nil {
 			return invalidf("%s must be true or false", key)
 		}
-	case settingScreenThreshold, settingMemoryScreenThreshold:
+	case settingScreenThreshold, settingMemoryScreenThreshold, settingWatchThreshold:
 		var n float64
 		if json.Unmarshal(value, &n) != nil || n <= 0 || n > 1 {
 			return invalidf("%s must be above 0 and at most 1", key)
@@ -518,6 +522,23 @@ func (s *Server) memoryScreenThreshold(ctx context.Context) (float64, error) {
 	threshold := s.cfg.MemoryScreenThreshold
 	for _, row := range rows {
 		if row.Key == settingMemoryScreenThreshold && string(row.Value) != "null" {
+			if err := json.Unmarshal(row.Value, &threshold); err != nil {
+				return 0, err
+			}
+		}
+	}
+	return threshold, nil
+}
+
+// watchThreshold is the stored watch_threshold, else the default.
+func (s *Server) watchThreshold(ctx context.Context) (float64, error) {
+	rows, err := s.deps.Store.Settings(ctx)
+	if err != nil {
+		return 0, err
+	}
+	threshold := sentry.DefaultWatchThreshold
+	for _, row := range rows {
+		if row.Key == settingWatchThreshold && string(row.Value) != "null" {
 			if err := json.Unmarshal(row.Value, &threshold); err != nil {
 				return 0, err
 			}

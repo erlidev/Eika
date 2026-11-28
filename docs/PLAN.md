@@ -7,7 +7,8 @@ vocabulary every item below uses.
 Agents work through this plan over many sessions. In phases 2 and 3, take the
 first unchecked package in "Schedule for phases 2 and 3". In phase 4, take the
 first unchecked package in "Schedule for phase 4". In phase 5, take the
-first unchecked package in "Schedule for phase 5". After it, take the first
+first unchecked package in "Schedule for phase 5". In phase 4b, take the first
+unchecked package in "Schedule for phase 4b" that is not blocked. After it, take the first
 unchecked item in the first open phase, in the order the phases appear in this
 file. Read the design section it cites, do it, tick it, and add an entry to
 `docs/PLAN_LOG.md`. A phase is closed when every item is ticked and its exit check
@@ -589,6 +590,115 @@ provenance, no approval and no pending push were already decided.
    A write already has its tool result. This avoids a background-turn save loop
    and sends no notification for a pending candidate.
 
+## Schedule for phase 4b
+
+The items under "Phase 4b" define the scope. This schedule defines the branch
+boundaries and exit checks, as "Schedule for phase 5" does. Tick a package here
+and under its parent item. Each package is one branch, sized for one worker turn,
+with its few tests and docs. Split it before work if that size is not possible.
+
+Start after P7-05. Run P4b-01 to P4b-17 in order; each depends on the one before
+unless it says otherwise. Items marked **blocked on phase 11** are not built
+until plugins exist: skip them, and do not tick the parent lines they belong to.
+
+Phase 11 owns the first-seen index. P4b-02 builds a smaller local one (hosts
+only, no grants or approved sends) because every chain below reads "anchored";
+phase 11 extends it. See DECISIONS, "Tripwires and checkpoints".
+
+### Stage A: marks and the destination index
+
+- [x] **P4b-01**: The watch threshold (a setting, 0.5) in ingest, the `marks`
+      table, and the `watched` and `hidden` marks. Windows pass whole.
+- [ ] **P4b-02**: The local destination index: source (`user`, `search`,
+      `content`, `model`) per host and session, written by ingest, `web_search`
+      results and `Gate.Observe` on user messages, and inherited by subagents. The
+      known set (hosts "this was fine" answered, hosts a computer reached in an
+      earlier run, the shipped list of package registries and code hosts) and the
+      rule for "anchored". Sources `search` and `user` anchor a URL.
+- [ ] **P4b-03**: Egress counting. The proxy reports each connection's host and
+      bytes sent and received through `Gate.Observe` when it closes or passes a
+      size step, with the run its computer is on. This is also the map from a
+      connection to a run that Lifted needs.
+- [ ] **P4b-04**: The sensitive list (a setting with a starting value) and the
+      `sensitive-read` mark, from file tool paths and `bash` command text.
+- [ ] **P4b-05**: Fingerprints of private text (memory bodies and files read with
+      file tools; plugin results wait for phase 11), winnowed, 50,000 per session,
+      and the `carried` mark, checked after decoding base64, hex and percent
+      encoding.
+- [ ] **P4b-06**: The sink marks `new-sink`, `told-sink`, `upload` and `fan-out`,
+      from the destination index and the counts of P4b-03. Numbers are settings.
+
+### Stage B: tripwires and the held run
+
+- [ ] **P4b-07**: `internal/sentry/trip`: the chain engine over marks, the
+      per-tripwire switch and numbers, and the Followed and Carried out chains
+      for `web_fetch` in `Decide` (blocked with `Blocked: this is not
+      available right now`). Carried out's plugin call half is blocked on phase 11.
+- [ ] **P4b-08**: The held run: state per run, outbound `web_fetch` and
+      connections to destinations that are not anchored blocked while held,
+      subagents started while held are held, the hold ends with the run. Lifted at
+      the proxy, Drained and Blocked often as Inbox entries without a hold.
+- [ ] **P4b-09**: The Inbox entry and its two answers ("this was fine", "stop the
+      run"), one push, audit rows, and the per-tripwire fired and "fine" counts.
+      "This was fine" ends the hold and makes the destination known.
+- [ ] **P4b-10**: Settings, Security: each tripwire's switch, numbers (including
+      the watch threshold) and its two counts. Phone and desktop baselines.
+- [ ] **P4b-11** (**blocked on phase 11**): A held run's plugin calls to
+      destinations that are not anchored ask, with the chain on the card; Carried
+      out's plugin half; "this was fine" releases a stored plugin call; the first-seen
+      index gains grants and approved sends.
+
+### Stage C: checkpoints and images
+
+- [ ] **P4b-12**: `eikad` shadow git directory per project tree, outside any path
+      a tool can name; commits at run start and end, following `.gitignore`,
+      skipping files over 10 MB and package-manager directories. The time a
+      checkpoint took is recorded.
+- [ ] **P4b-13**: Restore: a run's card offers "restore files to before this run",
+      which checks the earlier commit out and commits the restore so it can be
+      undone; checkpoints older than 30 days are dropped.
+- [ ] **P4b-14**: Remote images in model output load only when their URL's source
+      is `user`, `search` or `content`; otherwise the UI shows a link. Reads the
+      index of P4b-02.
+
+### Stage D: measurement and close
+
+- [ ] **P4b-15**: `evals/injection` records, per scenario, which tripwires fired,
+      over honest, alarming and attack variants, and the report says which attacks
+      each caught that the rules let through. A tripwire that fails either test is
+      switched off by default.
+- [ ] **P4b-16**: `make smoke` scenario for the exit: a worker reads `.env`, then
+      connects to a host a fixture page named, is refused and held, one push; "this
+      was fine" ends the hold. A run that deleted files is restored from its card.
+- [ ] **P4b-17**: Close the phase: live run recorded, docs reduced to a closed
+      paragraph, and the owner's hand checks listed.
+
+### Ordering hazards
+
+- Do not start P4b-07 before P4b-03: the proxy needs the computer-to-run map, and
+  a chain on one run joins marks by that key.
+- The marks must never be shown or acted on alone. A mark that is not part of a
+  tripwire's chain must change no verdict; test this in P4b-07.
+- Every tripwire ships behind its switch, and P4b-15 decides which stay on. Until
+  then P4b-07 and P4b-08 default them on in tests only and off in a deployment.
+- P4b-12 and P4b-13 change `eikad`, which lives in the sandbox image: run `make
+  smoke` for both. Checkpoint directories must not be mountable by a tool.
+- Phase 11 replaces nothing built here; it adds grants and approved sends to the
+  destination index and the plugin halves above.
+
+### Owner questions, with the defaults applied
+
+1. **Is a local destination index acceptable before phase 11?** Applied: yes,
+   hosts only, extended by phase 11 (DECISIONS).
+2. **Are tripwires on by default?** Applied: off in a deployment until P4b-15's
+   report; the report then turns on those that pass both tests.
+3. **How long are marks kept?** Applied: 30 days, like checkpoints; pruning is in
+   P4b-09.
+4. **What counts as hidden text?** Applied: a tag-character run that decodes to
+   eight characters or more.
+5. **Does a hold survive a Core restart?** Applied: no. The hold ends with the run
+   (design), and a run does not survive a restart; its entry stays.
+
 ## Schedule for phase 6
 
 - [x] **P6-17**: Run and record the skills live suite. See `PLAN_LOG.md`, P6-17.
@@ -855,10 +965,12 @@ calendar integration waits for phase 11.
 
 Sentry's second layer, over a screen and a gate that already run. Design:
 `design/sentry.md` sections 6 (the watch threshold), 7 ("Checkpoints" only) and
-11 (without "Halt" and the model check). It uses the first-seen index of phase 11.
+11 (without "Halt" and the model check). Its destination index is a local one
+built in P4b-02; the parts that need plugins are blocked on phase 11. The
+schedule is "Schedule for phase 4b".
 
-- [ ] The watch threshold in ingest (0.5, a setting): a window at or over it is
-      passed whole and its destinations are watched.
+- [x] The watch threshold in ingest (0.5, a setting): a window at or over it is
+      passed whole and its destinations are watched. (P4b-01)
 - [ ] Egress counting: the proxy reports each connection's host and bytes sent
       and received through `Observe`.
 - [ ] Tripwires (`design/sentry.md` 11), in `internal/sentry/trip`:
@@ -867,7 +979,7 @@ Sentry's second layer, over a screen and a gate that already run. Design:
         `told-sink`, `upload`, `fan-out`
       - the chains Followed, Carried out, Lifted, Drained and Blocked often. A
         completing `web_fetch` or connection is blocked; a plugin call asks
-        (phase 11)
+        (phase 11, P4b-11)
       - a held run: outbound actions to destinations that are not anchored are
         blocked or ask, everything else carries on, and the hold ends with the
         run or with the user's answer
@@ -876,7 +988,7 @@ Sentry's second layer, over a screen and a gate that already run. Design:
       - each tripwire's switch, numbers, and its fired and "fine" counts in
         Settings, Security
 - [ ] A held run's plugin calls to destinations that are not anchored ask, with
-      the chain on the card.
+      the chain on the card. **Blocked on phase 11** (P4b-11).
 - [ ] Checkpoints (`design/sentry.md` 7): `eikad` commits each project tree to a
       shadow git directory when a run starts and ends, a run's card restores the
       tree, and the time a checkpoint took is recorded.
