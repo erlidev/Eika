@@ -120,6 +120,9 @@ func (g *gate) Ingest(ctx context.Context, segs []Segment) ([]Ingested, error) {
 			return nil, err
 		}
 	}
+	if err := g.recordIngested(ctx, segs, texts); err != nil {
+		return nil, err
+	}
 	out := make([]Ingested, len(segs))
 	for i, seg := range segs {
 		trusted := false

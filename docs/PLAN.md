@@ -609,7 +609,7 @@ phase 11 extends it. See DECISIONS, "Tripwires and checkpoints".
 
 - [x] **P4b-01**: The watch threshold (a setting, 0.5) in ingest, the `marks`
       table, and the `watched` and `hidden` marks. Windows pass whole.
-- [ ] **P4b-02**: The local destination index: source (`user`, `search`,
+- [x] **P4b-02**: The local destination index: source (`user`, `search`,
       `content`, `model`) per host and session, written by ingest, `web_search`
       results and `Gate.Observe` on user messages, and inherited by subagents. The
       known set (hosts "this was fine" answered, hosts a computer reached in an

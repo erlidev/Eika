@@ -130,6 +130,9 @@ type Options struct {
 	// told at the next start, so neither is announced. Same goroutine and
 	// ordering rules as Reported. Nil tells nobody.
 	Ended func(context.Context, store.Session)
+	// Started is told about each new child session after it is stored and
+	// before its first run. Nil tells nobody.
+	Started func(context.Context, store.Session)
 	// Screen cleans a report's text for the child session before it is stored,
 	// so the stored report is what Eika reads. An error means the text could not
 	// be cleaned and must not be used. Nil keeps the text as it is.
@@ -148,6 +151,7 @@ type Service struct {
 	limit    func(context.Context) int
 	reported func(context.Context, store.Session)
 	ended    func(context.Context, store.Session)
+	started  func(context.Context, store.Session)
 	screen   func(context.Context, string, string) (string, error)
 	events   event.Emitter
 	log      *slog.Logger
@@ -182,7 +186,7 @@ func New(ctx context.Context, st Store, o Options) *Service {
 		o.Limit = func(context.Context) int { return DefaultMaxRunning }
 	}
 	return &Service{ctx: ctx, cancel: cancel, store: st, run: o.Run, final: o.Final, limit: o.Limit,
-		reported: o.Reported, ended: o.Ended, screen: o.Screen, events: o.Events, log: o.Log, active: make(map[string]*execution)}
+		reported: o.Reported, ended: o.Ended, started: o.Started, screen: o.Screen, events: o.Events, log: o.Log, active: make(map[string]*execution)}
 }
 
 // Start creates a named child and starts its brief at priority. It reports
@@ -232,6 +236,9 @@ func (s *Service) Start(ctx context.Context, parent string, child store.Session,
 	}
 	if err != nil {
 		return store.Session{}, false, err
+	}
+	if s.started != nil {
+		s.started(ctx, child)
 	}
 	s.updated(ctx, child)
 	child, err = s.begin(ctx, child, child.Brief, priority)

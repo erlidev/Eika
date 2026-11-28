@@ -193,7 +193,7 @@ func New(cfg config.Config, log *slog.Logger, deps Deps, opts Options) *Server {
 		s.tree = session.NewTree(deps.Store)
 	}
 	if deps.Store != nil {
-		o := sentry.Options{Audit: deps.Store, Halts: deps.Store, Withheld: deps.Store, Marks: deps.Store, TrustedSource: deps.Store.IsTrustedSource, BlockedHost: deps.Store.IsBlockedHost, Threshold: cfg.ScreenThreshold, Log: log}
+		o := sentry.Options{Audit: deps.Store, Halts: deps.Store, Withheld: deps.Store, Marks: deps.Store, Destinations: deps.Store, TrustedSource: deps.Store.IsTrustedSource, BlockedHost: deps.Store.IsBlockedHost, Threshold: cfg.ScreenThreshold, Log: log}
 		if cfg.GuardURL != "" {
 			o.Screen = screen.New(cfg.GuardURL)
 		}
@@ -227,7 +227,7 @@ func New(cfg config.Config, log *slog.Logger, deps Deps, opts Options) *Server {
 		// are bounded by the server, not by a request.
 		s.subagents = subagent.New(context.Background(), deps.Store, subagent.Options{
 			Run: s.runSubagent, Final: s.finalMessage, Limit: s.subagentLimit, Reported: s.subagentReported,
-			Ended:  s.subagentEnded,
+			Ended: s.subagentEnded, Started: s.subagentStarted,
 			Screen: s.screenReport,
 			Events: deps.Bus, Log: log,
 		})

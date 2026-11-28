@@ -2989,3 +2989,17 @@ refuses while a run is active. There is no run-now endpoint in this phase.
 - **`watch_threshold` is a setting, not a deployment key.** It is a tuning
   number that `evals/injection` sets (section 11, "Keeping them quiet"); it
   defaults to 0.5 in code and has no config key until a deployment needs one.
+- **The index records hosts at ingest and on user messages; the user wins.** A
+  host's first record stays (the card says where it first appeared), except that
+  a host the user types becomes `user` whatever a page said before: the user's own
+  words anchor it. A host with no row is `model`, so nothing writes that source.
+  `search` is a `web_search` result and the hosts in it; every other ingested
+  segment (pages, reports, a child's transcript) is `content`, which anchors
+  nothing. A fetched page's own host is not recorded: its address came from the
+  user, a search or the model. A subagent gets a copy of its parent's rows when it
+  is created, so what the parent learns later does not reach it. Hosts the shipped
+  list names are matched exactly, for egress only. Only message text the user
+  posts counts; a routine's prompt and a wakeup do not. The index lives in
+  `internal/sentry` (not `sentry/seen` as the design's package list says) while
+  it shares host extraction with ingest. `Observe` returns no error: a record that
+  fails leaves a host unanchored, the safe side.

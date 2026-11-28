@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-// Gate is what Core calls. Phase 4b adds Observe.
+// Gate is what Core calls.
 type Gate interface {
 	// Decide answers at once. An error means the gate could not answer: the
 	// caller blocks side-effecting tools and lets the rest run.
@@ -34,6 +34,9 @@ type Gate interface {
 	// runs and telling the user are Core's part, not the gate's.
 	Halt(ctx context.Context, reason string) (HaltState, bool, error)
 	Resume(ctx context.Context) (HaltState, bool, error)
+	// Observe records something that needs no decision: a user message, a new
+	// subagent. It never fails the caller.
+	Observe(ctx context.Context, o Observation)
 }
 
 // Kind says how an Action's Name is read.
@@ -186,6 +189,9 @@ type Options struct {
 	// WatchThreshold returns the score at or over which a window's
 	// destinations are watched. Nil means DefaultWatchThreshold.
 	WatchThreshold func(context.Context) (float64, error)
+	// Destinations keeps the local destination index. Nil records nothing, and
+	// nothing is anchored.
+	Destinations DestinationLog
 	// ScreenSettings returns the current threshold and whether screening is required.
 	ScreenSettings func(context.Context) (float64, bool, error)
 	// MemoryThreshold returns the score at or over which a memory write goes

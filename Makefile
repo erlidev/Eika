@@ -110,11 +110,13 @@ fmt-check:
 	cd $(WEB) && $(NPM) run format:check
 
 ## check: every check this project has, the visual suite included. The fast
-## checks run side by side, then the visual suite runs once they pass. The
+## checks run side by side, then the sentry benchmark runs alone (its 1 ms
+## limit is a timing, so it is not measured under load), then the visual suite. The
 ## first run also downloads Chromium. About a minute in all; while iterating,
 ## run the targets it lists one at a time.
 check: web-install
-	$(MAKE) -j --output-sync=target fmt-check lint-go lint-web test-go typecheck test-web bench-sentry
+	$(MAKE) -j --output-sync=target fmt-check lint-go lint-web test-go typecheck test-web
+	$(MAKE) bench-sentry
 	$(MAKE) visual
 
 typecheck: web-install

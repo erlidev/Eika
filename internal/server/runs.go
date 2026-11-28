@@ -7,6 +7,7 @@ import (
 	"github.com/erlidev/eika/internal/imaging"
 	"github.com/erlidev/eika/internal/mcp"
 	"github.com/erlidev/eika/internal/provider"
+	"github.com/erlidev/eika/internal/sentry"
 	"github.com/erlidev/eika/internal/store"
 	"github.com/erlidev/eika/internal/tool/builtin"
 )
@@ -61,6 +62,9 @@ func (s *Server) handlePostMessage(w http.ResponseWriter, r *http.Request) {
 	if err := s.refuseSubagent(r.Context(), id); err != nil {
 		s.fail(w, r, err)
 		return
+	}
+	if s.gate != nil {
+		s.gate.Observe(r.Context(), sentry.Observation{Kind: sentry.ObserveUserMessage, Session: id, Text: text})
 	}
 	var run store.Run
 	if mode == modeRun {

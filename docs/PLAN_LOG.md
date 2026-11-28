@@ -1,5 +1,16 @@
 # Plan log
 
+## P4b-02 — Local destination index (2026-11-28)
+
+`Gate.Observe` exists. Ingest records the hosts in each segment (`search` for a
+`web_search` result, `content` otherwise) and a user message posted to a session
+records its hosts as `user`; a new subagent copies its parent's rows. The rule
+`gate.anchored` (`internal/sentry/destinations.go`) is built and tested but nothing
+calls it until P4b-07; `store` also has `MarkKnown` for P4b-03 and P4b-09 to fill.
+Decisions are in DECISIONS, "Tripwires and checkpoints". `make check` now runs
+`bench-sentry` alone after the parallel step, so its 1 ms limit is no longer timed
+under load; the limit is unchanged.
+
 ## P4b-01 — Watch threshold and source marks (2026-11-28)
 
 Ingest records the first two marks of `design/sentry.md` 11. A window scored at or

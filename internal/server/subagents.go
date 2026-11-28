@@ -17,6 +17,7 @@ import (
 	"github.com/erlidev/eika/internal/executor"
 	"github.com/erlidev/eika/internal/inference"
 	"github.com/erlidev/eika/internal/provider"
+	"github.com/erlidev/eika/internal/sentry"
 	"github.com/erlidev/eika/internal/session"
 	"github.com/erlidev/eika/internal/store"
 	"github.com/erlidev/eika/internal/subagent"
@@ -377,4 +378,13 @@ func questionReason(q builtin.Question, id string) string {
 		reason += fmt.Sprintf("\nFree text allowed: %t", q.AllowFreeText)
 	}
 	return reason
+}
+
+// subagentStarted gives a new child its parent's destination index, so a host
+// the parent saw keeps its source there. It is the lifecycle service's Started
+// option.
+func (s *Server) subagentStarted(ctx context.Context, child store.Session) {
+	if s.gate != nil {
+		s.gate.Observe(ctx, sentry.Observation{Kind: sentry.ObserveSubagentStart, Session: child.ID, Parent: child.ParentSessionID})
+	}
 }
