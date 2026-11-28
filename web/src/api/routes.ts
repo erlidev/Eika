@@ -63,6 +63,7 @@ import type {
   InboxCount,
   InboxListQuery,
   InboxPage,
+  TripwireCounts,
   TripwireEntries,
   TripwireEntry,
   Memory,
@@ -641,7 +642,12 @@ export function listInboxTripwires(signal?: AbortSignal): Promise<TripwireEntrie
   return request<TripwireEntries>("/api/inbox/tripwires", { signal });
 }
 
-/** answerTripwire answers an entry: "fine" ends the hold, "stop" aborts the run. 409: answered already, or the run is over. */
+/** getTripwireCounts reads how often each tripwire fired and was answered "this was fine". */
+export function getTripwireCounts(signal?: AbortSignal): Promise<TripwireCounts> {
+  return request<TripwireCounts>("/api/tripwires/counts", { signal });
+}
+
+/** answerTripwire answers an entry: "fine" ends the hold, "stop" aborts the run (or just closes the entry when it ended). 409: answered already. */
 export function answerTripwire(id: string, answer: "fine" | "stop"): Promise<TripwireEntry> {
   return request<TripwireEntry>(`/api/inbox/tripwires/${encodeURIComponent(id)}/${answer}`, {
     method: "POST",

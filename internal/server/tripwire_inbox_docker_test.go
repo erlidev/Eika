@@ -75,10 +75,7 @@ func TestStopTheRunAbortsItAndFineMakesTheHostKnown(t *testing.T) {
 		t.Errorf("answering twice = %d, want 409", r.Code)
 	}
 
-	// A run that is over cannot be stopped; "this was fine" still answers it.
-	if r := request(t, a.Server, "POST", "/api/inbox/tripwires/"+ended.ID+"/stop", nil); r.Code != 409 {
-		t.Errorf("stopping an ended run = %d, want 409", r.Code)
-	}
+	// "This was fine" on an ended run still teaches the host.
 	if got := decodeBody[tripwireWire](t, request(t, a.Server, "POST", "/api/inbox/tripwires/"+ended.ID+"/fine", nil), 200); got.Status != "fine" {
 		t.Errorf("fine answered %+v", got)
 	}
@@ -88,11 +85,22 @@ func TestStopTheRunAbortsItAndFineMakesTheHostKnown(t *testing.T) {
 	if known, _ := a.store.KnownHost(t.Context(), "any-computer", "collect.example.net"); known {
 		t.Error("a stopped run's host became known")
 	}
+	// "Stop" on an ended run has nothing to abort: it closes the entry as
+	// stopped and teaches no host.
+	a.TrippedForTest(t.Context(), sentry.Tripped{Tripwire: "lifted", Host: "third.example.net",
+		Principal: sentry.Principal{Session: sess.ID, Run: "ended-run"}})
+	third := openEntries(t, a)[0]
+	if got := decodeBody[tripwireWire](t, request(t, a.Server, "POST", "/api/inbox/tripwires/"+third.ID+"/stop", nil), 200); got.Status != "stopped" {
+		t.Errorf("stopping an ended run answered %+v", got)
+	}
+	if known, _ := a.store.KnownHost(t.Context(), "any-computer", "third.example.net"); known {
+		t.Error("a stopped entry's host became known")
+	}
 	if n := inboxCount(t, a); n != 0 {
 		t.Errorf("count = %d after both answers, want 0", n)
 	}
 	counts := decodeBody[tripwireCountsWire](t, request(t, a.Server, "GET", "/api/tripwires/counts", nil), 200).Counts
-	if len(counts) != 2 || counts[0].Tripwire != "drained" || counts[0].Fired != 1 || counts[0].Fine != 1 || counts[1].Tripwire != "followed" || counts[1].Fine != 0 {
+	if len(counts) != 3 || counts[0].Tripwire != "drained" || counts[0].Fired != 1 || counts[0].Fine != 1 || counts[1].Tripwire != "followed" || counts[1].Fine != 0 || counts[2].Tripwire != "lifted" || counts[2].Fine != 0 {
 		t.Errorf("counts = %+v", counts)
 	}
 }

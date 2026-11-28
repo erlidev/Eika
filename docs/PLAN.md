@@ -648,8 +648,9 @@ phase 11 extends it. See DECISIONS, "Tripwires and checkpoints".
       seam: `sentry.Options.Tripped` (the server logs it now) is the entry's source,
       and the gate has no way to end a hold yet, so this item adds one (a `Gate`
       method) beside the known-host write.
-- [ ] **P4b-10**: Settings, Security: each tripwire's switch, numbers (including
+- [x] **P4b-10**: Settings, Security: each tripwire's switch, numbers (including
       the watch threshold and the `sink_limits` numbers) and its two counts. Phone and desktop baselines.
+      Built as `TripwireSettings.tsx`; see `PLAN_LOG.md`.
 - [ ] **P4b-11** (**blocked on phase 11**): A held run's plugin calls to
       destinations that are not anchored ask, with the chain on the card; Carried
       out's plugin half; "this was fine" releases a stored plugin call; the first-seen
@@ -705,11 +706,10 @@ phase 11 extends it. See DECISIONS, "Tripwires and checkpoints".
    eight characters or more.
 5. **Does a hold survive a Core restart?** Applied: no. The hold ends with the run
    (design), and a run does not survive a restart; its entry stays.
-6. **Can an entry be dismissed without teaching the host?** Applied: no. P4b-09
-   has the two answers of the design only. "Stop the run" on a run that already
-   ended is 409 and leaves the entry open, so "this was fine" (which makes the
-   host known) is then the only way to close it. A third answer, such as "dismiss",
-   is yours to ask for.
+6. **Can an entry be dismissed without teaching the host?** Applied: yes, with no
+   third answer. "Stop the run" on a run that already ended closes the entry as
+   stopped and makes no host known; the card words it "Dismiss" once the run is
+   no longer going.
 
 ## Schedule for phase 6
 

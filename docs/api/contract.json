@@ -3394,8 +3394,32 @@
                   "array": "string"
                 }
               },
+              "sensitive_list": {
+                "nullable": {
+                  "array": "string"
+                }
+              },
+              "sink_limits": {
+                "object": {
+                  "fan_out_urls": "number",
+                  "upload_bytes": "number",
+                  "upload_ratio": "number",
+                  "upload_ratio_bytes": "number"
+                }
+              },
               "subagent_max_running": "number",
-              "wakeups_max": "number"
+              "tripwires": {
+                "object": {
+                  "blocked_limit": "number",
+                  "blocked_often": "boolean",
+                  "carried_out": "boolean",
+                  "drained": "boolean",
+                  "followed": "boolean",
+                  "lifted": "boolean"
+                }
+              },
+              "wakeups_max": "number",
+              "watch_threshold": "number"
             }
           },
           "settings": {
@@ -6114,8 +6138,32 @@
                   "array": "string"
                 }
               },
+              "sensitive_list": {
+                "nullable": {
+                  "array": "string"
+                }
+              },
+              "sink_limits": {
+                "object": {
+                  "fan_out_urls": "number",
+                  "upload_bytes": "number",
+                  "upload_ratio": "number",
+                  "upload_ratio_bytes": "number"
+                }
+              },
               "subagent_max_running": "number",
-              "wakeups_max": "number"
+              "tripwires": {
+                "object": {
+                  "blocked_limit": "number",
+                  "blocked_often": "boolean",
+                  "carried_out": "boolean",
+                  "drained": "boolean",
+                  "followed": "boolean",
+                  "lifted": "boolean"
+                }
+              },
+              "wakeups_max": "number",
+              "watch_threshold": "number"
             }
           },
           "settings": {

@@ -46,6 +46,7 @@ export const queryKeys = {
   inboxCount: () => ["inbox", "count"] as const,
   inboxList: () => ["inbox", "list"] as const,
   inboxTripwires: () => ["inbox", "tripwires"] as const,
+  tripwireCounts: () => ["tripwire-counts"] as const,
   /** skills without arguments is the prefix of every skills query. */
   skills: () => ["skills"] as const,
   skill: (name: string) => ["skills", name] as const,

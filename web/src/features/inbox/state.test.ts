@@ -15,9 +15,8 @@ describe("answerFailure", () => {
 });
 
 describe("tripwireFailure", () => {
-  it("says a stop after the run ended apart from a repeated answer", () => {
+  it("says a repeated answer plainly", () => {
     const conflict = new ApiError(409, "conflict", "x");
-    expect(tripwireFailure("stop", conflict)).toContain("already ended");
-    expect(tripwireFailure("fine", conflict)).toContain("already answered");
+    expect(tripwireFailure("stop", conflict)).toContain("already answered");
   });
 });

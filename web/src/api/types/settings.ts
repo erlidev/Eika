@@ -1,6 +1,7 @@
 /** Wire types for the settings table. */
 
 import type { SearchLimit } from "@/api/types/search";
+import type { SinkLimits, TripwireSettings } from "@/api/types/tripwires";
 import type { SandboxEgress, SandboxLimits } from "@/api/types/computers";
 
 /** Settings is the settings table as one object of arbitrary JSON values. */
@@ -34,6 +35,11 @@ export type SettingsDefaults = {
   maintenance_idle_seconds: number;
   aging_seconds: number;
   preempt_running: boolean;
+  /** watch_threshold, sensitive_list, sink_limits and tripwires are the sentry's settings. */
+  watch_threshold: number;
+  sensitive_list: string[];
+  sink_limits: SinkLimits;
+  tripwires: TripwireSettings;
 };
 
 /**

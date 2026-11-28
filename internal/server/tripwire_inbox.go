@@ -205,20 +205,25 @@ func (s *Server) handleTripwireFine(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleTripwireStop answers "stop the run": the run is aborted and the entry
-// closed. A run that already ended cannot be stopped (409); the entry stays open
-// for "this was fine".
+// closed as stopped. A run that already ended (or is gone) has nothing to
+// abort, so the entry is closed the same way; no host becomes known.
 func (s *Server) handleTripwireStop(w http.ResponseWriter, r *http.Request) {
 	e, err := s.openTripwire(r.Context(), r.PathValue("id"))
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	if _, err := s.runs.abort(r.Context(), e.Run); err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			err = conflictf("the run is gone")
-		}
+	row, err := s.deps.Store.Run(r.Context(), e.Run)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+	case err != nil:
 		s.fail(w, r, err)
 		return
+	case row.State == store.RunRunning:
+		if _, err := s.runs.abort(r.Context(), e.Run); err != nil {
+			s.fail(w, r, err)
+			return
+		}
 	}
 	s.answerTripwire(w, r, e.ID, store.TripwireStopped)
 }

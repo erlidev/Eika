@@ -1,7 +1,7 @@
 /**
  * The tripwire half of the Inbox, as docs/api/http.md, "Tripwire entries",
  * writes it. "This was fine" closes an open entry; "stop the run" closes it
- * only while its run is going, else 409, as the real server answers.
+ * as stopped, aborting the run only if it is still going.
  */
 import { fail, ok } from "./context.ts";
 import type { RouteContext } from "./context.ts";
@@ -14,12 +14,24 @@ export function tripwireRoutes({ w, on, now, emit, event }: RouteContext): void 
       .toSorted((a, b) => b.at.localeCompare(a.at) || b.id.localeCompare(a.id));
   on("GET", "/api/inbox/tripwires", () => ok({ entries: open() }));
 
+  on("GET", "/api/tripwires/counts", () => {
+    const names = [...new Set(w.tripwires.map((t) => t.tripwire))].toSorted();
+    return ok({
+      counts: names.map((name) => {
+        const rows = w.tripwires.filter((t) => t.tripwire === name);
+        return {
+          tripwire: name,
+          fired: rows.length,
+          fine: rows.filter((t) => t.status === "fine").length,
+        };
+      }),
+    });
+  });
+
   const answer = (id: string | undefined, status: "fine" | "stopped") => {
     const entry: TripwireEntry | undefined = w.tripwires.find((t) => t.id === id);
     if (entry === undefined) return fail(404, "not_found", "no tripwire entry with that id");
     if (entry.status !== "open") return fail(409, "conflict", "this entry was already answered");
-    if (status === "stopped" && !entry.running)
-      return fail(409, "conflict", `run ${entry.run_id} is already done`);
     entry.status = status;
     entry.answered_at = now();
     entry.running = false;

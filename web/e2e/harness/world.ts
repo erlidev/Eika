@@ -202,6 +202,22 @@ export function emptyWorld(): World {
         maintenance_idle_seconds: 120,
         aging_seconds: 300,
         preempt_running: false,
+        watch_threshold: 0.5,
+        sensitive_list: ["\\.env$", "id_rsa", "^(env|printenv)$"],
+        sink_limits: {
+          upload_bytes: 1048576,
+          upload_ratio_bytes: 65536,
+          upload_ratio: 10,
+          fan_out_urls: 16,
+        },
+        tripwires: {
+          followed: false,
+          carried_out: false,
+          lifted: false,
+          drained: false,
+          blocked_often: false,
+          blocked_limit: 10,
+        },
         sandbox_limits: { cpus: 0, memory_mb: 0, pids: 4096 },
         sandbox_egress: { mode: "public", allow: [...defaultAllowlist] },
         // As the harness documents them in docs/api/http.md.

@@ -59,3 +59,37 @@ for (const [label, viewport] of [
     await expectShot(eika, `security-trusted-${label}`, "role=dialog");
   });
 }
+
+for (const [label, viewport] of [
+  ["desktop", { width: 1280, height: 900 }],
+  ["phone", { width: 390, height: 844 }],
+] as const) {
+  test(`${label}: tripwires show their counts and save a switch and the numbers`, async ({
+    open,
+    expectShot,
+  }) => {
+    const eika = await open({ scenario: "security-tripwires", viewport });
+    await eika.click("Settings");
+    await eika.click("Security");
+    const dialog = eika.page.getByRole("dialog");
+    const followed = dialog.getByRole("switch", {
+      name: "A suspect page's destination was followed",
+    });
+    await expect(followed).toBeChecked();
+    await expect(dialog.getByText("Fired 2, this was fine 1")).toBeVisible();
+    await expect(dialog.getByText("Fired 1, this was fine 0")).toBeVisible();
+    await dialog.getByRole("switch", { name: "A large amount of data was sent out" }).click();
+    await expect
+      .poll(() => eika.mock.world.settings.settings.tripwires)
+      .toMatchObject({ followed: true, drained: true });
+    await dialog.getByLabel("Blocked limit").fill("25");
+    await dialog.getByLabel("Upload bytes", { exact: true }).fill("2097152");
+    await dialog.getByRole("button", { name: "Save numbers" }).click();
+    await expect
+      .poll(() => eika.mock.world.settings.settings.sink_limits)
+      .toMatchObject({ upload_bytes: 2097152, fan_out_urls: 16 });
+    expect(eika.mock.world.settings.settings.tripwires).toMatchObject({ blocked_limit: 25 });
+    await dialog.getByRole("heading", { name: "Tripwires" }).scrollIntoViewIfNeeded();
+    await expectShot(eika, `security-tripwires-${label}`, "role=dialog");
+  });
+}

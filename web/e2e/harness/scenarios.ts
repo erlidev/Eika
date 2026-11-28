@@ -1658,6 +1658,29 @@ export const scenarios = {
       return w;
     },
   },
+  "security-tripwires": {
+    description:
+      'Settings, Security with the tripwires: Followed is on and has fired twice (one answered "this was fine"), Drained has fired once, and the rest are off.',
+    path: "/",
+    build: () => {
+      const w = scenario("inbox-tripwires").build();
+      w.settings.settings.tripwires = { followed: true };
+      w.tripwires.push({
+        id: "tw-old",
+        at: minutesAgo(600),
+        tripwire: "followed",
+        held: true,
+        host: "old.example.net",
+        source: "search",
+        summary: "A page named old.example.net.",
+        session_id: "home-main",
+        run_id: "run-old",
+        running: false,
+        status: "fine",
+      });
+      return w;
+    },
+  },
   schedules: {
     description: "Routines, approval and wakeups.",
     path: "/schedules",

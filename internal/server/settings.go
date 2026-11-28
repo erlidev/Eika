@@ -130,6 +130,14 @@ type settingsDefaults struct {
 	MaintenanceIdleSeconds int  `json:"maintenance_idle_seconds"`
 	AgingSeconds           int  `json:"aging_seconds"`
 	PreemptRunning         bool `json:"preempt_running"`
+	// WatchThreshold, SensitiveList, SinkLimits and Tripwires are the
+	// sentry's own settings: the score that watches a window's destinations,
+	// the paths and commands that mark a sensitive read, the numbers of the
+	// sink marks, and each tripwire's switch and number.
+	WatchThreshold float64           `json:"watch_threshold"`
+	SensitiveList  []string          `json:"sensitive_list"`
+	SinkLimits     sentry.SinkLimits `json:"sink_limits"`
+	Tripwires      trip.Settings     `json:"tripwires"`
 }
 
 // handleSettings returns every setting.
@@ -240,6 +248,10 @@ func (s *Server) writeSettings(w http.ResponseWriter, r *http.Request, status in
 		WakeupsMax:             store.DefaultWakeupsMax,
 		MaintenanceIdleSeconds: int(inference.DefaultMaintenanceIdle / time.Second),
 		AgingSeconds:           int(inference.DefaultAging / time.Second),
+		WatchThreshold:         sentry.DefaultWatchThreshold,
+		SensitiveList:          sentry.DefaultSensitiveList,
+		SinkLimits:             sentry.DefaultSinkLimits,
+		Tripwires:              trip.Settings{BlockedLimit: trip.DefaultBlockedLimit},
 	}
 	if s.deps.Search != nil {
 		defaults.SearchOrder, defaults.SearchLimits = s.deps.Search.Web(), s.deps.Search.DefaultLimits()

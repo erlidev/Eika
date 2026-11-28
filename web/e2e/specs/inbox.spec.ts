@@ -191,10 +191,11 @@ test.describe("tripwire entries", () => {
     await expect(held).toContainText("collect.example.net");
     await expect(held).toContainText("The run is held");
     await expect(held.getByRole("button", { name: "Stop the run" })).toBeVisible();
-    // A run that is over cannot be stopped; the entry can still be answered.
+    // A run that is over has nothing to stop; the same answer reads "Dismiss".
     const ended = card(eika, "A large amount of data was sent out");
     await expect(ended).toContainText("The run has ended");
     await expect(ended.getByRole("button", { name: "Stop the run" })).toHaveCount(0);
+    await expect(ended.getByRole("button", { name: "Dismiss" })).toBeVisible();
     await expectShot(eika, "inbox-tripwires-desktop");
   });
 
@@ -212,18 +213,6 @@ test.describe("tripwire entries", () => {
       .click();
     await expect(eika.page.getByRole("article")).toHaveCount(3);
     expect(entry(eika, "tw-held")).toMatchObject({ status: "stopped", running: false });
-  });
-
-  test("a stop after the run ended is said plainly and the card is read again", async ({
-    open,
-  }) => {
-    const eika = await open({ scenario: "inbox-tripwires" });
-    const held = card(eika, "A suspect page's destination was followed");
-    entry(eika, "tw-held").running = false;
-    await held.getByRole("button", { name: "Stop the run" }).click();
-    await expect(held.getByRole("alert")).toContainText("already ended");
-    await expect(held.getByRole("button", { name: "Stop the run" })).toHaveCount(0);
-    expect(entry(eika, "tw-held").status).toBe("open");
   });
 
   test.describe("on a phone", () => {

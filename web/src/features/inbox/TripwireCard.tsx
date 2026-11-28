@@ -65,6 +65,7 @@ export function TripwireCard({ entry, sessions }: TripwireCardProps) {
       {entry.host !== undefined && (
         <p className="text-muted-foreground text-xs">
           &ldquo;This was fine&rdquo; ends the hold and treats the destination as known from now on.
+          {!entry.running && " Dismiss closes this without that."}
         </p>
       )}
       {failure !== undefined && (
@@ -80,18 +81,16 @@ export function TripwireCard({ entry, sessions }: TripwireCardProps) {
         >
           This was fine
         </Button>
-        {entry.running && (
-          <Button
-            type="button"
-            variant="outline"
-            disabled={answer.isPending}
-            onClick={() => {
-              send("stop");
-            }}
-          >
-            Stop the run
-          </Button>
-        )}
+        <Button
+          type="button"
+          variant="outline"
+          disabled={answer.isPending}
+          onClick={() => {
+            send("stop");
+          }}
+        >
+          {entry.running ? "Stop the run" : "Dismiss"}
+        </Button>
       </div>
     </article>
   );

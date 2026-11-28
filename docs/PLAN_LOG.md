@@ -1,5 +1,19 @@
 # Plan log
 
+## P4b-10 — Tripwire controls in Settings, Security (2026-11-28)
+
+Settings, Security has a Tripwires section: a switch for each of the five tripwires with
+its fired and "this was fine" counts (`GET /api/tripwires/counts`), and one form for the
+numbers: `watch_threshold`, the four `sink_limits`, `blocked_limit` and the
+`sensitive_list` (one expression per line). Switches save at once; the form saves the
+whole `tripwires`, `sink_limits` and `sensitive_list` values together, since a write
+replaces a key's value. `GET /api/settings` now returns these four keys' starting values in
+`defaults` so the UI holds none of its own. Also owner question 6: "Stop the run" on an
+entry whose run ended now closes it as stopped without making the host known, and the card
+words it "Dismiss"; the existing server test and e2e spec were adjusted, and the e2e test
+for the old 409 was removed. Tests: the settings round trip in e2e with phone and desktop
+baselines (the other Security baselines moved down with the new section).
+
 ## P4b-09 — The Inbox entry and its two answers (2026-11-28)
 
 A tripwire that fires (`Options.Tripped`) is now one `tripwire_entries` row (migration

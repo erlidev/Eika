@@ -3125,7 +3125,7 @@ refuses while a run is active. There is no run-now endpoint in this phase.
 - **The Inbox entry is a table row; the hold is not.** `tripwire_entries` (migration
   0041) holds one row per tripwire that fired, open until answered. A hold lives only
   in the gate and ends with its run, so an entry whose run ended stays open, says
-  so, and offers only "this was fine". The badge counts memories and open entries
+  so, and offers "this was fine" and "Dismiss". The badge counts memories and open entries
   together (`inbox.count`). The summary is built in the server from the tripwire,
   the host and where the host first appeared; it holds no text from the page that
   caused it. The push carries that summary.
@@ -3136,9 +3136,9 @@ refuses while a run is active. There is no run-now endpoint in this phase.
   known at its end: only the answered host does. A known host is no longer
   Followed: `tripwire` skips a watched host the user answered. "Stop the run" is
   `runs.abort`; the hold ends at `ObserveRunEnd`, and no host is made known. A
-  stop for a run that already ended is 409 and leaves the entry open: there is no
-  third "dismiss" answer, and "this was fine" on such an entry still teaches the
-  host. Checkpoint offers come with P4b-13.
+  stop for a run that already ended closes the entry as stopped and makes no
+  host known; the card words that answer "Dismiss" once the run is no longer going.
+  There is no third answer. Checkpoint offers come with P4b-13.
 - **Marks are kept 30 days.** A daily sweep started with the server
   (`watchMarkPruning`) deletes marks older than that; chains read only the marks of
   a run in progress and the watched set of a session.

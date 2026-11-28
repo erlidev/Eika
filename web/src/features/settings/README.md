@@ -21,7 +21,7 @@ Everything the user configures after setup, in one dialog of tabs.
   Agents is `features/agents`; Instructions is `InstructionsSettings.tsx`: the
   user's "About me" and rules, saved together with `PUT /api/instructions`, with the
   harness's text limit checked beside each field (`lib/textLimit.ts`).
-- Security is `SecuritySettings.tsx`: guard health, screen settings, trusted hosts and the withheld list from `GET /api/withheld`, newest
+- Security is `SecuritySettings.tsx`: guard health, screen settings, the tripwires (`TripwireSettings.tsx`: each switch with its fired and "this was fine" counts, and the numbers behind the marks), trusted hosts and the withheld list from `GET /api/withheld`, newest
   first and paged, each row with its source, where it came from and the removed text. A
   The shell polls guard health and shows a banner when it is down. A tool card whose result had a removal carries a `withheld` mark, read from `removed` on its
   `tool.result` event or stored entry (`features/session/ToolCard.tsx`).

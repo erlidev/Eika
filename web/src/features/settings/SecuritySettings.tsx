@@ -20,6 +20,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useState } from "react";
 import { useGuard } from "@/features/settings/guard";
+import { TripwireSettingsSection } from "@/features/settings/TripwireSettings";
 import { useSaveSettings, useSettings } from "@/features/settings/queries";
 import { formatAgo } from "@/lib/format";
 
@@ -42,6 +43,7 @@ export function SecuritySettings() {
   return (
     <div className="space-y-4">
       <ScreenSettings />
+      <TripwireSettingsSection />
       <BlockedHosts />
       <TrustedSources />
       <div className="space-y-1">

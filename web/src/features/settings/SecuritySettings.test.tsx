@@ -4,35 +4,44 @@ import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { SecuritySettings } from "@/features/settings/SecuritySettings";
 
-const routes = vi.hoisted(() => ({
-  getGuard: vi.fn().mockResolvedValue({ status: "down" }),
-  getSettings: vi.fn().mockResolvedValue({
-    settings: {},
-    defaults: { screen_required: false, screen_threshold: 0.9 },
-  }),
-  getWithheld: vi.fn().mockResolvedValue({
-    withheld: [
-      {
-        id: "1",
-        source: "web_fetch",
-        source_name: "https://example.com/page",
-        at: "2026-11-22T00:00:00Z",
-        text: "suspect",
-      },
-    ],
-  }),
-  getBlockedHosts: vi.fn().mockResolvedValue({ hosts: ["blocked.example"] }),
-  addBlockedHost: vi.fn().mockResolvedValue(undefined),
-  removeBlockedHost: vi.fn().mockResolvedValue(undefined),
-  getTrustedSources: vi.fn().mockResolvedValue({ hosts: ["example.org"] }),
-  putSettings: vi.fn().mockResolvedValue({
-    settings: { screen_required: true },
-    defaults: { screen_required: false, screen_threshold: 0.9 },
-  }),
-  addTrustedSource: vi.fn().mockResolvedValue(undefined),
-  removeTrustedSource: vi.fn().mockResolvedValue(undefined),
-  trustWithheld: vi.fn().mockResolvedValue(undefined),
-}));
+const routes = vi.hoisted(() => {
+  const sentry = {
+    watch_threshold: 0.5,
+    sensitive_list: [] as string[],
+    sink_limits: { upload_bytes: 1, upload_ratio_bytes: 1, upload_ratio: 1, fan_out_urls: 1 },
+    tripwires: { followed: false, blocked_limit: 10 },
+  };
+  return {
+    getGuard: vi.fn().mockResolvedValue({ status: "down" }),
+    getSettings: vi.fn().mockResolvedValue({
+      settings: {},
+      defaults: { screen_required: false, screen_threshold: 0.9, ...sentry },
+    }),
+    getWithheld: vi.fn().mockResolvedValue({
+      withheld: [
+        {
+          id: "1",
+          source: "web_fetch",
+          source_name: "https://example.com/page",
+          at: "2026-11-22T00:00:00Z",
+          text: "suspect",
+        },
+      ],
+    }),
+    getBlockedHosts: vi.fn().mockResolvedValue({ hosts: ["blocked.example"] }),
+    addBlockedHost: vi.fn().mockResolvedValue(undefined),
+    removeBlockedHost: vi.fn().mockResolvedValue(undefined),
+    getTrustedSources: vi.fn().mockResolvedValue({ hosts: ["example.org"] }),
+    putSettings: vi.fn().mockResolvedValue({
+      settings: { screen_required: true },
+      defaults: { screen_required: false, screen_threshold: 0.9, ...sentry },
+    }),
+    addTrustedSource: vi.fn().mockResolvedValue(undefined),
+    removeTrustedSource: vi.fn().mockResolvedValue(undefined),
+    trustWithheld: vi.fn().mockResolvedValue(undefined),
+    getTripwireCounts: vi.fn().mockResolvedValue({ counts: [] }),
+  };
+});
 vi.mock("@/api/routes", () => routes);
 
 afterEach(() => {

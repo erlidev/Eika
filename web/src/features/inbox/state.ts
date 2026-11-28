@@ -52,15 +52,10 @@ export function tripwireState(entry: TripwireEntry): string {
     : "The run carries on.";
 }
 
-/**
- * tripwireFailure says plainly why an answer did not go through. 409 means the
- * entry was answered elsewhere, or "stop" came after the run ended.
- */
+/** tripwireFailure says plainly why an answer did not go through. 409 means the entry was answered elsewhere. */
 export function tripwireFailure(answer: TripwireAnswer, error: unknown): string {
   if (error instanceof ApiError && error.status === 409) {
-    return answer === "stop"
-      ? "The run already ended, or this was answered on another device, so nothing was stopped."
-      : "This was already answered, possibly on another device. The card now shows its current state.";
+    return "This was already answered, possibly on another device. The card now shows its current state.";
   }
   return failureText(answer === "stop" ? "stop the run" : "answer this", error);
 }
